@@ -1,0 +1,23 @@
+# Binaries and build artifacts
+bin/
+build/bin/
+*.exe
+*.app
+*.dmg
+*.rpm
+depersonalizer*
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# IDE & Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary & session
+tmp/
+.superpowers/
+*.log

@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Деперсонализатор ПДн — Автономный контур 152-ФЗ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --bg: #FBFBFA;
+      --surface: #FFFFFF;
+      --border: #E8E7E3;
+      --border-subtle: #F0EFEB;
+      --ink: #1C1917;
+      --ink-muted: #78716C;
+      --ink-faint: #A8A29E;
+      --accent: #0F172A;
+      --safe-bg: #ECFDF5;
+      --safe-border: #A7F3D0;
+      --safe-text: #065F46;
+      --risk-bg: #FEF2F2;
+      --risk-border: #FECACA;
+      --risk-text: #991B1B;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--ink);
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      letter-spacing: -0.011em;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: -0.02em;
+    }
+    .redaction-bar {
+      background-color: #18181B;
+      color: #FAFAFA;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      padding: 1px 6px;
+      display: inline-block;
+      user-select: none;
+    }
+    .stamp {
+      border: 1.5px solid #1C1917;
+      text-transform: uppercase;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col p-6 sm:p-10 max-w-5xl mx-auto selection:bg-amber-100">
+
+  <!-- Minimal Brand & Environment Bar -->
+  <header class="flex flex-col sm:flex-row sm:items-center justify-between pb-8 border-b border-[#E8E7E3] gap-4">
+    <div class="flex items-center space-x-3.5">
+      <div class="w-9 h-9 bg-[#1C1917] rounded-none flex items-center justify-center text-white font-mono text-sm font-bold">
+        152
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <span class="text-base font-bold tracking-tight text-[#1C1917]">Контур Обезличивания</span>
+          <span class="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-[#E8E7E3] text-[#44403C]">v1.0 • Alt Linux</span>
+        </div>
+        <p class="text-xs text-[#78716C]">Локальная очистка персональных данных без выхода в сеть</p>
+      </div>
+    </div>
+
+    <!-- Active Document Tabs -->
+    <div class="flex items-center bg-[#F0EFEB] p-1 text-xs font-medium self-start sm:self-auto">
+      <button id="tab-table" onclick="setDocMode('table')" class="px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition">
+        Выгрузка (Excel / CSV)
+      </button>
+      <button id="tab-pdf" onclick="setDocMode('pdf')" class="px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition">
+        Документ (PDF)
+      </button>
+    </div>
+  </header>
+
+  <!-- TABLE MODE -->
+  <main id="mode-table-content" class="flex-1 flex flex-col pt-8 gap-8">
+    
+    <!-- Hero / Summary Banner -->
+    <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <div>
+        <div class="flex items-center space-x-2 text-xs font-mono text-[#78716C] uppercase mb-1">
+          <span>Файл загружен</span>
+          <span>•</span>
+          <span>4 250 строк</span>
+          <span>•</span>
+          <span>XLSX</span>
+        </div>
+        <h2 class="text-2xl font-bold tracking-tight text-[#1C1917]">
+          клиенты_реестр_2026.xlsx
+        </h2>
+        <p class="text-sm text-[#78716C] mt-1 max-w-xl">
+          Обнаружены 4 категории ПДн. Все чувствительные поля заменены на вымышленные реквизиты с сохранением связей между строками.
+        </p>
+      </div>
+
+      <!-- Action Button -->
+      <button onclick="downloadDone()" class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-6 py-3 transition active:scale-[0.99] flex items-center justify-center space-x-2 shadow-sm whitespace-nowrap">
+        <span>Скачать чистый файл</span>
+        <span class="font-mono text-[11px] text-[#A8A29E]">(.xlsx)</span>
+      </button>
+    </div>
+
+    <!-- Entity Cards Grid (Quiet, clean overview instead of 20 dropdowns) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+      
+      <!-- Entity 1: FIO -->
+      <div class="bg-white border border-[#E8E7E3] p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
+            <span>КОЛОНКА #1</span>
+            <span class="text-emerald-700 font-semibold">● Заменено</span>
+          </div>
+          <div class="font-bold text-sm text-[#1C1917]">ФИО Клиента</div>
+          <div class="text-xs text-[#78716C] mt-0.5">Русские фамилии, имена и отчества</div>
+        </div>
+        <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono text-[#065F46] bg-[#ECFDF5] -mx-4 -mb-4 p-2.5">
+          ➜ Синтетический профиль
+        </div>
+      </div>
+
+      <!-- Entity 2: SNILS -->
+      <div class="bg-white border border-[#E8E7E3] p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
+            <span>КОЛОНКА #2</span>
+            <span class="text-emerald-700 font-semibold">● Заменено</span>
+          </div>
+          <div class="font-bold text-sm text-[#1C1917]">СНИЛС</div>
+          <div class="text-xs text-[#78716C] mt-0.5">Страховые номера РФ</div>
+        </div>
+        <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono text-[#065F46] bg-[#ECFDF5] -mx-4 -mb-4 p-2.5">
+          ➜ Валидный модуль 101
+        </div>
+      </div>
+
+      <!-- Entity 3: Passport -->
+      <div class="bg-white border border-[#E8E7E3] p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
+            <span>КОЛОНКА #3</span>
+            <span class="text-emerald-700 font-semibold">● Заменено</span>
+          </div>
+          <div class="font-bold text-sm text-[#1C1917]">Паспорт РФ</div>
+          <div class="text-xs text-[#78716C] mt-0.5">Серия и номер гражданина РФ</div>
+        </div>
+        <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono text-[#065F46] bg-[#ECFDF5] -mx-4 -mb-4 p-2.5">
+          ➜ Случайная серия/номер
+        </div>
+      </div>
+
+      <!-- Entity 4: Phone -->
+      <div class="bg-white border border-[#E8E7E3] p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
+            <span>КОЛОНКА #4</span>
+            <span class="text-emerald-700 font-semibold">● Заменено</span>
+          </div>
+          <div class="font-bold text-sm text-[#1C1917]">Телефон</div>
+          <div class="text-xs text-[#78716C] mt-0.5">Мобильные операторы РФ</div>
+        </div>
+        <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono text-[#065F46] bg-[#ECFDF5] -mx-4 -mb-4 p-2.5">
+          ➜ Псевдонимный номер
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Data Inspection Box -->
+    <div class="bg-white border border-[#E8E7E3] shadow-sm flex flex-col">
+      
+      <!-- Table Header Bar -->
+      <div class="p-4 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]">
+        <div class="flex items-center space-x-2">
+          <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">Предпросмотр таблицы</span>
+          <span class="text-xs text-[#78716C]">(первые 3 строки)</span>
+        </div>
+
+        <!-- Toggle: Before vs After -->
+        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
+          <button id="btn-show-after" onclick="setViewMode('after')" class="px-3 py-1 bg-[#1C1917] text-white font-semibold transition">
+            Очищенные данные
+          </button>
+          <button id="btn-show-before" onclick="setViewMode('before')" class="px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition">
+            Исходные с ПДн
+          </button>
+        </div>
+      </div>
+
+      <!-- Table View -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="border-b border-[#E8E7E3] bg-white text-[#78716C] font-mono text-[11px]">
+              <th class="py-3 px-4 font-normal w-12 text-center text-[#A8A29E]">#</th>
+              <th class="py-3 px-4 font-semibold text-[#1C1917]">ФИО Клиента</th>
+              <th class="py-3 px-4 font-semibold text-[#1C1917]">СНИЛС</th>
+              <th class="py-3 px-4 font-semibold text-[#1C1917]">Паспорт РФ</th>
+              <th class="py-3 px-4 font-semibold text-[#1C1917]">Телефон</th>
+              <th class="py-3 px-4 font-normal text-[#78716C]">Сумма заказа</th>
+            </tr>
+          </thead>
+          <tbody id="table-rows" class="divide-y divide-[#F0EFEB] text-[13px]">
+            <!-- Row 1 -->
+            <tr class="hover:bg-[#FAF9F5] transition-colors">
+              <td class="py-3 px-4 font-mono text-center text-[#A8A29E] text-xs">01</td>
+              <td class="py-3 px-4 font-medium text-[#1C1917] col-fio">Васильев Роман Сергеевич</td>
+              <td class="py-3 px-4 font-mono text-xs col-snils">781-902-334 18</td>
+              <td class="py-3 px-4 font-mono text-xs col-pass">4518 945201</td>
+              <td class="py-3 px-4 font-mono text-xs col-phone">+7 (925) 834-11-90</td>
+              <td class="py-3 px-4 text-[#57534E] font-mono text-xs">145 000,00 ₽</td>
+            </tr>
+
+            <!-- Row 2 -->
+            <tr class="hover:bg-[#FAF9F5] transition-colors">
+              <td class="py-3 px-4 font-mono text-center text-[#A8A29E] text-xs">02</td>
+              <td class="py-3 px-4 font-medium text-[#1C1917] col-fio">Морозова Анна Дмитриевна</td>
+              <td class="py-3 px-4 font-mono text-xs col-snils">452-118-903 04</td>
+              <td class="py-3 px-4 font-mono text-xs col-pass">4614 772190</td>
+              <td class="py-3 px-4 font-mono text-xs col-phone">+7 (905) 349-21-08</td>
+              <td class="py-3 px-4 text-[#57534E] font-mono text-xs">89 500,00 ₽</td>
+            </tr>
+
+            <!-- Row 3 (Linked person demonstration) -->
+            <tr class="hover:bg-[#FAF9F5] transition-colors bg-[#FAF9F5]/60">
+              <td class="py-3 px-4 font-mono text-center text-[#A8A29E] text-xs">03</td>
+              <td class="py-3 px-4 font-medium text-[#1C1917] col-fio">
+                Васильев Роман Сергеевич
+                <span class="ml-1 text-[10px] text-[#78716C] font-mono font-normal">(повтор связи)</span>
+              </td>
+              <td class="py-3 px-4 font-mono text-xs col-snils">781-902-334 18</td>
+              <td class="py-3 px-4 font-mono text-xs col-pass">4518 945201</td>
+              <td class="py-3 px-4 font-mono text-xs col-phone">+7 (925) 834-11-90</td>
+              <td class="py-3 px-4 text-[#57534E] font-mono text-xs">310 000,00 ₽</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Trust note at bottom -->
+      <div class="px-4 py-3 bg-[#FAF9F5] border-t border-[#E8E7E3] text-xs text-[#78716C] flex items-center justify-between font-mono">
+        <span>Ключ целостности связей: <strong class="text-[#1C1917]">7f3a9e-2026</strong></span>
+        <span class="text-[#065F46] font-semibold">✔ Деперсонализация необратима без ключа</span>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- PDF MODE -->
+  <main id="mode-pdf-content" class="hidden flex-1 flex flex-col pt-8 gap-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-xl font-bold tracking-tight text-[#1C1917]">Договор_оказания_услуг.pdf</h2>
+        <p class="text-xs text-[#78716C] mt-0.5">Чувствительные персональные данные заблокированы непрозрачными плашками</p>
+      </div>
+      <button onclick="downloadDone()" class="bg-[#1C1917] text-white text-xs font-semibold px-5 py-2.5 shadow-sm">
+        Скачать чистый PDF
+      </button>
+    </div>
+
+    <!-- Realistic Clean Paper Sheet -->
+    <div class="bg-[#E8E7E3] p-8 sm:p-12 flex justify-center items-center border border-[#D6D3D1]">
+      <div class="bg-white p-10 sm:p-14 max-w-xl w-full text-xs font-serif leading-relaxed text-[#1C1917] shadow-lg border border-[#E8E7E3]">
+        <div class="text-center font-bold text-sm tracking-wide mb-6">
+          ДОГОВОР ОБ ОКАЗАНИИ УСЛУГ № 84-А
+        </div>
+        
+        <p class="mb-4">
+          г. Москва <span class="float-right">«14» сентября 2026 г.</span>
+        </p>
+
+        <p class="mb-4 text-justify">
+          ООО «Технологии Контура», именуемое в дальнейшем «Заказчик», с одной стороны, и гражданин РФ 
+          <span class="redaction-bar">[ ФИО СКРЫТО ]</span>, 
+          паспорт серия/номер 
+          <span class="redaction-bar">[ ПАСПОРТ РФ ]</span>,
+          СНИЛС 
+          <span class="redaction-bar">[ СНИЛС ]</span>,
+          зарегистрированный по адресу: г. Москва, ул. Тверская, д. 12, кв. 44, именуемый в дальнейшем «Исполнитель», заключили настоящий Договор о нижеследующем...
+        </p>
+
+        <p class="mb-6 text-justify text-[#44403C]">
+          1. Предмет договора: Исполнитель обязуется оказать аудиторские услуги в защищённом сегменте сети Alt Linux без права копирования персональных сведений.
+        </p>
+
+        <div class="mt-12 pt-6 border-t border-[#E8E7E3] flex justify-between text-[11px] font-sans">
+          <div>
+            <strong>Заказчик:</strong><br>
+            ООО «Технологии Контура»<br>
+            ИНН 7701234567
+          </div>
+          <div>
+            <strong>Исполнитель:</strong><br>
+            <span class="redaction-bar mt-1">[ ПОДПИСЬ И ПДН ]</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const beforeData = [
+      { fio: "Иванов Иван Иванович", snils: "112-233-445 95", pass: "4510 123890", phone: "+7 (916) 123-45-67" },
+      { fio: "Смирнова Ольга Алексеевна", snils: "001-234-567 89", pass: "4608 554312", phone: "+7 (903) 765-43-21" },
+      { fio: "Иванов Иван Иванович", snils: "112-233-445 95", pass: "4510 123890", phone: "+7 (916) 123-45-67" }
+    ];
+
+    const afterData = [
+      { fio: "Васильев Роман Сергеевич", snils: "781-902-334 18", pass: "4518 945201", phone: "+7 (925) 834-11-90" },
+      { fio: "Морозова Анна Дмитриевна", snils: "452-118-903 04", pass: "4614 772190", phone: "+7 (905) 349-21-08" },
+      { fio: "Васильев Роман Сергеевич", snils: "781-902-334 18", pass: "4518 945201", phone: "+7 (925) 834-11-90" }
+    ];
+
+    let currentView = 'after';
+
+    function setViewMode(mode) {
+      currentView = mode;
+      const btnAfter = document.getElementById('btn-show-after');
+      const btnBefore = document.getElementById('btn-show-before');
+
+      if (mode === 'after') {
+        btnAfter.className = 'px-3 py-1 bg-[#1C1917] text-white font-semibold transition';
+        btnBefore.className = 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition';
+      } else {
+        btnBefore.className = 'px-3 py-1 bg-[#1C1917] text-white font-semibold transition';
+        btnAfter.className = 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition';
+      }
+
+      const dataset = mode === 'after' ? afterData : beforeData;
+      const rows = document.querySelectorAll('#table-rows tr');
+      rows.forEach((row, i) => {
+        const item = dataset[i];
+        const fioEl = row.querySelector('.col-fio');
+        if (i === 2 && mode === 'after') {
+          fioEl.innerHTML = item.fio + ' <span class="ml-1 text-[10px] text-[#78716C] font-mono font-normal">(повтор связи)</span>';
+        } else {
+          fioEl.textContent = item.fio;
+        }
+
+        if (mode === 'before') {
+          fioEl.className = 'py-3 px-4 font-medium text-rose-700 col-fio';
+        } else {
+          fioEl.className = 'py-3 px-4 font-medium text-[#1C1917] col-fio';
+        }
+
+        row.querySelector('.col-snils').textContent = item.snils;
+        row.querySelector('.col-pass').textContent = item.pass;
+        row.querySelector('.col-phone').textContent = item.phone;
+      });
+    }
+
+    function setDocMode(mode) {
+      const tabTable = document.getElementById('tab-table');
+      const tabPdf = document.getElementById('tab-pdf');
+      const contentTable = document.getElementById('mode-table-content');
+      const contentPdf = document.getElementById('mode-pdf-content');
+
+      if (mode === 'table') {
+        contentTable.classList.remove('hidden');
+        contentPdf.classList.add('hidden');
+        tabTable.className = 'px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition';
+        tabPdf.className = 'px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition';
+      } else {
+        contentTable.classList.add('hidden');
+        contentPdf.classList.remove('hidden');
+        tabPdf.className = 'px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition';
+        tabTable.className = 'px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition';
+      }
+    }
+
+    function downloadDone() {
+      alert('Чистый файл без персональных данных сохранён на ваш диск!');
+    }
+  </script>
+</body>
+</html>
