@@ -21,47 +21,49 @@ const (
 )
 
 // DetectColumnType analyzes a column header string and returns the identified PII type.
-// Russian column keywords: фио, снилс, инн, паспорт, телефон, карта, дата.
+// Russian column keywords: фио, снилс, инн, паспорт, телефон, карта, дата/срок/период.
 func DetectColumnType(header string) ColumnType {
-	h := strings.ToLower(strings.TrimSpace(header))
+	h := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(header, "\ufeff")))
 	if h == "" {
 		return ColUnknown
 	}
 
-	// 1. SNILS
+	// 1. Date / Period / Validity term (checked first so that composite headers like
+	// "Дата выдачи паспорта", "Срок действия карты", "Период" are classified as dates).
+	if strings.Contains(h, "дата") || strings.Contains(h, "date") ||
+		strings.Contains(h, "срок") || strings.Contains(h, "период") ||
+		strings.Contains(h, "рожден") || strings.Contains(h, "рожд") ||
+		strings.Contains(h, "д/р") {
+		return ColDate
+	}
+
+	// 2. SNILS
 	if strings.Contains(h, "снилс") || strings.Contains(h, "snils") {
 		return ColSNILS
 	}
 
-	// 2. INN
+	// 3. INN
 	if strings.Contains(h, "инн") || strings.Contains(h, "inn") {
 		return ColINN
 	}
 
-	// 3. Passport
+	// 4. Passport
 	if strings.Contains(h, "паспорт") || strings.Contains(h, "passport") ||
 		strings.Contains(h, "серия и номер") || strings.Contains(h, "серия номер") ||
 		strings.Contains(h, "дул") {
 		return ColPassport
 	}
 
-	// 4. Bank Card
+	// 5. Bank Card
 	if strings.Contains(h, "карт") || strings.Contains(h, "card") || strings.Contains(h, "pan") {
 		return ColCard
 	}
 
-	// 5. Phone
+	// 6. Phone
 	if strings.Contains(h, "телефон") || strings.Contains(h, "phone") ||
 		strings.Contains(h, "тел.") || h == "тел" ||
 		strings.Contains(h, "моб") || strings.Contains(h, "сотов") {
 		return ColPhone
-	}
-
-	// 6. Date (checked before FIO to avoid classifying 'дата рождения клиента' as FIO)
-	if strings.Contains(h, "дата") || strings.Contains(h, "date") ||
-		strings.Contains(h, "рожден") || strings.Contains(h, "рожд") ||
-		strings.Contains(h, "д/р") {
-		return ColDate
 	}
 
 	// 7. FIO / Person
@@ -100,6 +102,7 @@ func ParseColumnType(s string) ColumnType {
 
 // ResolveColumnTypes determines the ColumnType for each column header,
 // taking into account any manual overrides passed in options["columns"].
+// Strips UTF-8 BOM if present so lookups in options["columns"] match cleanly.
 func ResolveColumnTypes(headers []string, options map[string]interface{}) []ColumnType {
 	colTypes := make([]ColumnType, len(headers))
 
@@ -117,13 +120,19 @@ func ResolveColumnTypes(headers []string, options map[string]interface{}) []Colu
 		}
 	}
 
-	for i, h := range headers {
+	for i, rawH := range headers {
+		h := strings.TrimPrefix(rawH, "\ufeff")
+		cleanLower := strings.ToLower(strings.TrimSpace(h))
 		if colMapByName != nil {
 			if typeStr, ok := colMapByName[h]; ok {
 				colTypes[i] = ParseColumnType(typeStr)
 				continue
 			}
-			if typeStr, ok := colMapByName[strings.ToLower(strings.TrimSpace(h))]; ok {
+			if typeStr, ok := colMapByName[rawH]; ok {
+				colTypes[i] = ParseColumnType(typeStr)
+				continue
+			}
+			if typeStr, ok := colMapByName[cleanLower]; ok {
 				colTypes[i] = ParseColumnType(typeStr)
 				continue
 			}

@@ -125,6 +125,92 @@ func TestCSVHandler_Process(t *testing.T) {
 	}
 }
 
+func TestCSVHandler_CompositeHeaders(t *testing.T) {
+	anon := anonymizer.New("test-salt-composite")
+	handler := formats.NewCSVHandler(anon)
+
+	// Headers containing "Дата выдачи паспорта" and "Срок действия карты"
+	inputData := "Паспорт,Дата выдачи паспорта,Номер карты,Срок действия карты\n" +
+		"4510 123456,2015-04-10,2200 1234 5678 9012,2028-12-31\n"
+	var w bytes.Buffer
+
+	ctx := context.Background()
+	err := handler.Process(ctx, strings.NewReader(inputData), &w, nil)
+	if err != nil {
+		t.Fatalf("handler.Process failed: %v", err)
+	}
+
+	reader := csv.NewReader(&w)
+	rows, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("failed to read output csv: %v", err)
+	}
+
+	row := rows[1]
+	// row[0] is Passport (should be anonymized passport)
+	if row[0] == "4510 123456" {
+		t.Errorf("passport was not anonymized: %s", row[0])
+	}
+	// row[1] is "Дата выдачи паспорта" (must be perturbed date, e.g. YYYY-MM-DD, NOT a passport string!)
+	if row[1] == "2015-04-10" {
+		t.Errorf("passport issue date was not perturbed: %s", row[1])
+	}
+	if strings.Contains(row[1], " ") {
+		t.Errorf("passport issue date was misclassified as passport: %s", row[1])
+	}
+
+	// row[2] is Card (should be anonymized card)
+	if row[2] == "2200 1234 5678 9012" {
+		t.Errorf("card was not anonymized: %s", row[2])
+	}
+	// row[3] is "Срок действия карты" (must be perturbed date, e.g. YYYY-MM-DD, NOT a 16-digit card!)
+	if row[3] == "2028-12-31" {
+		t.Errorf("card expiration date was not perturbed: %s", row[3])
+	}
+	if strings.HasPrefix(row[3], "2200") {
+		t.Errorf("card expiration date was misclassified as card: %s", row[3])
+	}
+}
+
+func TestCSVHandler_TrimUTF8BOM(t *testing.T) {
+	anon := anonymizer.New("test-salt-bom")
+	handler := formats.NewCSVHandler(anon)
+
+	// UTF-8 BOM is \xef\xbb\xbf (\ufeff)
+	inputData := "\ufeffФИО,СНИЛС\nИванов Иван Иванович,112-233-445 95\n"
+	var w bytes.Buffer
+
+	ctx := context.Background()
+	options := map[string]interface{}{
+		"columns": map[string]string{
+			"ФИО": "FIO",
+		},
+	}
+	err := handler.Process(ctx, strings.NewReader(inputData), &w, options)
+	if err != nil {
+		t.Fatalf("handler.Process failed: %v", err)
+	}
+
+	reader := csv.NewReader(&w)
+	rows, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("failed to read output csv: %v", err)
+	}
+
+	// Verify header has no BOM
+	if strings.HasPrefix(rows[0][0], "\ufeff") {
+		t.Errorf("header still contains UTF-8 BOM: %q", rows[0][0])
+	}
+	if rows[0][0] != "ФИО" {
+		t.Errorf("expected clean header 'ФИО', got %q", rows[0][0])
+	}
+
+	// Verify row 1 was anonymized using the options override
+	if rows[1][0] == "Иванов Иван Иванович" {
+		t.Errorf("FIO was not anonymized when BOM was present: %s", rows[1][0])
+	}
+}
+
 func TestCSVHandler_CustomDelimiter(t *testing.T) {
 	anon := anonymizer.New("test-salt-delim")
 	handler := formats.NewCSVHandler(anon)

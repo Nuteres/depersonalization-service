@@ -204,6 +204,67 @@ func TestExcelHandler_Process(t *testing.T) {
 	}
 }
 
+func TestExcelHandler_CompositeHeaders(t *testing.T) {
+	anon := anonymizer.New("test-salt-excel-composite")
+	handler := formats.NewExcelHandler(anon)
+
+	f := excelize.NewFile()
+	_ = f.SetCellValue("Sheet1", "A1", "Паспорт")
+	_ = f.SetCellValue("Sheet1", "B1", "Дата выдачи паспорта")
+	_ = f.SetCellValue("Sheet1", "C1", "Номер карты")
+	_ = f.SetCellValue("Sheet1", "D1", "Срок действия карты")
+
+	_ = f.SetCellValue("Sheet1", "A2", "4512 654321")
+	_ = f.SetCellValue("Sheet1", "B2", "2018-06-25")
+	_ = f.SetCellValue("Sheet1", "C2", "2200 9876 5432 1098")
+	_ = f.SetCellValue("Sheet1", "D2", "2029-05-31")
+
+	var inBuf bytes.Buffer
+	_ = f.Write(&inBuf)
+	_ = f.Close()
+
+	var outBuf bytes.Buffer
+	err := handler.Process(context.Background(), &inBuf, &outBuf, nil)
+	if err != nil {
+		t.Fatalf("handler.Process failed: %v", err)
+	}
+
+	outExcel, err := excelize.OpenReader(&outBuf)
+	if err != nil {
+		t.Fatalf("failed to open output excel: %v", err)
+	}
+	defer outExcel.Close()
+
+	rows, err := outExcel.GetRows("Sheet1")
+	if err != nil {
+		t.Fatalf("failed to get rows: %v", err)
+	}
+
+	r := rows[1]
+	// Passport
+	if r[0] == "4512 654321" {
+		t.Errorf("passport was not anonymized: %s", r[0])
+	}
+	// "Дата выдачи паспорта" must be perturbed date, NOT passport
+	if r[1] == "2018-06-25" {
+		t.Errorf("passport date was not perturbed: %s", r[1])
+	}
+	if strings.Contains(r[1], " ") {
+		t.Errorf("passport date was misclassified as passport: %s", r[1])
+	}
+	// "Номер карты"
+	if r[2] == "2200 9876 5432 1098" {
+		t.Errorf("card was not anonymized: %s", r[2])
+	}
+	// "Срок действия карты" must be perturbed date, NOT card
+	if r[3] == "2029-05-31" {
+		t.Errorf("card expiry date was not perturbed: %s", r[3])
+	}
+	if strings.HasPrefix(r[3], "2200") {
+		t.Errorf("card expiry date was misclassified as card: %s", r[3])
+	}
+}
+
 func TestExcelHandler_ManualColumnOverrides(t *testing.T) {
 	anon := anonymizer.New("test-salt-excel-overrides")
 	handler := formats.NewExcelHandler(anon)

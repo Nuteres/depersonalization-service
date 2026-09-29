@@ -56,7 +56,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 	if !hasExplicitDelimiter {
 		peekBytes, err := bufReader.Peek(2048)
 		if err == nil || errors.Is(err, io.EOF) {
-			peekStr := string(peekBytes)
+			peekStr := strings.TrimPrefix(string(peekBytes), "\ufeff")
 			firstLine := peekStr
 			if idx := strings.IndexAny(peekStr, "\r\n"); idx != -1 {
 				firstLine = peekStr[:idx]
@@ -99,6 +99,11 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 			return nil
 		}
 		return fmt.Errorf("failed to read csv header: %w", err)
+	}
+
+	// Strip optional UTF-8 BOM from first header
+	if len(headerRow) > 0 {
+		headerRow[0] = strings.TrimPrefix(headerRow[0], "\ufeff")
 	}
 
 	// Write header unchanged
