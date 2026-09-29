@@ -150,3 +150,53 @@ func TestBatchDocuments(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateEmail(t *testing.T) {
+	anon := New("salt-email-test")
+	orig := "m.lazarkina@volga.rt.ru"
+	email1 := anon.GenerateEmail(orig)
+	email2 := anon.GenerateEmail(orig)
+
+	if email1 != email2 {
+		t.Fatalf("expected deterministic email generation: %s != %s", email1, email2)
+	}
+
+	if !strings.HasSuffix(email1, "@volga.rt.ru") {
+		t.Fatalf("expected domain to be preserved, got: %s", email1)
+	}
+
+	if email1 == orig {
+		t.Fatalf("expected anonymized email to differ from original: %s", email1)
+	}
+
+	// Different salt produces different username
+	anonDiff := New("diff-salt")
+	if anonDiff.GenerateEmail(orig) == email1 {
+		t.Fatalf("expected different email with different salt")
+	}
+
+	// Empty input
+	if anon.GenerateEmail("") != "" {
+		t.Fatalf("expected empty output for empty input")
+	}
+
+	// Without domain
+	noDomain := anon.GenerateEmail("simpleuser")
+	if !strings.HasSuffix(noDomain, "@corp.local") {
+		t.Fatalf("expected fallback domain @corp.local, got %s", noDomain)
+	}
+}
+
+func TestPerturbDate_ShortFormats(t *testing.T) {
+	anon := New("salt-short-dates")
+	shortDates := []string{"04-19-18", "12-23-13", "02-12-25"}
+	for _, d := range shortDates {
+		perturbed := anon.PerturbDate(d, 30)
+		if perturbed == d {
+			t.Fatalf("expected perturbed date to differ from %s", d)
+		}
+		if len(perturbed) != len(d) {
+			t.Fatalf("expected perturbed date to have same length: got %s for %s", perturbed, d)
+		}
+	}
+}

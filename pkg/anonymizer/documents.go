@@ -13,10 +13,36 @@ var recognizedDateLayouts = []string{
 	"2006/01/02",
 	"2006.01.02",
 	"02-01-2006",
+	"01-02-06",
+	"02-01-06",
+	"06-01-02",
+	"01/02/06",
+	"02/01/06",
+	"02.01.06",
 	"2006-01-02 15:04:05",
 	"02.01.2006 15:04:05",
 	"2006-01-02T15:04:05Z07:00",
 	"2006-01-02T15:04:05",
+}
+
+// GenerateEmail генерирует синтетический адрес электронной почты, сохраняя почтовый домен
+// и детерминированно заменяя имя пользователя на псевдоним.
+func (a *Anonymizer) GenerateEmail(original string) string {
+	trimmed := strings.TrimSpace(original)
+	if trimmed == "" {
+		return original
+	}
+
+	seed := a.DeriveSeed(trimmed)
+	domain := "corp.local"
+	atIdx := strings.LastIndex(trimmed, "@")
+	if atIdx != -1 && atIdx < len(trimmed)-1 {
+		domain = strings.TrimSpace(trimmed[atIdx+1:])
+	}
+
+	id := a.RandInt(seed, 1000, 9999)
+	userNum := a.RandInt(seed+1, 10, 99)
+	return fmt.Sprintf("user_%d_%02d@%s", id, userNum, domain)
 }
 
 // GeneratePassport генерирует синтетическую серию (4 цифры: 2 цифры региона + 2 цифры года)

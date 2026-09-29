@@ -269,3 +269,70 @@ func TestApp_EdgeCases(t *testing.T) {
 		t.Errorf("expected error on unsupported extension .txt")
 	}
 }
+
+func TestApp_GetAppInfo(t *testing.T) {
+	app := NewApp()
+	info := app.GetAppInfo()
+	if info["version"] != "v1.0" {
+		t.Errorf("expected version v1.0, got %s", info["version"])
+	}
+	if info["os"] == "" {
+		t.Errorf("expected non-empty OS name")
+	}
+	if info["arch"] == "" {
+		t.Errorf("expected non-empty Arch")
+	}
+}
+
+func TestApp_InspectExcelWithPreamble(t *testing.T) {
+	tmpDir := t.TempDir()
+	xlsxPath := filepath.Join(tmpDir, "preamble.xlsx")
+
+	f := excelize.NewFile()
+	defer f.Close()
+
+	// Write title rows
+	_ = f.SetCellValue("Sheet1", "A1", "Отчет по курсам")
+	_ = f.SetCellValue("Sheet1", "A2", "Период: 2026")
+	// Header at row 4
+	_ = f.SetCellValue("Sheet1", "A4", "ID")
+	_ = f.SetCellValue("Sheet1", "B4", "ФИО сотрудника")
+	_ = f.SetCellValue("Sheet1", "C4", "Рабочая почта")
+	_ = f.SetCellValue("Sheet1", "D4", "Дата приема")
+	// Data at row 5
+	_ = f.SetCellValue("Sheet1", "A5", "1")
+	_ = f.SetCellValue("Sheet1", "B5", "Иванов Иван")
+	_ = f.SetCellValue("Sheet1", "C5", "i.ivanov@corp.local")
+	_ = f.SetCellValue("Sheet1", "D5", "01.01.2024")
+
+	if err := f.SaveAs(xlsxPath); err != nil {
+		t.Fatalf("failed to save xlsx: %v", err)
+	}
+
+	app := NewApp()
+	info, err := app.InspectFile(xlsxPath)
+	if err != nil {
+		t.Fatalf("InspectFile failed: %v", err)
+	}
+
+	if len(info.Headers) != 4 || info.Headers[1] != "ФИО сотрудника" {
+		t.Errorf("expected header row to be detected at row 4, got headers: %v", info.Headers)
+	}
+
+	if len(info.Entities) != 3 {
+		t.Errorf("expected 3 detected entities (FIO, Email, Date), got %d: %v", len(info.Entities), info.Entities)
+	}
+
+	if len(info.PreviewRows) != 1 {
+		t.Fatalf("expected 1 data preview row, got %d", len(info.PreviewRows))
+	}
+
+	// Verify anonymization in preview
+	row := info.PreviewRows[0]
+	if row.Before[1] == row.After[1] {
+		t.Errorf("expected FIO to be anonymized in preview")
+	}
+	if row.Before[2] == row.After[2] {
+		t.Errorf("expected Email to be anonymized in preview")
+	}
+}

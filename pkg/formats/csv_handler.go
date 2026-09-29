@@ -34,6 +34,10 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		return fmt.Errorf("anonymizer is not initialized")
 	}
 
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	bufReader := bufio.NewReader(r)
 
 	// Determine delimiter
@@ -86,35 +90,75 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 
 	dateRange := getDateRange(options)
 
-	// Read header row
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+	var progressFn func(int)
+	if cb, ok := options["progress_callback"].(func(int)); ok {
+		progressFn = cb
 	}
 
-	headerRow, err := csvReader.Read()
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil
+	// Buffer up to 40 leading rows to locate the header row (supporting leading metadata/preambles)
+	var initialRows [][]string
+	for len(initialRows) < 40 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
 		}
-		return fmt.Errorf("failed to read csv header: %w", err)
+
+		rec, err := csvReader.Read()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("failed to read csv rows: %w", err)
+		}
+		initialRows = append(initialRows, rec)
 	}
 
-	// Strip optional UTF-8 BOM from first header
-	if len(headerRow) > 0 {
-		headerRow[0] = strings.TrimPrefix(headerRow[0], "\ufeff")
+	if len(initialRows) == 0 {
+		return nil
 	}
 
-	// Write header unchanged
-	if err := csvWriter.Write(headerRow); err != nil {
-		return fmt.Errorf("failed to write csv header: %w", err)
+	headerIdx, headers := FindHeaderRow(initialRows)
+	if len(headers) > 0 {
+		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
+	}
+	colTypes := ResolveColumnTypes(headers, options)
+
+	// Write any preamble rows before the header
+	for i := 0; i < headerIdx; i++ {
+		if err := csvWriter.Write(initialRows[i]); err != nil {
+			return fmt.Errorf("failed to write preamble row %d: %w", i, err)
+		}
 	}
 
-	colTypes := ResolveColumnTypes(headerRow, options)
+	// Write header row
+	if err := csvWriter.Write(headers); err != nil {
+		return fmt.Errorf("failed to write header row: %w", err)
+	}
 
-	// Stream data rows
-	outRow := make([]string, len(headerRow))
+	rowCount := 0
+
+	// Write already-buffered data rows
+	for i := headerIdx + 1; i < len(initialRows); i++ {
+		record := initialRows[i]
+		outRow := make([]string, len(record))
+		for j, val := range record {
+			var ct ColumnType
+			if j < len(colTypes) {
+				ct = colTypes[j]
+			}
+			outRow[j] = AnonymizeCell(h.Anon, ct, val, dateRange)
+		}
+		if err := csvWriter.Write(outRow); err != nil {
+			return fmt.Errorf("failed writing csv row: %w", err)
+		}
+		rowCount++
+		if progressFn != nil && rowCount%50 == 0 {
+			progressFn(rowCount)
+		}
+	}
+
+	// Stream remaining data rows from file
 	for {
 		select {
 		case <-ctx.Done():
@@ -130,10 +174,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 			return fmt.Errorf("failed reading csv row: %w", err)
 		}
 
-		if len(outRow) != len(record) {
-			outRow = make([]string, len(record))
-		}
-
+		outRow := make([]string, len(record))
 		for i, val := range record {
 			var colType ColumnType
 			if i < len(colTypes) {
@@ -144,6 +185,11 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 
 		if err := csvWriter.Write(outRow); err != nil {
 			return fmt.Errorf("failed writing csv row: %w", err)
+		}
+
+		rowCount++
+		if progressFn != nil && rowCount%50 == 0 {
+			progressFn(rowCount)
 		}
 	}
 

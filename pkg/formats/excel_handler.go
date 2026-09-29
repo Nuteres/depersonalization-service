@@ -32,6 +32,10 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 		return fmt.Errorf("anonymizer is not initialized")
 	}
 
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -92,12 +96,35 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 			return fmt.Errorf("failed to create stream writer for sheet %s: %w", sheetName, err)
 		}
 
+		// Sample leading rows to locate the header row (skipping preamble metadata if present)
+		sampleIter, err := srcFile.Rows(sheetName)
+		if err != nil {
+			return fmt.Errorf("failed to sample rows for sheet %s: %w", sheetName, err)
+		}
+		var sample [][]string
+		for sampleIter.Next() && len(sample) < 40 {
+			cols, err := sampleIter.Columns()
+			if err != nil {
+				break
+			}
+			sample = append(sample, cols)
+		}
+		_ = sampleIter.Close()
+
+		headerRowIndex, headers := FindHeaderRow(sample)
+		colTypes := ResolveColumnTypes(headers, options)
+
+		// Check for optional progress callback
+		var progressFn func(int)
+		if cb, ok := options["progress_callback"].(func(int)); ok {
+			progressFn = cb
+		}
+
 		rows, err := srcFile.Rows(sheetName)
 		if err != nil {
 			return fmt.Errorf("failed to read rows for sheet %s: %w", sheetName, err)
 		}
 
-		var colTypes []ColumnType
 		rowNum := 1
 
 		for rows.Next() {
@@ -120,9 +147,18 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 				return fmt.Errorf("failed to get cell coordinate for row %d: %w", rowNum, err)
 			}
 
-			if rowNum == 1 {
-				// Header row
-				colTypes = ResolveColumnTypes(colValues, options)
+			if rowNum < headerRowIndex+1 {
+				// Preamble row before table header: write unaltered
+				preambleCells := make([]interface{}, len(colValues))
+				for i, v := range colValues {
+					preambleCells[i] = v
+				}
+				if err := sw.SetRow(cellCoordinate, preambleCells); err != nil {
+					_ = rows.Close()
+					return fmt.Errorf("failed to write preamble row %d: %w", rowNum, err)
+				}
+			} else if rowNum == headerRowIndex+1 {
+				// Header row: write unaltered
 				headerCells := make([]interface{}, len(colValues))
 				for i, v := range colValues {
 					headerCells[i] = v
@@ -132,7 +168,7 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 					return fmt.Errorf("failed to write header row in sheet %s: %w", sheetName, err)
 				}
 			} else {
-				// Data row
+				// Data row: anonymize according to detected column types
 				dataCells := make([]interface{}, len(colValues))
 				for i, v := range colValues {
 					var colType ColumnType
@@ -145,6 +181,10 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 					_ = rows.Close()
 					return fmt.Errorf("failed to write data row %d in sheet %s: %w", rowNum, sheetName, err)
 				}
+			}
+
+			if progressFn != nil && rowNum%50 == 0 {
+				progressFn(rowNum)
 			}
 
 			rowNum++

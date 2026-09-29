@@ -18,6 +18,7 @@ const (
 	ColPhone
 	ColCard
 	ColDate
+	ColEmail
 )
 
 // DetectColumnType analyzes a column header string and returns the identified PII type.
@@ -66,13 +67,35 @@ func DetectColumnType(header string) ColumnType {
 		return ColPhone
 	}
 
-	// 7. FIO / Person
+	// 7. Email / Corporate or Personal (checked before FIO to avoid 'email сотрудника' matching FIO)
+	if strings.Contains(h, "почт") || strings.Contains(h, "email") ||
+		strings.Contains(h, "e-mail") || strings.Contains(h, "mail") {
+		return ColEmail
+	}
+
+	// 8. FIO / Person
+	// Direct name indicators
 	if strings.Contains(h, "фио") || strings.Contains(h, "ф.и.о") || strings.Contains(h, "fio") ||
-		strings.Contains(h, "фамили") || strings.Contains(h, "клиент") ||
-		strings.Contains(h, "сотрудник") || strings.Contains(h, "пациент") ||
-		strings.Contains(h, "работник") || strings.Contains(h, "физлицо") ||
-		strings.Contains(h, "физ. лицо") {
+		strings.Contains(h, "фамили") || strings.Contains(h, "отчеств") ||
+		h == "имя" || strings.Contains(h, "имя ") || strings.Contains(h, "имя_") {
 		return ColFIO
+	}
+
+	// Role/Person nouns: check they are not job titles, statuses, departments, IDs, or categories
+	if strings.Contains(h, "клиент") || strings.Contains(h, "сотрудник") ||
+		strings.Contains(h, "пациент") || strings.Contains(h, "работник") ||
+		strings.Contains(h, "физлицо") || strings.Contains(h, "физ. лицо") ||
+		strings.Contains(h, "учащ") || strings.Contains(h, "пользовател") {
+		isNonName := strings.Contains(h, "должност") || strings.Contains(h, "состояни") ||
+			strings.Contains(h, "статус") || strings.Contains(h, "категори") ||
+			strings.Contains(h, "номер") || strings.Contains(h, "табельн") ||
+			strings.Contains(h, "код") || strings.Contains(h, "отдел") ||
+			strings.Contains(h, "подразделени") || strings.Contains(h, "групп") ||
+			strings.Contains(h, "результат") || strings.Contains(h, "роль") ||
+			strings.Contains(h, "тип")
+		if !isNonName {
+			return ColFIO
+		}
 	}
 
 	return ColUnknown
@@ -95,6 +118,8 @@ func ParseColumnType(s string) ColumnType {
 		return ColCard
 	case "BIRTHDAY", "DATE":
 		return ColDate
+	case "EMAIL", "MAIL":
+		return ColEmail
 	default:
 		return ColUnknown
 	}
@@ -164,6 +189,8 @@ func AnonymizeCell(anon *anonymizer.Anonymizer, colType ColumnType, val string, 
 		return anon.GenerateCardMIR(val)
 	case ColDate:
 		return anon.PerturbDate(val, dateRange)
+	case ColEmail:
+		return anon.GenerateEmail(val)
 	default:
 		return val
 	}

@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -83,6 +85,100 @@ func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 }
 
+// GetAppInfo returns system environment metadata (current operating system, architecture, app version).
+func (a *App) GetAppInfo() map[string]string {
+	return map[string]string{
+		"version": "v1.0",
+		"os":      detectOS(),
+		"arch":    goruntime.GOARCH,
+	}
+}
+
+func detectOS() string {
+	switch goruntime.GOOS {
+	case "darwin":
+		return "macOS"
+	case "windows":
+		return "Windows"
+	case "linux":
+		if data, err := os.ReadFile("/etc/altlinux-release"); err == nil && len(data) > 0 {
+			return "Alt Linux"
+		}
+		if data, err := os.ReadFile("/etc/os-release"); err == nil {
+			s := string(data)
+			if strings.Contains(s, "ALT") || strings.Contains(s, "altlinux") {
+				return "Alt Linux"
+			}
+			for _, line := range strings.Split(s, "\n") {
+				if strings.HasPrefix(line, "PRETTY_NAME=") {
+					val := strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"")
+					if val != "" {
+						return val
+					}
+				}
+			}
+		}
+		return "Linux"
+	default:
+		return goruntime.GOOS
+	}
+}
+
+// SaveFileDialog opens a native system file save dialog with defaultFilename
+// and returns the user-selected destination path.
+func (a *App) SaveFileDialog(defaultName string) (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("application context not initialized")
+	}
+
+	ext := strings.ToLower(filepath.Ext(defaultName))
+	var filters []runtime.FileFilter
+	switch ext {
+	case ".xlsx", ".xlsm":
+		filters = []runtime.FileFilter{
+			{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
+			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
+		}
+	case ".pdf":
+		filters = []runtime.FileFilter{
+			{DisplayName: "Документ PDF (*.pdf)", Pattern: "*.pdf"},
+			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
+		}
+	default:
+		filters = []runtime.FileFilter{
+			{DisplayName: "Таблица CSV (*.csv)", Pattern: "*.csv"},
+			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
+		}
+	}
+
+	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Сохранить обработанный файл",
+		DefaultFilename: defaultName,
+		Filters:         filters,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to open save dialog: %w", err)
+	}
+	return selected, nil
+}
+
+// OpenContainingFolder opens the folder containing targetPath in the OS file manager.
+func (a *App) OpenContainingFolder(targetPath string) error {
+	if strings.TrimSpace(targetPath) == "" {
+		return errors.New("path cannot be empty")
+	}
+
+	dir := filepath.Dir(targetPath)
+	switch goruntime.GOOS {
+	case "darwin":
+		return exec.Command("open", "-R", targetPath).Start()
+	case "windows":
+		return exec.Command("explorer.exe", "/select,", targetPath).Start()
+	default:
+		return exec.Command("xdg-open", dir).Start()
+	}
+}
+
 // SelectFile opens a native system file selection dialog and returns the selected path.
 func (a *App) SelectFile() (string, error) {
 	if a.ctx == nil {
@@ -146,6 +242,12 @@ func (a *App) InspectFile(path string) (*FileInfo, error) {
 // ProcessFile processes the input file using the appropriate handler from pkg/formats,
 // writing to <dir>/<basename>_anonymized.<ext>, calculating execution time and stats.
 func (a *App) ProcessFile(path string, salt string) (*ProcessResult, error) {
+	return a.ProcessFileTo(path, "", salt)
+}
+
+// ProcessFileTo processes the input file and writes to outPath (or default if outPath is empty),
+// emitting progress events via Wails runtime.
+func (a *App) ProcessFileTo(path string, outPath string, salt string) (*ProcessResult, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("file path cannot be empty")
 	}
@@ -163,9 +265,11 @@ func (a *App) ProcessFile(path string, salt string) (*ProcessResult, error) {
 	}
 
 	ext := strings.ToLower(filepath.Ext(path))
-	dir := filepath.Dir(path)
-	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	outPath := filepath.Join(dir, base+"_anonymized"+ext)
+	if strings.TrimSpace(outPath) == "" {
+		dir := filepath.Dir(path)
+		base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		outPath = filepath.Join(dir, base+"_anonymized"+ext)
+	}
 
 	anon := anonymizer.New(salt)
 
@@ -199,8 +303,36 @@ func (a *App) ProcessFile(path string, salt string) (*ProcessResult, error) {
 		return nil, fmt.Errorf("unsupported file extension: %s", ext)
 	}
 
+	// Determine total row count for progress percentage
+	var totalRows int
+	var entitiesCount int
+	info, inspectErr := a.InspectFile(path)
+	if inspectErr == nil && info != nil {
+		totalRows = info.RowCount
+		entitiesCount = len(info.Entities)
+	}
+
+	options := map[string]interface{}{
+		"progress_callback": func(processed int) {
+			if a.ctx != nil {
+				pct := 0
+				if totalRows > 0 {
+					pct = (processed * 100) / totalRows
+					if pct > 99 {
+						pct = 99
+					}
+				}
+				runtime.EventsEmit(a.ctx, "process-progress", map[string]interface{}{
+					"processed": processed,
+					"total":     totalRows,
+					"percent":   pct,
+				})
+			}
+		},
+	}
+
 	startTime := time.Now()
-	err = handler.Process(ctx, inFile, outFile, nil)
+	err = handler.Process(ctx, inFile, outFile, options)
 	outFile.Close()
 
 	if err != nil {
@@ -208,24 +340,24 @@ func (a *App) ProcessFile(path string, salt string) (*ProcessResult, error) {
 		return nil, fmt.Errorf("anonymization error: %w", err)
 	}
 
-	durationMs := time.Since(startTime).Milliseconds()
-
-	rowsCount := 0
-	entitiesCount := 0
-	info, inspectErr := a.InspectFile(path)
-	if inspectErr == nil && info != nil {
-		rowsCount = info.RowCount
-		entitiesCount = len(info.Entities)
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "process-progress", map[string]interface{}{
+			"processed": totalRows,
+			"total":     totalRows,
+			"percent":   100,
+		})
 	}
+
+	durationMs := time.Since(startTime).Milliseconds()
 
 	return &ProcessResult{
 		Success:       true,
 		InputPath:     path,
 		OutputPath:    outPath,
-		RowsCount:     rowsCount,
+		RowsCount:     totalRows,
 		EntitiesCount: entitiesCount,
 		DurationMs:    durationMs,
-		Message:       fmt.Sprintf("Файл успешно обезличен за %d мс: %s", durationMs, filepath.Base(outPath)),
+		Message:       fmt.Sprintf("Файл успешно сохранен: %s (%d мс)", filepath.Base(outPath), durationMs),
 	}, nil
 }
 
@@ -245,7 +377,9 @@ func columnTypeDetails(colType formats.ColumnType) (typeName, desc, action strin
 	case formats.ColCard:
 		return "BANK_CARD", "Банковские карты", "Карта МИР (Luhn)"
 	case formats.ColDate:
-		return "DATE", "Даты рождения и документы", "Смещение ±30 дней"
+		return "DATE", "Даты и периоды", "Смещение ±30 дней"
+	case formats.ColEmail:
+		return "EMAIL", "Корпоративная и личная почта", "Псевдонимный адрес"
 	default:
 		return "UNKNOWN", "Обычное поле", "Без изменений"
 	}
@@ -287,10 +421,23 @@ func inspectCSV(path string) (*FileInfo, error) {
 	csvReader.FieldsPerRecord = -1
 	csvReader.LazyQuotes = true
 
-	headers, err := csvReader.Read()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read csv headers: %w", err)
+	var sample [][]string
+	for len(sample) < 40 {
+		rec, err := csvReader.Read()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			break
+		}
+		sample = append(sample, rec)
 	}
+
+	if len(sample) == 0 {
+		return nil, errors.New("csv file is empty")
+	}
+
+	headerIdx, headers := formats.FindHeaderRow(sample)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
@@ -300,9 +447,13 @@ func inspectCSV(path string) (*FileInfo, error) {
 	for i, ct := range colTypes {
 		if ct != formats.ColUnknown {
 			typeName, desc, action := columnTypeDetails(ct)
+			colName := ""
+			if i < len(headers) {
+				colName = headers[i]
+			}
 			entities = append(entities, EntityInfo{
 				ColumnIndex: i + 1,
-				ColumnName:  headers[i],
+				ColumnName:  colName,
 				Type:        typeName,
 				Description: desc,
 				Action:      action,
@@ -314,16 +465,38 @@ func inspectCSV(path string) (*FileInfo, error) {
 	var previewRows []PreviewRow
 	rowCount := 0
 
+	for i := headerIdx + 1; i < len(sample); i++ {
+		rowCount++
+		if len(previewRows) < 5 {
+			cols := sample[i]
+			before := make([]string, len(headers))
+			after := make([]string, len(headers))
+			for j := 0; j < len(headers); j++ {
+				val := ""
+				if j < len(cols) {
+					val = cols[j]
+				}
+				before[j] = val
+				ct := formats.ColUnknown
+				if j < len(colTypes) {
+					ct = colTypes[j]
+				}
+				after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+			}
+			previewRows = append(previewRows, PreviewRow{
+				Index:  rowCount,
+				Before: before,
+				After:  after,
+			})
+		}
+	}
+
 	for {
 		record, err := csvReader.Read()
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
 			break
 		}
 		rowCount++
-
 		if len(previewRows) < 5 {
 			before := make([]string, len(headers))
 			after := make([]string, len(headers))
@@ -379,20 +552,27 @@ func inspectXLSX(path string) (*FileInfo, error) {
 	}
 
 	sheetName := sheets[0]
-	rows, err := xl.Rows(sheetName)
+
+	// Sample up to 40 rows to find table header row (skipping preamble metadata if present)
+	sampleIter, err := xl.Rows(sheetName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read rows from sheet %s: %w", sheetName, err)
 	}
-	defer rows.Close()
+	var sample [][]string
+	for sampleIter.Next() && len(sample) < 40 {
+		cols, err := sampleIter.Columns()
+		if err != nil {
+			break
+		}
+		sample = append(sample, cols)
+	}
+	_ = sampleIter.Close()
 
-	if !rows.Next() {
+	if len(sample) == 0 {
 		return nil, errors.New("xlsx sheet is empty")
 	}
 
-	headers, err := rows.Columns()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read headers: %w", err)
-	}
+	headerIdx, headers := formats.FindHeaderRow(sample)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
@@ -402,9 +582,13 @@ func inspectXLSX(path string) (*FileInfo, error) {
 	for i, ct := range colTypes {
 		if ct != formats.ColUnknown {
 			typeName, desc, action := columnTypeDetails(ct)
+			colName := ""
+			if i < len(headers) {
+				colName = headers[i]
+			}
 			entities = append(entities, EntityInfo{
 				ColumnIndex: i + 1,
-				ColumnName:  headers[i],
+				ColumnName:  colName,
 				Type:        typeName,
 				Description: desc,
 				Action:      action,
@@ -416,20 +600,17 @@ func inspectXLSX(path string) (*FileInfo, error) {
 	var previewRows []PreviewRow
 	rowCount := 0
 
-	for rows.Next() {
-		colValues, err := rows.Columns()
-		if err != nil {
-			break
-		}
+	// Preview rows and row count from sample
+	for i := headerIdx + 1; i < len(sample); i++ {
 		rowCount++
-
 		if len(previewRows) < 5 {
+			cols := sample[i]
 			before := make([]string, len(headers))
 			after := make([]string, len(headers))
 			for j := 0; j < len(headers); j++ {
 				val := ""
-				if j < len(colValues) {
-					val = colValues[j]
+				if j < len(cols) {
+					val = cols[j]
 				}
 				before[j] = val
 				ct := formats.ColUnknown
@@ -444,6 +625,41 @@ func inspectXLSX(path string) (*FileInfo, error) {
 				After:  after,
 			})
 		}
+	}
+
+	// Count remaining rows in sheet
+	remainingIter, err := xl.Rows(sheetName)
+	if err == nil {
+		skipped := 0
+		for remainingIter.Next() {
+			skipped++
+			if skipped > len(sample) {
+				rowCount++
+				if len(previewRows) < 5 {
+					cols, _ := remainingIter.Columns()
+					before := make([]string, len(headers))
+					after := make([]string, len(headers))
+					for j := 0; j < len(headers); j++ {
+						val := ""
+						if j < len(cols) {
+							val = cols[j]
+						}
+						before[j] = val
+						ct := formats.ColUnknown
+						if j < len(colTypes) {
+							ct = colTypes[j]
+						}
+						after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+					}
+					previewRows = append(previewRows, PreviewRow{
+						Index:  rowCount,
+						Before: before,
+						After:  after,
+					})
+				}
+			}
+		}
+		_ = remainingIter.Close()
 	}
 
 	return &FileInfo{

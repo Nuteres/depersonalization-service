@@ -21,3 +21,9 @@ Thumbs.db
 tmp/
 .superpowers/
 *.log
+
+# User data files
+*.xlsx
+*.xlsm
+*.csv
+*.tsv

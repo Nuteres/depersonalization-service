@@ -14,7 +14,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:  "Деперсонализатор ПДн (152-ФЗ) — Автономный контур",
+		Title:  "Деперсонализация ПД (152-ФЗ)",
 		Width:  1200,
 		Height: 850,
 		AssetServer: &assetserver.Options{

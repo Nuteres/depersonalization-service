@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Деперсонализатор ПДн — Автономный контур 152-ФЗ</title>
+  <title>Деперсонализация ПД — 152-ФЗ</title>
   <script src="tailwind.min.js"></script>
   <style>
     :root {
@@ -25,11 +25,11 @@
     body {
       background-color: var(--bg);
       color: var(--ink);
-      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       letter-spacing: -0.011em;
     }
     .font-mono {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
       letter-spacing: -0.02em;
     }
     .redaction-bar {
@@ -43,27 +43,20 @@
       display: inline-block;
       user-select: none;
     }
-    .stamp {
-      border: 1.5px solid #1C1917;
-      text-transform: uppercase;
-      font-family: 'JetBrains Mono', monospace;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-    }
   </style>
 </head>
-<body class="min-h-screen flex flex-col p-6 sm:p-10 max-w-5xl mx-auto selection:bg-amber-100">
+<body class="min-h-screen flex flex-col p-6 sm:p-10 max-w-6xl mx-auto selection:bg-amber-100">
 
   <!-- Minimal Brand & Environment Bar -->
   <header class="flex flex-col sm:flex-row sm:items-center justify-between pb-8 border-b border-[#E8E7E3] gap-4">
     <div class="flex items-center space-x-3.5">
-      <div class="w-9 h-9 bg-[#1C1917] rounded-none flex items-center justify-center text-white font-mono text-sm font-bold">
+      <div class="w-9 h-9 bg-[#1C1917] rounded-none flex items-center justify-center text-white font-mono text-sm font-bold shadow-sm">
         152
       </div>
       <div>
         <div class="flex items-center space-x-2">
-          <span class="text-base font-bold tracking-tight text-[#1C1917]">Контур Обезличивания</span>
-          <span class="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-[#E8E7E3] text-[#44403C]">v1.0 • Alt Linux</span>
+          <span class="text-base font-bold tracking-tight text-[#1C1917]">Деперсонализация ПД</span>
+          <span id="app-env-badge" class="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-[#E8E7E3] text-[#44403C]">v1.0 • Загрузка...</span>
         </div>
         <p class="text-xs text-[#78716C]">Локальная очистка персональных данных без выхода в сеть</p>
       </div>
@@ -71,7 +64,7 @@
 
     <!-- Actions Bar -->
     <div class="flex items-center space-x-3 self-start sm:self-auto">
-      <button onclick="handleSelectFile()" class="px-4 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold shadow-sm transition flex items-center space-x-1.5">
+      <button onclick="handleSelectFile()" class="px-4 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold shadow-sm transition flex items-center space-x-1.5 active:scale-[0.99]">
         <span>📁 Открыть файл...</span>
       </button>
       <!-- Active Document Tabs -->
@@ -91,92 +84,45 @@
     
     <!-- Hero / Summary Banner -->
     <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
-      <div>
+      <div class="flex-1">
         <div id="file-meta-bar" class="flex items-center space-x-2 text-xs font-mono text-[#78716C] uppercase mb-1">
-          <span>Файл загружен</span>
-          <span>•</span>
-          <span>4 250 строк</span>
-          <span>•</span>
-          <span>XLSX</span>
+          <span>Файл не выбран</span>
         </div>
         <h2 id="file-name-title" class="text-2xl font-bold tracking-tight text-[#1C1917]">
-          клиенты_реестр_2026.xlsx
+          Выберите файл для деперсонализации
         </h2>
         <p id="file-desc-text" class="text-sm text-[#78716C] mt-1 max-w-xl">
-          Обнаружены 4 категории ПДн. Все чувствительные поля заменены на вымышленные реквизиты с сохранением связей между строками.
+          Таблицы Excel (.xlsx) и CSV анализируются локально с поиском шапки и категорий ПДн по требованиям 152-ФЗ.
         </p>
       </div>
 
       <!-- Action Button -->
-      <button id="btn-download" onclick="downloadDone()" class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-6 py-3 transition active:scale-[0.99] flex items-center justify-center space-x-2 shadow-sm whitespace-nowrap">
-        <span>Скачать чистый файл</span>
+      <button id="btn-save" onclick="handleSaveProcessedFile()" class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-6 py-3 transition active:scale-[0.99] flex items-center justify-center space-x-2 shadow-sm whitespace-nowrap">
+        <span>💾 Сохранить обработанный файл</span>
         <span class="font-mono text-[11px] text-[#A8A29E]">(.xlsx)</span>
       </button>
     </div>
 
-    <!-- Entity Cards Grid (Quiet, clean overview instead of 20 dropdowns) -->
-    <div id="entity-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-      
-      <!-- Entity 1: FIO -->
-      <div class="bg-white border border-[#E8E7E3] p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
-            <span>КОЛОНКА #1</span>
-            <span class="text-emerald-700 font-semibold">● Заменено</span>
+    <!-- Entity Cards Grid -->
+    <div>
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">Обнаруженные категории ПДн</span>
+        <span id="entity-count-badge" class="text-xs font-mono text-[#78716C]">0 категорий</span>
+      </div>
+      <div id="entity-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+        <div class="col-span-full bg-white border border-[#E8E7E3] p-6 text-sm text-[#78716C] flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <span class="text-xl">📁</span>
+            <div>
+              <div class="font-semibold text-[#1C1917]">Файл пока не открыт</div>
+              <div class="text-xs text-[#78716C]">Нажмите «Открыть файл...», чтобы загрузить Excel (.xlsx) или CSV для деперсонализации.</div>
+            </div>
           </div>
-          <div class="font-bold text-sm text-[#1C1917]">ФИО Клиента</div>
-          <div class="text-xs text-[#78716C] mt-0.5">Русские фамилии, имена и отчества</div>
-        </div>
-        <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono text-[#065F46] bg-[#ECFDF5] -mx-4 -mb-4 p-2.5">
-          ➜ Синтетический профиль
+          <button onclick="handleSelectFile()" class="px-3.5 py-1.5 bg-[#FAF9F5] border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] transition">
+            Выбрать файл
+          </button>
         </div>
       </div>
-
-      <!-- Entity 2: SNILS -->
-      <div class="bg-white border border-[#E8E7E3] p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
-            <span>КОЛОНКА #2</span>
-            <span class="text-emerald-700 font-semibold">● Заменено</span>
-          </div>
-          <div class="font-bold text-sm text-[#1C1917]">СНИЛС</div>
-          <div class="text-xs text-[#78716C] mt-0.5">Страховые номера РФ</div>
-        </div>
-        <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono text-[#065F46] bg-[#ECFDF5] -mx-4 -mb-4 p-2.5">
-          ➜ Валидный модуль 101
-        </div>
-      </div>
-
-      <!-- Entity 3: Passport -->
-      <div class="bg-white border border-[#E8E7E3] p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
-            <span>КОЛОНКА #3</span>
-            <span class="text-emerald-700 font-semibold">● Заменено</span>
-          </div>
-          <div class="font-bold text-sm text-[#1C1917]">Паспорт РФ</div>
-          <div class="text-xs text-[#78716C] mt-0.5">Серия и номер гражданина РФ</div>
-        </div>
-        <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono text-[#065F46] bg-[#ECFDF5] -mx-4 -mb-4 p-2.5">
-          ➜ Случайная серия/номер
-        </div>
-      </div>
-
-      <!-- Entity 4: Phone -->
-      <div class="bg-white border border-[#E8E7E3] p-4 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
-            <span>КОЛОНКА #4</span>
-            <span class="text-emerald-700 font-semibold">● Заменено</span>
-          </div>
-          <div class="font-bold text-sm text-[#1C1917]">Телефон</div>
-          <div class="text-xs text-[#78716C] mt-0.5">Мобильные операторы РФ</div>
-        </div>
-        <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono text-[#065F46] bg-[#ECFDF5] -mx-4 -mb-4 p-2.5">
-          ➜ Псевдонимный номер
-        </div>
-      </div>
-
     </div>
 
     <!-- Data Inspection Box -->
@@ -186,7 +132,7 @@
       <div class="p-4 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]">
         <div class="flex items-center space-x-2">
           <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">Предпросмотр таблицы</span>
-          <span class="text-xs text-[#78716C]">(первые 3 строки)</span>
+          <span id="preview-count-label" class="text-xs text-[#78716C]">(первые строки)</span>
         </div>
 
         <!-- Toggle: Before vs After -->
@@ -201,59 +147,28 @@
       </div>
 
       <!-- Table View -->
-      <div class="overflow-x-auto">
+      <div class="overflow-x-auto max-h-[500px] overflow-y-auto">
         <table class="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr class="border-b border-[#E8E7E3] bg-white text-[#78716C] font-mono text-[11px]">
+          <thead class="sticky top-0 z-10 bg-white">
+            <tr class="border-b border-[#E8E7E3] bg-white text-[#78716C] font-mono text-[11px] whitespace-nowrap">
               <th class="py-3 px-4 font-normal w-12 text-center text-[#A8A29E]">#</th>
-              <th class="py-3 px-4 font-semibold text-[#1C1917]">ФИО Клиента</th>
-              <th class="py-3 px-4 font-semibold text-[#1C1917]">СНИЛС</th>
-              <th class="py-3 px-4 font-semibold text-[#1C1917]">Паспорт РФ</th>
-              <th class="py-3 px-4 font-semibold text-[#1C1917]">Телефон</th>
-              <th class="py-3 px-4 font-normal text-[#78716C]">Сумма заказа</th>
+              <th class="py-3 px-4 font-semibold text-[#1C1917]">Колонка</th>
             </tr>
           </thead>
           <tbody id="table-rows" class="divide-y divide-[#F0EFEB] text-[13px]">
-            <!-- Row 1 -->
-            <tr class="hover:bg-[#FAF9F5] transition-colors">
-              <td class="py-3 px-4 font-mono text-center text-[#A8A29E] text-xs">01</td>
-              <td class="py-3 px-4 font-medium text-[#1C1917] col-fio">Васильев Роман Сергеевич</td>
-              <td class="py-3 px-4 font-mono text-xs col-snils">781-902-334 18</td>
-              <td class="py-3 px-4 font-mono text-xs col-pass">4518 945201</td>
-              <td class="py-3 px-4 font-mono text-xs col-phone">+7 (925) 834-11-90</td>
-              <td class="py-3 px-4 text-[#57534E] font-mono text-xs">145 000,00 ₽</td>
-            </tr>
-
-            <!-- Row 2 -->
-            <tr class="hover:bg-[#FAF9F5] transition-colors">
-              <td class="py-3 px-4 font-mono text-center text-[#A8A29E] text-xs">02</td>
-              <td class="py-3 px-4 font-medium text-[#1C1917] col-fio">Морозова Анна Дмитриевна</td>
-              <td class="py-3 px-4 font-mono text-xs col-snils">452-118-903 04</td>
-              <td class="py-3 px-4 font-mono text-xs col-pass">4614 772190</td>
-              <td class="py-3 px-4 font-mono text-xs col-phone">+7 (905) 349-21-08</td>
-              <td class="py-3 px-4 text-[#57534E] font-mono text-xs">89 500,00 ₽</td>
-            </tr>
-
-            <!-- Row 3 (Linked person demonstration) -->
-            <tr class="hover:bg-[#FAF9F5] transition-colors bg-[#FAF9F5]/60">
-              <td class="py-3 px-4 font-mono text-center text-[#A8A29E] text-xs">03</td>
-              <td class="py-3 px-4 font-medium text-[#1C1917] col-fio">
-                Васильев Роман Сергеевич
-                <span class="ml-1 text-[10px] text-[#78716C] font-mono font-normal">(повтор связи)</span>
+            <tr>
+              <td colspan="2" class="py-8 text-center text-xs text-[#78716C] font-mono">
+                Откройте файл для просмотра строк таблицы
               </td>
-              <td class="py-3 px-4 font-mono text-xs col-snils">781-902-334 18</td>
-              <td class="py-3 px-4 font-mono text-xs col-pass">4518 945201</td>
-              <td class="py-3 px-4 font-mono text-xs col-phone">+7 (925) 834-11-90</td>
-              <td class="py-3 px-4 text-[#57534E] font-mono text-xs">310 000,00 ₽</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <!-- Trust note at bottom -->
-      <div class="px-4 py-3 bg-[#FAF9F5] border-t border-[#E8E7E3] text-xs text-[#78716C] flex items-center justify-between font-mono">
-        <span>Ключ целостности связей: <strong class="text-[#1C1917]">7f3a9e-2026</strong></span>
-        <span class="text-[#065F46] font-semibold">✔ Деперсонализация необратима без ключа</span>
+      <div class="px-4 py-3 bg-[#FAF9F5] border-t border-[#E8E7E3] text-xs text-[#78716C] flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-mono">
+        <span>Ключ целостности связей: <strong class="text-[#1C1917]" id="salt-display">152fz-secure-salt</strong></span>
+        <span class="text-[#065F46] font-semibold">✔ Деперсонализация необратима без секретного ключа</span>
       </div>
 
     </div>
@@ -264,72 +179,117 @@
   <main id="mode-pdf-content" class="hidden flex-1 flex flex-col pt-8 gap-6">
     <div class="flex items-center justify-between">
       <div>
-        <h2 id="pdf-file-name-title" class="text-xl font-bold tracking-tight text-[#1C1917]">Договор_оказания_услуг.pdf</h2>
-        <p class="text-xs text-[#78716C] mt-0.5">Чувствительные персональные данные заблокированы непрозрачными плашками</p>
+        <h2 id="pdf-file-name-title" class="text-xl font-bold tracking-tight text-[#1C1917]">Документ PDF</h2>
+        <p class="text-xs text-[#78716C] mt-0.5">Чувствительные персональные данные вырезаются физически и закрываются плашками</p>
       </div>
-      <button onclick="downloadDone()" class="bg-[#1C1917] text-white text-xs font-semibold px-5 py-2.5 shadow-sm">
-        Скачать чистый PDF
+      <button onclick="handleSaveProcessedFile()" class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-5 py-2.5 shadow-sm flex items-center space-x-1.5 transition">
+        <span>💾</span><span>Сохранить обработанный PDF</span>
       </button>
     </div>
 
-    <!-- Realistic Clean Paper Sheet -->
+    <!-- Clean Paper Sheet -->
     <div class="bg-[#E8E7E3] p-8 sm:p-12 flex justify-center items-center border border-[#D6D3D1]">
       <div class="bg-white p-10 sm:p-14 max-w-xl w-full text-xs font-serif leading-relaxed text-[#1C1917] shadow-lg border border-[#E8E7E3]">
         <div class="text-center font-bold text-sm tracking-wide mb-6">
-          ДОГОВОР ОБ ОКАЗАНИИ УСЛУГ № 84-А
+          ПРЕДПРОСМОТР PDF (Blackout Redaction)
         </div>
         
-        <p class="mb-4">
-          г. Москва <span class="float-right">«14» сентября 2026 г.</span>
-        </p>
-
         <p id="pdf-snippet-view" class="mb-4 text-justify">
-          ООО «Технологии Контура», именуемое в дальнейшем «Заказчик», с одной стороны, и гражданин РФ 
-          <span class="redaction-bar">[ ФИО СКРЫТО ]</span>, 
-          паспорт серия/номер 
-          <span class="redaction-bar">[ ПАСПОРТ РФ ]</span>,
-          СНИЛС 
-          <span class="redaction-bar">[ СНИЛС ]</span>,
-          зарегистрированный по адресу: г. Москва, ул. Тверская, д. 12, кв. 44, именуемый в дальнейшем «Исполнитель», заключили настоящий Договор о нижеследующем...
+          Откройте PDF файл для просмотра защищенного текста со скрытыми персональными данными.
         </p>
 
-        <p class="mb-6 text-justify text-[#44403C]">
-          1. Предмет договора: Исполнитель обязуется оказать аудиторские услуги в защищённом сегменте сети Alt Linux без права копирования персональных сведений.
-        </p>
-
-        <div class="mt-12 pt-6 border-t border-[#E8E7E3] flex justify-between text-[11px] font-sans">
-          <div>
-            <strong>Заказчик:</strong><br>
-            ООО «Технологии Контура»<br>
-            ИНН 7701234567
-          </div>
-          <div>
-            <strong>Исполнитель:</strong><br>
-            <span class="redaction-bar mt-1">[ ПОДПИСЬ И ПДН ]</span>
-          </div>
+        <div class="mt-8 pt-4 border-t border-[#E8E7E3] flex justify-between text-[11px] font-sans text-[#78716C]">
+          <span>Физическое стирание символов</span>
+          <span class="redaction-bar">[ ПДн СКРЫТО ]</span>
         </div>
       </div>
     </div>
   </main>
 
+  <!-- Processing & Progress Modal -->
+  <div id="progress-modal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50">
+    <div class="bg-white border border-[#E8E7E3] shadow-2xl max-w-md w-full p-6 flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b border-[#F0EFEB] pb-3">
+        <div class="flex items-center space-x-2">
+          <span id="progress-indicator" class="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
+          <span id="progress-modal-title" class="text-sm font-bold text-[#1C1917]">Деперсонализация ПДн</span>
+        </div>
+        <span id="progress-pct-badge" class="font-mono text-xs font-bold text-[#1C1917] bg-[#F0EFEB] px-2 py-0.5">0%</span>
+      </div>
+
+      <div class="space-y-2">
+        <div class="w-full bg-[#F0EFEB] h-3 rounded-none overflow-hidden">
+          <div id="progress-bar-fill" class="bg-[#1C1917] h-full transition-all duration-150" style="width: 0%"></div>
+        </div>
+        <div class="flex items-center justify-between text-xs font-mono text-[#78716C]">
+          <span id="progress-status-text">Инициализация...</span>
+          <span id="progress-count-text">0 / 0 строк</span>
+        </div>
+      </div>
+
+      <!-- Result state (revealed on completion) -->
+      <div id="progress-success-box" class="hidden mt-2 p-3 bg-[#ECFDF5] border border-[#A7F3D0] text-xs text-[#065F46] flex flex-col gap-1 font-mono">
+        <div class="font-bold flex items-center space-x-1.5">
+          <span>✔</span><span>Файл успешно сохранен без персональных данных</span>
+        </div>
+        <div id="progress-saved-path" class="text-[11px] text-[#047857] truncate mt-1"></div>
+        <div id="progress-stats-text" class="text-[11px] text-[#065F46] mt-0.5"></div>
+      </div>
+
+      <div class="flex items-center justify-end space-x-2 pt-2 border-t border-[#F0EFEB]">
+        <button id="btn-reveal-folder" onclick="handleRevealFolder()" class="hidden px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold transition">
+          📁 Показать в папке
+        </button>
+        <button id="btn-close-progress" onclick="closeProgressModal()" class="px-4 py-2 bg-[#1C1917] text-white text-xs font-semibold transition">
+          Закрыть
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let currentFilePath = '';
     let currentFileInfo = null;
     let currentSalt = '152fz-secure-salt';
-
-    const beforeData = [
-      { fio: "Иванов Иван Иванович", snils: "112-233-445 95", pass: "4510 123890", phone: "+7 (916) 123-45-67" },
-      { fio: "Смирнова Ольга Алексеевна", snils: "001-234-567 89", pass: "4608 554312", phone: "+7 (903) 765-43-21" },
-      { fio: "Иванов Иван Иванович", snils: "112-233-445 95", pass: "4510 123890", phone: "+7 (916) 123-45-67" }
-    ];
-
-    const afterData = [
-      { fio: "Васильев Роман Сергеевич", snils: "781-902-334 18", pass: "4518 945201", phone: "+7 (925) 834-11-90" },
-      { fio: "Морозова Анна Дмитриевна", snils: "452-118-903 04", pass: "4614 772190", phone: "+7 (905) 349-21-08" },
-      { fio: "Васильев Роман Сергеевич", snils: "781-902-334 18", pass: "4518 945201", phone: "+7 (925) 834-11-90" }
-    ];
-
+    let currentSavedPath = '';
     let currentView = 'after';
+
+    // 1. Initialize System Environment Badge
+    async function initAppEnv() {
+      let osName = 'Система';
+      let version = 'v1.0';
+
+      try {
+        if (window.go && window.go.main && window.go.main.App && window.go.main.App.GetAppInfo) {
+          const info = await window.go.main.App.GetAppInfo();
+          if (info) {
+            if (info.os) osName = info.os;
+            if (info.version) version = info.version;
+          }
+        } else {
+          // Browser fallback detection
+          const ua = navigator.userAgent || '';
+          if (ua.includes('Mac') || ua.includes('Darwin')) osName = 'macOS';
+          else if (ua.includes('Win')) osName = 'Windows';
+          else if (ua.includes('Linux')) osName = 'Linux';
+        }
+      } catch (err) {
+        console.warn("Could not detect OS info:", err);
+      }
+
+      const badge = document.getElementById('app-env-badge');
+      if (badge) {
+        badge.textContent = `${version} • ${osName}`;
+      }
+
+      // Subscribe to Wails progress events
+      if (window.runtime && window.runtime.EventsOn) {
+        window.runtime.EventsOn('process-progress', (data) => {
+          onProgressUpdate(data);
+        });
+      }
+    }
+    window.addEventListener('DOMContentLoaded', initAppEnv);
 
     function setViewMode(mode) {
       currentView = mode;
@@ -351,48 +311,36 @@
       const tbody = document.getElementById('table-rows');
       if (!tbody) return;
 
-      if (currentFileInfo && currentFileInfo.previewRows && currentFileInfo.previewRows.length > 0) {
-        tbody.innerHTML = '';
-        currentFileInfo.previewRows.forEach((row, i) => {
-          const tr = document.createElement('tr');
-          tr.className = 'hover:bg-[#FAF9F5] transition-colors';
-          const vals = currentView === 'after' ? row.after : row.before;
-
-          let html = `<td class="py-3 px-4 font-mono text-center text-[#A8A29E] text-xs">${String(row.index || i+1).padStart(2, '0')}</td>`;
-          vals.forEach((v, cIdx) => {
-            const isPiiCol = currentFileInfo.entities && currentFileInfo.entities.some(e => e.columnIndex === (cIdx + 1));
-            let cls = "py-3 px-4 text-xs font-mono";
-            if (isPiiCol) {
-              cls += currentView === 'before' ? ' font-medium text-rose-700 bg-rose-50/40' : ' font-medium text-[#1C1917]';
-            } else {
-              cls += ' text-[#57534E]';
-            }
-            html += `<td class="${cls}">${escapeHtml(v)}</td>`;
-          });
-          tr.innerHTML = html;
-          tbody.appendChild(tr);
-        });
+      if (!currentFileInfo || !currentFileInfo.previewRows || currentFileInfo.previewRows.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="${(currentFileInfo && currentFileInfo.headers ? currentFileInfo.headers.length + 1 : 2)}" class="py-8 text-center text-xs text-[#78716C] font-mono">
+              В таблице нет строк данных для отображения
+            </td>
+          </tr>
+        `;
         return;
       }
 
-      // Default demo table render
-      const dataset = currentView === 'after' ? afterData : beforeData;
-      const rows = tbody.querySelectorAll('tr');
-      rows.forEach((row, i) => {
-        if (!dataset[i]) return;
-        const item = dataset[i];
-        const fioEl = row.querySelector('.col-fio');
-        if (fioEl) {
-          if (i === 2 && currentView === 'after') {
-            fioEl.innerHTML = escapeHtml(item.fio) + ' <span class="ml-1 text-[10px] text-[#78716C] font-mono font-normal">(повтор связи)</span>';
+      tbody.innerHTML = '';
+      currentFileInfo.previewRows.forEach((row, i) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-[#FAF9F5] transition-colors whitespace-nowrap';
+        const vals = currentView === 'after' ? row.after : row.before;
+
+        let html = `<td class="py-3 px-4 font-mono text-center text-[#A8A29E] text-xs">${String(row.index || i+1).padStart(2, '0')}</td>`;
+        vals.forEach((v, cIdx) => {
+          const isPiiCol = currentFileInfo.entities && currentFileInfo.entities.some(e => e.columnIndex === (cIdx + 1));
+          let cls = "py-3 px-4 text-xs font-mono";
+          if (isPiiCol) {
+            cls += currentView === 'before' ? ' font-medium text-rose-700 bg-rose-50/40' : ' font-medium text-[#1C1917] bg-emerald-50/30';
           } else {
-            fioEl.textContent = item.fio;
+            cls += ' text-[#57534E]';
           }
-          fioEl.className = currentView === 'before' ? 'py-3 px-4 font-medium text-rose-700 col-fio' : 'py-3 px-4 font-medium text-[#1C1917] col-fio';
-        }
-        const s = row.querySelector('.col-snils'); if (s) s.textContent = item.snils;
-        const p = row.querySelector('.col-pass'); if (p) p.textContent = item.pass;
-        const ph = row.querySelector('.col-phone'); if (ph) ph.textContent = item.phone;
+          html += `<td class="${cls}">${escapeHtml(v)}</td>`;
+        });
+        tr.innerHTML = html;
+        tbody.appendChild(tr);
       });
     }
 
@@ -423,14 +371,14 @@
             await loadFile(selected);
           }
         } else {
-          // File input fallback for demo
+          // Demo fallback input
           const input = document.createElement('input');
           input.type = 'file';
           input.accept = '.csv,.tsv,.xlsx,.xlsm,.pdf';
           input.onchange = (e) => {
             const f = e.target.files[0];
             if (f) {
-              alert("В браузере выбран файл: " + f.name + ". В среде Wails десктопного приложения файл обрабатывается локально.");
+              alert("В браузере выбран файл: " + f.name + ". В среде Wails десктопного приложения файл обрабатывается локально через движок Go.");
             }
           };
           input.click();
@@ -465,39 +413,58 @@
         }
 
         // Update description
+        const entityCount = info.entities ? info.entities.length : 0;
         const descEl = document.getElementById('file-desc-text');
         if (descEl) {
-          descEl.textContent = `Обнаружено категорий ПДн: ${info.entities ? info.entities.length : 0}. Чувствительные поля подготовлены к безопасной деперсонализации по 152-ФЗ.`;
+          descEl.textContent = `Обнаружено категорий ПДн: ${entityCount}. Чувствительные поля подготовлены к безопасной деперсонализации по 152-ФЗ.`;
         }
 
-        // Update download button extension
-        const btnBadge = document.querySelector('#btn-download .font-mono');
+        const countBadge = document.getElementById('entity-count-badge');
+        if (countBadge) {
+          countBadge.textContent = `${entityCount} категорий`;
+        }
+
+        // Update button badge
+        const btnBadge = document.querySelector('#btn-save .font-mono');
         if (btnBadge && info.extension) {
           btnBadge.textContent = `(.${info.extension.toLowerCase()})`;
         }
 
-        // Render Entity Cards
+        // Render Entity Cards dynamically
         const cardContainer = document.getElementById('entity-cards-container');
-        if (cardContainer && info.entities && info.entities.length > 0) {
+        if (cardContainer) {
           cardContainer.innerHTML = '';
-          info.entities.slice(0, 8).forEach((ent) => {
-            const card = document.createElement('div');
-            card.className = 'bg-white border border-[#E8E7E3] p-4 flex flex-col justify-between';
-            card.innerHTML = `
-              <div>
-                <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
-                  <span>КОЛОНКА #${ent.columnIndex}</span>
-                  <span class="text-emerald-700 font-semibold">● Заменено</span>
+          if (info.entities && info.entities.length > 0) {
+            info.entities.forEach((ent) => {
+              const card = document.createElement('div');
+              card.className = 'bg-white border border-[#E8E7E3] p-4 flex flex-col justify-between shadow-xs hover:border-[#1C1917] transition-colors';
+              card.innerHTML = `
+                <div>
+                  <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
+                    <span>КОЛОНКА #${ent.columnIndex}</span>
+                    <span class="text-emerald-700 font-semibold">● Заменено</span>
+                  </div>
+                  <div class="font-bold text-sm text-[#1C1917] truncate" title="${escapeHtml(ent.columnName)}">${escapeHtml(ent.columnName)}</div>
+                  <div class="text-xs text-[#78716C] mt-0.5">${escapeHtml(ent.description)}</div>
                 </div>
-                <div class="font-bold text-sm text-[#1C1917] truncate" title="${escapeHtml(ent.columnName)}">${escapeHtml(ent.columnName)}</div>
-                <div class="text-xs text-[#78716C] mt-0.5">${escapeHtml(ent.description)}</div>
-              </div>
-              <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono text-[#065F46] bg-[#ECFDF5] -mx-4 -mb-4 p-2.5">
-                ➜ ${escapeHtml(ent.action)}
+                <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono text-[#065F46] bg-[#ECFDF5] -mx-4 -mb-4 p-2.5">
+                  ➜ ${escapeHtml(ent.action)}
+                </div>
+              `;
+              cardContainer.appendChild(card);
+            });
+          } else {
+            // No PII found in file
+            cardContainer.innerHTML = `
+              <div class="col-span-full bg-white border border-[#E8E7E3] p-5 text-xs text-[#78716C] flex items-center space-x-3">
+                <span class="text-base text-emerald-600 font-bold">✔</span>
+                <div>
+                  <div class="font-semibold text-[#1C1917] text-sm">В файле не обнаружено персональных данных</div>
+                  <div class="text-xs text-[#78716C] mt-0.5">В таблице нет колонок ФИО, СНИЛС, ИНН, Паспортов, Телефонов, Почты или Дат. Все исходные колонки будут сохранены без изменений.</div>
+                </div>
               </div>
             `;
-            cardContainer.appendChild(card);
-          });
+          }
         }
 
         // Render Headers for Table
@@ -505,15 +472,20 @@
           const thead = document.querySelector('#mode-table-content thead tr');
           if (thead) {
             let ths = '<th class="py-3 px-4 font-normal w-12 text-center text-[#A8A29E]">#</th>';
-            info.headers.forEach(h => {
-              ths += `<th class="py-3 px-4 font-semibold text-[#1C1917]">${escapeHtml(h)}</th>`;
+            info.headers.forEach((h, idx) => {
+              const isPiiCol = info.entities && info.entities.some(e => e.columnIndex === (idx + 1));
+              const badge = isPiiCol ? '<span class="ml-1 text-[10px] text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded font-mono">ПДн</span>' : '';
+              ths += `<th class="py-3 px-4 font-semibold text-[#1C1917]">${escapeHtml(h)}${badge}</th>`;
             });
             thead.innerHTML = ths;
+          }
+          const previewLabel = document.getElementById('preview-count-label');
+          if (previewLabel) {
+            previewLabel.textContent = `(первые ${info.previewRows ? info.previewRows.length : 0} строк)`;
           }
           renderTableBody();
           setDocMode('table');
         } else if (info.fileType === 'pdf') {
-          // Update PDF view
           const pdfSnippetEl = document.getElementById('pdf-snippet-view');
           if (pdfSnippetEl && info.pdfRedactedSnippet) {
             pdfSnippetEl.innerHTML = escapeHtml(info.pdfRedactedSnippet).replace(/\[\s*ПДн СКРЫТО\s*\]/g, '<span class="redaction-bar">[ ПДн СКРЫТО ]</span>');
@@ -525,25 +497,131 @@
       }
     }
 
-    async function downloadDone() {
+    async function handleSaveProcessedFile() {
+      if (!currentFilePath) {
+        alert("Пожалуйста, сначала откройте файл для обработки («Открыть файл...»)");
+        return;
+      }
+
       try {
-        if (!currentFilePath) {
-          alert('Чистый файл без персональных данных сохранён на ваш диск (демонстрационный режим)!');
-          return;
+        let destPath = "";
+        const ext = currentFileInfo ? currentFileInfo.extension : "xlsx";
+        const baseName = currentFileInfo ? currentFileInfo.name.replace(/\.[^/.]+$/, "") : "data";
+        const defaultName = `${baseName}_anonymized.${ext}`;
+
+        if (window.go && window.go.main && window.go.main.App && window.go.main.App.SaveFileDialog) {
+          destPath = await window.go.main.App.SaveFileDialog(defaultName);
+          if (!destPath) {
+            // User cancelled save dialog
+            return;
+          }
         }
 
-        if (window.go && window.go.main && window.go.main.App && window.go.main.App.ProcessFile) {
-          const res = await window.go.main.App.ProcessFile(currentFilePath, currentSalt);
+        // Open progress modal
+        openProgressModal(currentFileInfo ? currentFileInfo.rowCount : 0);
+
+        if (window.go && window.go.main && window.go.main.App && window.go.main.App.ProcessFileTo) {
+          const res = await window.go.main.App.ProcessFileTo(currentFilePath, destPath, currentSalt);
           if (res && res.success) {
-            alert(`Успешно обезличено!\nФайл: ${res.outputPath}\nСтрок: ${res.rowsCount}\nВремя: ${res.durationMs} мс`);
+            onProcessingCompleted(res);
           } else {
-            alert("Ошибка деперсонализации: " + (res && res.error ? res.error : "неизвестная ошибка"));
+            alert("Ошибка при обработке файла: " + (res && res.error ? res.error : "неизвестная ошибка"));
+            closeProgressModal();
           }
         } else {
-          alert('Файл сохранён!');
+          // Demo fallback
+          setTimeout(() => {
+            onProcessingCompleted({
+              success: true,
+              outputPath: destPath || defaultName,
+              rowsCount: currentFileInfo ? currentFileInfo.rowCount : 100,
+              durationMs: 350
+            });
+          }, 800);
         }
       } catch (err) {
-        alert("Ошибка при обработке: " + err);
+        alert("Ошибка деперсонализации: " + err);
+        closeProgressModal();
+      }
+    }
+
+    function openProgressModal(totalRows) {
+      const modal = document.getElementById('progress-modal');
+      const fill = document.getElementById('progress-bar-fill');
+      const pctBadge = document.getElementById('progress-pct-badge');
+      const statusText = document.getElementById('progress-status-text');
+      const countText = document.getElementById('progress-count-text');
+      const successBox = document.getElementById('progress-success-box');
+      const revealBtn = document.getElementById('btn-reveal-folder');
+      const indicator = document.getElementById('progress-indicator');
+
+      if (modal) modal.classList.remove('hidden');
+      if (fill) fill.style.width = '0%';
+      if (pctBadge) pctBadge.textContent = '0%';
+      if (statusText) statusText.textContent = 'Потоковая обработка строк...';
+      if (countText) countText.textContent = `0 / ${totalRows.toLocaleString('ru-RU')} строк`;
+      if (successBox) successBox.classList.add('hidden');
+      if (revealBtn) revealBtn.classList.add('hidden');
+      if (indicator) {
+        indicator.className = 'w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse';
+      }
+    }
+
+    function onProgressUpdate(data) {
+      if (!data) return;
+      const fill = document.getElementById('progress-bar-fill');
+      const pctBadge = document.getElementById('progress-pct-badge');
+      const countText = document.getElementById('progress-count-text');
+
+      const pct = Math.min(100, Math.max(0, data.percent || 0));
+      if (fill) fill.style.width = `${pct}%`;
+      if (pctBadge) pctBadge.textContent = `${pct}%`;
+      if (countText && data.total) {
+        countText.textContent = `${(data.processed || 0).toLocaleString('ru-RU')} / ${data.total.toLocaleString('ru-RU')} строк`;
+      }
+    }
+
+    function onProcessingCompleted(res) {
+      currentSavedPath = res.outputPath || '';
+      const fill = document.getElementById('progress-bar-fill');
+      const pctBadge = document.getElementById('progress-pct-badge');
+      const statusText = document.getElementById('progress-status-text');
+      const successBox = document.getElementById('progress-success-box');
+      const pathEl = document.getElementById('progress-saved-path');
+      const statsEl = document.getElementById('progress-stats-text');
+      const revealBtn = document.getElementById('btn-reveal-folder');
+      const indicator = document.getElementById('progress-indicator');
+
+      if (fill) fill.style.width = '100%';
+      if (pctBadge) pctBadge.textContent = '100%';
+      if (statusText) statusText.textContent = 'Обработка успешно завершена!';
+      if (indicator) {
+        indicator.className = 'w-2.5 h-2.5 rounded-full bg-emerald-600';
+      }
+
+      if (successBox) successBox.classList.remove('hidden');
+      if (pathEl) pathEl.textContent = res.outputPath;
+      if (statsEl) {
+        statsEl.textContent = `Обработано: ${res.rowsCount.toLocaleString('ru-RU')} строк • Время: ${res.durationMs} мс`;
+      }
+      if (revealBtn && currentSavedPath) {
+        revealBtn.classList.remove('hidden');
+      }
+    }
+
+    function closeProgressModal() {
+      const modal = document.getElementById('progress-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    async function handleRevealFolder() {
+      if (!currentSavedPath) return;
+      try {
+        if (window.go && window.go.main && window.go.main.App && window.go.main.App.OpenContainingFolder) {
+          await window.go.main.App.OpenContainingFolder(currentSavedPath);
+        }
+      } catch (err) {
+        console.warn("Could not reveal folder:", err);
       }
     }
 
