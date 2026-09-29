@@ -1,13 +1,9 @@
 # Сборочный контейнер на базе официального репозитория Alt Linux p10
-FROM registry.altlinux.org/alt/p10:latest
+ARG BASE_IMAGE=alt-builder:p10
+FROM ${BASE_IMAGE}
 
 # Обновление и установка компилятора Go и системных зависимостей Alt Linux
 RUN apt-get update && apt-get install -y \
-    golang \
-    git \
-    make \
-    rpm-build \
-    gcc \
     libwebkit2gtk-devel \
     libgtk+3-devel \
     ca-certificates \
@@ -16,5 +12,5 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 COPY . .
 
-# Сборка бинарника с CGO под графическую систему Alt Linux
-CMD ["go", "build", "-tags", "desktop", "-ldflags", "-s -w", "-o", "bin/depersonalizer-altlinux-amd64", "./cmd/app"]
+# Сборка бинарника с CGO под графическую систему Alt Linux (glibc 2.32)
+CMD ["go", "build", "-mod=vendor", "-tags", "desktop,production", "-ldflags", "-s -w", "-o", "bin/depersonalizer-altlinux-amd64", "./cmd/app"]

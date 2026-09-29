@@ -30,7 +30,7 @@ build-macos:
 	rm bin/$(APP_NAME)-darwin-arm64 bin/$(APP_NAME)-darwin-amd64
 
 test:
-	go test -v ./pkg/...
+	go test -v ./...
 
 clean:
 	rm -rf bin/
