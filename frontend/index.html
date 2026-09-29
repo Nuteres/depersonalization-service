@@ -360,7 +360,7 @@
 
           let html = `<td class="py-3 px-4 font-mono text-center text-[#A8A29E] text-xs">${String(row.index || i+1).padStart(2, '0')}</td>`;
           vals.forEach((v, cIdx) => {
-            const isPiiCol = currentFileInfo.entities && currentFileInfo.entities.some(e => e.columnIndex === cIdx);
+            const isPiiCol = currentFileInfo.entities && currentFileInfo.entities.some(e => e.columnIndex === (cIdx + 1));
             let cls = "py-3 px-4 text-xs font-mono";
             if (isPiiCol) {
               cls += currentView === 'before' ? ' font-medium text-rose-700 bg-rose-50/40' : ' font-medium text-[#1C1917]';
@@ -468,6 +468,12 @@
         const descEl = document.getElementById('file-desc-text');
         if (descEl) {
           descEl.textContent = `Обнаружено категорий ПДн: ${info.entities ? info.entities.length : 0}. Чувствительные поля подготовлены к безопасной деперсонализации по 152-ФЗ.`;
+        }
+
+        // Update download button extension
+        const btnBadge = document.querySelector('#btn-download .font-mono');
+        if (btnBadge && info.extension) {
+          btnBadge.textContent = `(.${info.extension.toLowerCase()})`;
         }
 
         // Render Entity Cards

@@ -474,6 +474,9 @@ var (
 	reCard16           = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\d{4}[\s\-]?){4})`)
 	reFIOPatronymic    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична))`)
 	reFIOPrefixed      = regexp.MustCompile(`(?i)(?:сотрудник|клиент|пациент|фио|работник|физлицо)[:\s]*([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})`)
+	rePage             = regexp.MustCompile(`/Type\s*/Page\b`)
+	reLen              = regexp.MustCompile(`/Length\s+(\d+)`)
+	reLit              = regexp.MustCompile(`\(([^)\\]*(?:\\.[^)\\]*)*)\)`)
 )
 
 func inspectPDF(path string) (*FileInfo, error) {
@@ -485,7 +488,6 @@ func inspectPDF(path string) (*FileInfo, error) {
 		return nil, errors.New("invalid PDF file: missing %PDF- header")
 	}
 
-	rePage := regexp.MustCompile(`/Type\s*/Page\b`)
 	pageMatches := rePage.FindAll(pdfBytes, -1)
 	pageCount := len(pageMatches)
 	if pageCount == 0 {
@@ -541,7 +543,6 @@ func extractTextFromPDFBytes(pdfBytes []byte) string {
 		dictHeader := pdfBytes[dictStart : idx+sPos]
 
 		var streamData []byte
-		reLen := regexp.MustCompile(`/Length\s+(\d+)`)
 		if lenMatch := reLen.FindSubmatch(dictHeader); len(lenMatch) > 1 {
 			if l, err := strconv.Atoi(string(lenMatch[1])); err == nil && l >= 0 && streamStart+l <= len(pdfBytes) {
 				streamData = pdfBytes[streamStart : streamStart+l]
@@ -572,7 +573,6 @@ func extractTextFromPDFBytes(pdfBytes []byte) string {
 		}
 
 		// Extract literal string contents ( ... )
-		reLit := regexp.MustCompile(`\(([^)\\]*(?:\\.[^)\\]*)*)\)`)
 		litMatches := reLit.FindAllSubmatch(streamData, -1)
 		for _, m := range litMatches {
 			if len(m) > 1 {
