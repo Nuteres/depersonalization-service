@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -61,17 +62,17 @@ type pdfObject struct {
 
 // Regular expressions for detecting sensitive Russian personal data.
 var (
-	reSNILSFormatted   = regexp.MustCompile(`\b\d{3}[-\s]\d{3}[-\s]\d{3}[-\s]\d{2}\b`)
-	reSNILS11Digits    = regexp.MustCompile(`\b\d{11}\b`)
-	rePassport4_6      = regexp.MustCompile(`\b\d{4}\s+\d{6}\b`)
-	rePassport2_2_6    = regexp.MustCompile(`\b\d{2}\s+\d{2}\s+\d{6}\b`)
+	reSNILSFormatted   = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{3}[-\s]\d{3}[-\s]\d{3}[-\s]\d{2})`)
+	reSNILS11Digits    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{11})`)
+	rePassport4_6      = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{4}\s+\d{6})`)
+	rePassport2_2_6    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{2}\s+\d{2}\s+\d{6})`)
 	rePassportPrefixed = regexp.MustCompile(`(?i)(?:паспорт(?:а| гражданина рф)?|серия|номер|№)[:\s]*([0-9\s]{10,13})`)
-	reINN12            = regexp.MustCompile(`\b\d{12}\b`)
+	reINN12            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{12})`)
 	reINNPrefixed      = regexp.MustCompile(`(?i)(?:ИНН|INN)[:\s]*\b(\d{10,12})\b`)
-	rePhone            = regexp.MustCompile(`(?:\+7|8)[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}\b`)
+	rePhone            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\+7|8)[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2})`)
 	rePhonePrefixed    = regexp.MustCompile(`(?i)(?:тел(?:ефон)?|моб\.?|сот\.?)[:\s]*((?:\+7|8)?[0-9\s\-\(\)]{10,18})`)
-	reCard16           = regexp.MustCompile(`\b(?:\d{4}[\s\-]?){4}\b`)
-	reFIOPatronymic    = regexp.MustCompile(`\b[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична)\b`)
+	reCard16           = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\d{4}[\s\-]?){4})`)
+	reFIOPatronymic    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична))`)
 	reFIOPrefixed      = regexp.MustCompile(`(?i)(?:сотрудник|клиент|пациент|фио|работник|физлицо)[:\s]*([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})`)
 )
 
@@ -116,6 +117,11 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 
 		obj := &objects[i]
 		if !obj.HasStream || len(obj.StreamData) == 0 {
+			continue
+		}
+
+		// Skip non-content streams (images, fonts, descriptors, metadata, etc.)
+		if !isContentStream(obj.DictHeader) {
 			continue
 		}
 
@@ -183,6 +189,12 @@ func extractCustomTerms(options map[string]interface{}) []string {
 // redactContentStream scans a PDF content stream, scrubs sensitive text,
 // replaces it with BlackoutMarker, and appends blackout rectangle operators.
 func redactContentStream(data []byte, customTerms []string) ([]byte, bool) {
+	// Skip streams that contain no text operators and no custom search terms
+	hasTextOps := bytes.Contains(data, []byte("BT")) || bytes.Contains(data, []byte("Tj")) || bytes.Contains(data, []byte("TJ"))
+	if !hasTextOps && len(customTerms) == 0 {
+		return data, false
+	}
+
 	var out bytes.Buffer
 	modified := false
 
@@ -533,6 +545,14 @@ func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []s
 	return buf.Bytes(), totalBoxes, true
 }
 
+func isBoundaryAfter(text string, end int) bool {
+	if end >= len(text) {
+		return true
+	}
+	rNext, _ := utf8.DecodeRuneInString(text[end:])
+	return !unicode.IsLetter(rNext) && !unicode.IsDigit(rNext) && rNext != '_'
+}
+
 // findSensitiveMatches locates all PII entities and custom terms in text.
 func findSensitiveMatches(text string, customTerms []string) []textMatch {
 	var matches []textMatch
@@ -548,6 +568,9 @@ func findSensitiveMatches(text string, customTerms []string) []textMatch {
 				start = loc[0]
 				end = loc[1]
 			}
+			if !isBoundaryAfter(text, end) {
+				continue
+			}
 			val := text[start:end]
 			if validateFunc == nil || validateFunc(val) {
 				matches = append(matches, textMatch{start: start, end: end, value: val})
@@ -556,31 +579,31 @@ func findSensitiveMatches(text string, customTerms []string) []textMatch {
 	}
 
 	// 1. SNILS
-	addRegexMatches(reSNILSFormatted, 0, nil)
-	addRegexMatches(reSNILS11Digits, 0, func(s string) bool {
+	addRegexMatches(reSNILSFormatted, 1, nil)
+	addRegexMatches(reSNILS11Digits, 1, func(s string) bool {
 		return detector.ValidateSNILS(s)
 	})
 
 	// 2. Passport RF
-	addRegexMatches(rePassport4_6, 0, nil)
-	addRegexMatches(rePassport2_2_6, 0, nil)
+	addRegexMatches(rePassport4_6, 1, nil)
+	addRegexMatches(rePassport2_2_6, 1, nil)
 	addRegexMatches(rePassportPrefixed, 1, nil)
 
 	// 3. INN
-	addRegexMatches(reINN12, 0, func(s string) bool {
+	addRegexMatches(reINN12, 1, func(s string) bool {
 		return detector.ValidateINN12(s)
 	})
 	addRegexMatches(reINNPrefixed, 1, nil)
 
 	// 4. Phone
-	addRegexMatches(rePhone, 0, nil)
+	addRegexMatches(rePhone, 1, nil)
 	addRegexMatches(rePhonePrefixed, 1, nil)
 
 	// 5. Card MIR / Luhn
-	addRegexMatches(reCard16, 0, nil)
+	addRegexMatches(reCard16, 1, nil)
 
 	// 6. FIO
-	addRegexMatches(reFIOPatronymic, 0, nil)
+	addRegexMatches(reFIOPatronymic, 1, nil)
 	addRegexMatches(reFIOPrefixed, 1, nil)
 
 	// 7. Custom terms
@@ -784,11 +807,56 @@ func isWhitespace(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\r' || b == '\n' || b == '\f' || b == 0
 }
 
+func isContentStream(dictHeader []byte) bool {
+	if bytes.Contains(dictHeader, []byte("/Subtype /Image")) || bytes.Contains(dictHeader, []byte("/Subtype/Image")) {
+		return false
+	}
+	if bytes.Contains(dictHeader, []byte("/Type /Font")) || bytes.Contains(dictHeader, []byte("/Type/Font")) {
+		return false
+	}
+	if bytes.Contains(dictHeader, []byte("/Type /FontDescriptor")) || bytes.Contains(dictHeader, []byte("/Type/FontDescriptor")) {
+		return false
+	}
+	if bytes.Contains(dictHeader, []byte("/FontFile")) {
+		return false
+	}
+	if bytes.Contains(dictHeader, []byte("/Type /Metadata")) || bytes.Contains(dictHeader, []byte("/Type/Metadata")) {
+		return false
+	}
+	if bytes.Contains(dictHeader, []byte("/Type /XRef")) || bytes.Contains(dictHeader, []byte("/Type/XRef")) {
+		return false
+	}
+	if bytes.Contains(dictHeader, []byte("/Type /ObjStm")) || bytes.Contains(dictHeader, []byte("/Type/ObjStm")) {
+		return false
+	}
+	return true
+}
+
+// getLastTokens scans backwards from the end of buf and returns up to n tokens
+// (in reverse order: [last, second-to-last, ...]) in O(1) time without buffer copies.
+func getLastTokens(buf []byte, n int) [][]byte {
+	tokens := make([][]byte, 0, n)
+	i := len(buf) - 1
+	for i >= 0 && len(tokens) < n {
+		for i >= 0 && isWhitespace(buf[i]) {
+			i--
+		}
+		if i < 0 {
+			break
+		}
+		end := i + 1
+		for i >= 0 && !isWhitespace(buf[i]) {
+			i--
+		}
+		tokens = append(tokens, buf[i+1:end])
+	}
+	return tokens
+}
+
 func extractPreviousFontSize(buf []byte) float64 {
-	trimmed := strings.TrimSpace(string(buf))
-	parts := strings.Fields(trimmed)
-	if len(parts) >= 1 {
-		if fs, err := strconv.ParseFloat(parts[len(parts)-1], 64); err == nil && fs > 0 {
+	tokens := getLastTokens(buf, 1)
+	if len(tokens) >= 1 {
+		if fs, err := strconv.ParseFloat(string(tokens[0]), 64); err == nil && fs > 0 {
 			return fs
 		}
 	}
@@ -796,11 +864,10 @@ func extractPreviousFontSize(buf []byte) float64 {
 }
 
 func extractPreviousTmCoords(buf []byte) (float64, float64) {
-	trimmed := strings.TrimSpace(string(buf))
-	parts := strings.Fields(trimmed)
-	if len(parts) >= 2 {
-		x, errX := strconv.ParseFloat(parts[len(parts)-2], 64)
-		y, errY := strconv.ParseFloat(parts[len(parts)-1], 64)
+	tokens := getLastTokens(buf, 2)
+	if len(tokens) >= 2 {
+		y, errY := strconv.ParseFloat(string(tokens[0]), 64)
+		x, errX := strconv.ParseFloat(string(tokens[1]), 64)
 		if errX == nil && errY == nil {
 			return x, y
 		}
@@ -809,13 +876,12 @@ func extractPreviousTmCoords(buf []byte) (float64, float64) {
 }
 
 func extractPreviousTdCoords(buf []byte) (float64, float64) {
-	trimmed := strings.TrimSpace(string(buf))
-	parts := strings.Fields(trimmed)
-	if len(parts) >= 2 {
-		x, errX := strconv.ParseFloat(parts[len(parts)-2], 64)
-		y, errY := strconv.ParseFloat(parts[len(parts)-1], 64)
+	tokens := getLastTokens(buf, 2)
+	if len(tokens) >= 2 {
+		ty, errY := strconv.ParseFloat(string(tokens[0]), 64)
+		tx, errX := strconv.ParseFloat(string(tokens[1]), 64)
 		if errX == nil && errY == nil {
-			return x, y
+			return tx, ty
 		}
 	}
 	return 0, 0
@@ -842,7 +908,7 @@ func updateStreamLength(dictHeader []byte, newLen int) []byte {
 // parsePDF scans indirect objects and trailer from a PDF byte slice.
 func parsePDF(data []byte) ([]pdfObject, string, error) {
 	var objects []pdfObject
-	rootRef := "1 0 R"
+	rootRef := ""
 
 	// Find trailer /Root if present
 	trailerIdx := bytes.LastIndex(data, []byte("trailer"))
@@ -906,13 +972,32 @@ func parsePDF(data []byte) ([]pdfObject, string, error) {
 				streamStart++
 			}
 
-			endstreamTag := []byte("endstream")
-			ePos := bytes.Index(objBytes[streamStart:], endstreamTag)
 			var streamData []byte
-			if ePos != -1 {
-				streamData = bytes.TrimRight(objBytes[streamStart:streamStart+ePos], "\r\n")
-			} else {
-				streamData = objBytes[streamStart:]
+			reLen := regexp.MustCompile(`/Length\s+(\d+)`)
+			if m := reLen.FindSubmatch(dictPart); len(m) > 1 {
+				if length, err := strconv.Atoi(string(m[1])); err == nil && length >= 0 && streamStart+length <= len(objBytes) {
+					streamData = objBytes[streamStart : streamStart+length]
+				}
+			}
+
+			if streamData == nil {
+				endstreamTag := []byte("endstream")
+				ePos := bytes.Index(objBytes[streamStart:], endstreamTag)
+				if ePos != -1 {
+					rawEnd := streamStart + ePos
+					// PDF spec §7.3.8: strip at most one EOL sequence immediately preceding endstream
+					if rawEnd > streamStart && objBytes[rawEnd-1] == '\n' {
+						rawEnd--
+						if rawEnd > streamStart && objBytes[rawEnd-1] == '\r' {
+							rawEnd--
+						}
+					} else if rawEnd > streamStart && objBytes[rawEnd-1] == '\r' {
+						rawEnd--
+					}
+					streamData = objBytes[streamStart:rawEnd]
+				} else {
+					streamData = objBytes[streamStart:]
+				}
 			}
 
 			compressed := bytes.Contains(dictPart, []byte("/FlateDecode"))
@@ -925,6 +1010,19 @@ func parsePDF(data []byte) ([]pdfObject, string, error) {
 				HasStream:  true,
 				Compressed: compressed,
 			})
+		}
+	}
+
+	// Fallback for rootRef: search parsed objects for /Type /Catalog
+	if rootRef == "" {
+		for _, obj := range objects {
+			if bytes.Contains(obj.DictHeader, []byte("/Type /Catalog")) || bytes.Contains(obj.DictHeader, []byte("/Type/Catalog")) {
+				rootRef = fmt.Sprintf("%d %d R", obj.ID, obj.Gen)
+				break
+			}
+		}
+		if rootRef == "" {
+			rootRef = "1 0 R"
 		}
 	}
 

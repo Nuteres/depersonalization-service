@@ -366,3 +366,84 @@ func TestPDFHandler_TimeoutDuringProcessing(t *testing.T) {
 		t.Fatal("expected context timeout error, got nil")
 	}
 }
+
+func TestPDFHandler_Process_UnprefixedCyrillicFIO(t *testing.T) {
+	anon := anonymizer.New("test-salt-fio-unprefixed")
+	h := NewPDFHandler(anon)
+
+	// Test names without any role prefixes like "Сотрудник:" or "ФИО:"
+	rawContent := `BT
+/F1 12 Tf
+72 700 Td
+(Иванов Иван Иванович) Tj
+0 -20 Td
+(Петрова Анна Сергеевна) Tj
+0 -20 Td
+(Сидоров-Михайлов Алексей Дмитриевич) Tj
+ET`
+
+	inputPDF := buildTestPDF(rawContent, false)
+
+	var out bytes.Buffer
+	err := h.Process(context.Background(), bytes.NewReader(inputPDF), &out, nil)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	extractedStreams, err := extractAllStreamContents(out.Bytes())
+	if err != nil {
+		t.Fatalf("failed to extract streams: %v", err)
+	}
+
+	unprefixedNames := []string{
+		"Иванов Иван Иванович",
+		"Петрова Анна Сергеевна",
+		"Сидоров-Михайлов Алексей Дмитриевич",
+	}
+
+	for _, name := range unprefixedNames {
+		if strings.Contains(extractedStreams, name) {
+			t.Errorf("unprefixed Cyrillic name %q is still present in stream!", name)
+		}
+		if bytes.Contains(out.Bytes(), []byte(name)) {
+			t.Errorf("unprefixed Cyrillic name %q is still present in output PDF bytes!", name)
+		}
+	}
+
+	if !strings.Contains(extractedStreams, "[ ПДн СКРЫТО ]") {
+		t.Errorf("blackout marker missing from stream after unprefixed FIO redaction")
+	}
+	if !strings.Contains(extractedStreams, "re f") {
+		t.Errorf("blackout rectangle operator missing from stream")
+	}
+}
+
+func TestPDFHandler_SkipNonContentStreams(t *testing.T) {
+	anon := anonymizer.New("salt")
+	h := NewPDFHandler(anon)
+
+	// Construct a PDF that has a non-content stream with /Subtype /Image
+	imageStream := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x0A} // Ends with 0x0A
+	var b bytes.Buffer
+	b.WriteString("%PDF-1.4\n")
+	b.WriteString("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+	b.WriteString("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+	b.WriteString("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R >>\nendobj\n")
+	b.WriteString("4 0 obj\n<< /Length 38 >>\nstream\nBT /F1 12 Tf 72 700 Td (Clean text) Tj ET\nendstream\nendobj\n")
+	fmt.Fprintf(&b, "5 0 obj\n<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /Length %d >>\nstream\n", len(imageStream))
+	b.Write(imageStream)
+	b.WriteString("\nendstream\nendobj\n")
+	b.WriteString("xref\n0 6\n0000000000 65535 f \n")
+	b.WriteString("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n500\n%%EOF\n")
+
+	var out bytes.Buffer
+	err := h.Process(context.Background(), bytes.NewReader(b.Bytes()), &out, nil)
+	if err != nil {
+		t.Fatalf("Process failed on PDF with image stream: %v", err)
+	}
+
+	// Verify image stream binary bytes were not corrupted or truncated
+	if !bytes.Contains(out.Bytes(), imageStream) {
+		t.Errorf("image stream binary bytes were modified or corrupted!")
+	}
+}
