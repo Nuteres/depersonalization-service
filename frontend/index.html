@@ -46,15 +46,27 @@
     /* Resizable Table & Columns */
     .resizable-table {
       table-layout: fixed;
-      width: max-content;
-      min-width: 100%;
       border-collapse: collapse;
+    }
+    .resizable-table th {
+      position: relative;
+      box-sizing: border-box;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .resizable-table td {
+      box-sizing: border-box;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      max-width: 0;
     }
     .col-resizer {
       position: absolute;
       top: 0;
       right: 0;
-      width: 7px;
+      width: 8px;
       height: 100%;
       cursor: col-resize;
       user-select: none;
@@ -300,6 +312,16 @@
     let isLoadingMore = false;
     let hasMoreRows = true;
 
+    // Track width in pixels for each column: [col_0 (#), col_1, col_2, ...]
+    let columnWidths = [];
+
+    function applyTableWidth() {
+      const table = document.getElementById('preview-table');
+      if (!table || columnWidths.length === 0) return;
+      const total = columnWidths.reduce((a, b) => a + b, 0);
+      table.style.width = `${total}px`;
+    }
+
     // 1. Initialize System Environment Badge
     async function initAppEnv() {
       let osName = 'Система';
@@ -434,30 +456,42 @@
       const headerRow = document.getElementById('table-header-row');
       if (!headerRow || !currentFileInfo || !currentFileInfo.headers) return;
 
-      let ths = '<th style="width: 54px; min-width: 54px; max-width: 54px;" class="py-3 px-3 font-normal text-center text-[#A8A29E] bg-[#FAF9F5] border-r border-[#F0EFEB]">#</th>';
+      // Initialize column widths if not already populated for current header count
+      if (columnWidths.length !== currentFileInfo.headers.length + 1) {
+        columnWidths = [50]; // Column 0: '#'
+        currentFileInfo.headers.forEach((h) => {
+          const defaultW = Math.min(260, Math.max(130, h.length * 9 + 40));
+          columnWidths.push(defaultW);
+        });
+      }
+
+      applyTableWidth();
+
+      let ths = `<th style="width: ${columnWidths[0]}px;" class="py-3 px-3 font-normal text-center text-[#A8A29E] bg-[#FAF9F5] border-r border-[#F0EFEB] select-none">#</th>`;
       
       currentFileInfo.headers.forEach((h, idx) => {
         const col1Based = idx + 1;
         const ent = currentFileInfo.entities ? currentFileInfo.entities.find(e => e.columnIndex === col1Based) : null;
         const isPiiCol = !!ent;
         const isDisabled = disabledColumns.has(col1Based);
+        const colW = columnWidths[col1Based] || 180;
 
         let badge = '';
         if (isPiiCol) {
           if (isDisabled) {
-            badge = '<span class="ml-1.5 text-[10px] text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded font-mono line-through" title="Деперсонализация отключена">ПДн</span>';
+            badge = '<span class="ml-1.5 shrink-0 text-[10px] text-stone-500 bg-stone-100 border border-stone-200 px-1 py-0.5 rounded font-mono line-through" title="Деперсонализация отключена">ПДн</span>';
           } else {
-            badge = '<span class="ml-1.5 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-mono font-medium" title="Категория: ' + escapeHtml(ent.type) + '">ПДн: Замена</span>';
+            badge = '<span class="ml-1.5 shrink-0 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded font-mono font-medium" title="Категория: ' + escapeHtml(ent.type) + '">ПДн: Замена</span>';
           }
         }
 
         ths += `
-          <th style="min-width: 180px; width: 220px;" class="relative py-3 px-4 font-semibold text-[#1C1917] select-none group border-r border-[#F0EFEB]">
-            <div class="flex items-center justify-between gap-1 overflow-hidden pr-2">
-              <span class="truncate" title="${escapeHtml(h)}">${escapeHtml(h)}</span>
+          <th style="width: ${colW}px;" class="py-3 px-3 font-semibold text-[#1C1917] select-none border-r border-[#F0EFEB]">
+            <div class="flex items-center justify-between gap-1 w-full min-w-0 overflow-hidden pr-1">
+              <span class="truncate min-w-0 flex-1" title="${escapeHtml(h)}">${escapeHtml(h)}</span>
               ${badge}
             </div>
-            <div class="col-resizer" onmousedown="initResize(event, this)"></div>
+            <div class="col-resizer" onmousedown="initResize(event, ${col1Based})"></div>
           </th>
         `;
       });
@@ -465,23 +499,26 @@
       headerRow.innerHTML = ths;
     }
 
-    // Resizable Column Logic
-    function initResize(e, resizer) {
+    // Resizable Column Logic with free shrinking below content length
+    function initResize(e, colIndex) {
       e.preventDefault();
       e.stopPropagation();
-      const th = resizer.parentElement;
+
+      const th = e.target.parentElement;
       const startX = e.pageX;
-      const startWidth = th.getBoundingClientRect().width;
+      const startWidth = columnWidths[colIndex] || th.getBoundingClientRect().width;
+      const resizer = e.target;
       resizer.classList.add('resizing');
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
 
       function onMouseMove(moveEvent) {
         const diff = moveEvent.pageX - startX;
-        const newWidth = Math.max(70, Math.round(startWidth + diff));
+        // User can shrink down to 25px freely! Text not fitting will be clipped with ellipsis
+        const newWidth = Math.max(25, Math.round(startWidth + diff));
+        columnWidths[colIndex] = newWidth;
         th.style.width = `${newWidth}px`;
-        th.style.minWidth = `${newWidth}px`;
-        th.style.maxWidth = `${newWidth}px`;
+        applyTableWidth();
       }
 
       function onMouseUp() {
@@ -697,6 +734,7 @@
         currentFilePath = path;
         currentFileInfo = info;
         disabledColumns.clear();
+        columnWidths = [];
 
         allLoadedRows = info.previewRows ? [...info.previewRows] : [];
         hasMoreRows = info.fileType === 'table' && allLoadedRows.length < info.rowCount;
