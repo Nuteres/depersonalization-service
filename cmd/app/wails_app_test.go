@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/xuri/excelize/v2"
+
+	"dep_service/pkg/depmap"
 )
 
 func TestApp_InspectCSV(t *testing.T) {
@@ -411,7 +413,7 @@ func TestApp_ProcessFileTo_DisabledColumns(t *testing.T) {
 
 	app := NewApp()
 	// Disable column 2 (СНИЛС)
-	res, err := app.ProcessFileTo(csvPath, outPath, "test-salt", []int{2})
+	res, err := app.ProcessFileTo(csvPath, outPath, "test-salt", []int{2}, false, "", "")
 	if err != nil {
 		t.Fatalf("ProcessFileTo failed: %v", err)
 	}
@@ -434,4 +436,340 @@ func TestApp_ProcessFileTo_DisabledColumns(t *testing.T) {
 		t.Errorf("expected disabled SNILS to be preserved in output")
 	}
 }
+
+func TestApp_ProcessWithKeyGeneration(t *testing.T) {
+	tmpDir := t.TempDir()
+	csvPath := filepath.Join(tmpDir, "clients_keygen.csv")
+	outPath := filepath.Join(tmpDir, "clients_keygen_anon.csv")
+	keyPath := filepath.Join(tmpDir, "custom.depmap")
+
+	content := "ФИО,СНИЛС,Телефон\n" +
+		"Иванов Иван Иванович,112-233-445 95,+7 (916) 123-45-67\n" +
+		"Петров Петр Петрович,223-344-556 06,+7 (903) 765-43-21\n"
+
+	if err := os.WriteFile(csvPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test csv: %v", err)
+	}
+
+	app := NewApp()
+
+	// 1. Process with custom keyPath and password
+	res, err := app.ProcessFileTo(csvPath, outPath, "test-salt", nil, true, "secret123", keyPath)
+	if err != nil {
+		t.Fatalf("ProcessFileTo with key gen failed: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("ProcessFileTo reported failure: %s", res.Error)
+	}
+	if res.KeyPath != keyPath {
+		t.Fatalf("expected KeyPath=%s, got %s", keyPath, res.KeyPath)
+	}
+
+	// Verify key file was created on disk
+	if _, err := os.Stat(keyPath); err != nil {
+		t.Fatalf("expected key file to exist at %s: %v", keyPath, err)
+	}
+
+	// Verify key can be loaded and decrypted
+	dm, err := depmap.LoadFile(keyPath, "secret123")
+	if err != nil {
+		t.Fatalf("failed to load generated key file: %v", err)
+	}
+	if dm.RecordsCount < 4 {
+		t.Errorf("expected at least 4 mappings in depmap, got %d", dm.RecordsCount)
+	}
+	if dm.OriginalFileName != filepath.Base(csvPath) {
+		t.Errorf("expected OriginalFileName=%s, got %s", filepath.Base(csvPath), dm.OriginalFileName)
+	}
+
+	// Check mapping contains original names
+	foundFIO := false
+	for _, orig := range dm.Mapping {
+		if orig == "Иванов Иван Иванович" {
+			foundFIO = true
+			break
+		}
+	}
+	if !foundFIO {
+		t.Errorf("expected depmap to map synthetic FIO back to Ivanov")
+	}
+
+	// 2. Process with empty keyPath and empty password (default key path & default master key)
+	outPath2 := filepath.Join(tmpDir, "auto_key_out.csv")
+	res2, err := app.ProcessFileTo(csvPath, outPath2, "test-salt", nil, true, "", "")
+	if err != nil {
+		t.Fatalf("ProcessFileTo with default key gen failed: %v", err)
+	}
+	expectedDefaultKey := outPath2 + ".depmap"
+	if res2.KeyPath != expectedDefaultKey {
+		t.Fatalf("expected default KeyPath=%s, got %s", expectedDefaultKey, res2.KeyPath)
+	}
+	dm2, err := depmap.LoadFile(expectedDefaultKey, "")
+	if err != nil {
+		t.Fatalf("failed to load default key file with master key: %v", err)
+	}
+	if dm2.RecordsCount == 0 {
+		t.Errorf("expected non-zero mappings in default key file")
+	}
+}
+
+func TestApp_RestoreWorkflow(t *testing.T) {
+	tmpDir := t.TempDir()
+	app := NewApp()
+
+	// Part A: CSV workflow
+	t.Run("CSV_Workflow", func(t *testing.T) {
+		csvPath := filepath.Join(tmpDir, "source.csv")
+		anonPath := filepath.Join(tmpDir, "source_anonymized.csv")
+		keyPath := filepath.Join(tmpDir, "source.depmap")
+		scoredPath := filepath.Join(tmpDir, "source_scored.csv")
+		restoredPath := filepath.Join(tmpDir, "source_restored.csv")
+
+		csvContent := "ФИО,СНИЛС,Телефон,Сумма\n" +
+			"Иванов Иван Иванович,112-233-445 95,+7 (916) 123-45-67,1000\n" +
+			"Петров Петр Петрович,223-344-556 06,+7 (903) 765-43-21,2500\n"
+
+		if err := os.WriteFile(csvPath, []byte(csvContent), 0644); err != nil {
+			t.Fatalf("failed to write csv: %v", err)
+		}
+
+		// Process with key generation
+		procRes, err := app.ProcessFileTo(csvPath, anonPath, "salt-workflow", nil, true, "pass123", keyPath)
+		if err != nil {
+			t.Fatalf("ProcessFileTo failed: %v", err)
+		}
+		if !procRes.Success {
+			t.Fatalf("ProcessFileTo failed: %s", procRes.Error)
+		}
+
+		// Read anon file
+		anonBytes, err := os.ReadFile(anonPath)
+		if err != nil {
+			t.Fatalf("failed to read anon file: %v", err)
+		}
+		anonLines := strings.Split(strings.TrimSpace(string(anonBytes)), "\n")
+		if len(anonLines) != 3 {
+			t.Fatalf("expected 3 lines in anon csv, got %d", len(anonLines))
+		}
+
+		// Simulate contractor adding "Score" and "Category" columns
+		var scoredBuf strings.Builder
+		scoredBuf.WriteString(anonLines[0] + ",Score,Category\n")
+		scoredBuf.WriteString(anonLines[1] + ",0.95,High\n")
+		scoredBuf.WriteString(anonLines[2] + ",0.42,Low\n")
+
+		if err := os.WriteFile(scoredPath, []byte(scoredBuf.String()), 0644); err != nil {
+			t.Fatalf("failed to write scored csv: %v", err)
+		}
+
+		// Restore file
+		restoreRes, err := app.RestoreFileTo(scoredPath, keyPath, "pass123", restoredPath)
+		if err != nil {
+			t.Fatalf("RestoreFileTo failed: %v", err)
+		}
+		if !restoreRes.Success {
+			t.Fatalf("RestoreFileTo reported failure: %s", restoreRes.Error)
+		}
+		if restoreRes.RestoredCells < 6 {
+			t.Errorf("expected at least 6 restored cells, got %d", restoreRes.RestoredCells)
+		}
+
+		restoredBytes, err := os.ReadFile(restoredPath)
+		if err != nil {
+			t.Fatalf("failed to read restored file: %v", err)
+		}
+		restoredStr := string(restoredBytes)
+
+		// Verify original PII restored
+		if !strings.Contains(restoredStr, "Иванов Иван Иванович") {
+			t.Errorf("restored file missing original FIO Ivanov")
+		}
+		if !strings.Contains(restoredStr, "112-233-445 95") {
+			t.Errorf("restored file missing original SNILS Ivanov")
+		}
+		if !strings.Contains(restoredStr, "Петров Петр Петрович") {
+			t.Errorf("restored file missing original FIO Petrov")
+		}
+		// Verify contractor columns preserved
+		if !strings.Contains(restoredStr, "0.95,High") || !strings.Contains(restoredStr, "0.42,Low") {
+			t.Errorf("restored file did not preserve contractor extra columns")
+		}
+		// Verify original unmapped Sum preserved
+		if !strings.Contains(restoredStr, "1000") || !strings.Contains(restoredStr, "2500") {
+			t.Errorf("restored file lost original sum column")
+		}
+	})
+
+	// Part B: Excel workflow
+	t.Run("XLSX_Workflow", func(t *testing.T) {
+		xlsxPath := filepath.Join(tmpDir, "source.xlsx")
+		anonPath := filepath.Join(tmpDir, "source_anon.xlsx")
+		scoredPath := filepath.Join(tmpDir, "source_scored.xlsx")
+		restoredPath := filepath.Join(tmpDir, "source_restored.xlsx")
+
+		xl := excelize.NewFile()
+		sheet := "Sheet1"
+		_ = xl.SetCellValue(sheet, "A1", "ФИО")
+		_ = xl.SetCellValue(sheet, "B1", "СНИЛС")
+		_ = xl.SetCellValue(sheet, "C1", "Паспорт")
+		_ = xl.SetCellValue(sheet, "D1", "Департамент")
+
+		_ = xl.SetCellValue(sheet, "A2", "Сидоров Сидор Сидорович")
+		_ = xl.SetCellValue(sheet, "B2", "334-455-667 17")
+		_ = xl.SetCellValue(sheet, "C2", "4510 123890")
+		_ = xl.SetCellValue(sheet, "D2", "IT")
+
+		if err := xl.SaveAs(xlsxPath); err != nil {
+			t.Fatalf("failed to save source xlsx: %v", err)
+		}
+		_ = xl.Close()
+
+		// Process with key generation (default key path & password)
+		procRes, err := app.ProcessFileTo(xlsxPath, anonPath, "salt-excel", nil, true, "", "")
+		if err != nil {
+			t.Fatalf("ProcessFileTo on xlsx failed: %v", err)
+		}
+		if !procRes.Success {
+			t.Fatalf("ProcessFileTo on xlsx failed: %s", procRes.Error)
+		}
+
+		// Contractor opens anon file, adds column E: Risk_Segment
+		anonXl, err := excelize.OpenFile(anonPath)
+		if err != nil {
+			t.Fatalf("failed to open anon xlsx: %v", err)
+		}
+		_ = anonXl.SetCellValue(sheet, "E1", "Risk_Segment")
+		_ = anonXl.SetCellValue(sheet, "E2", "Tier-1")
+		if err := anonXl.SaveAs(scoredPath); err != nil {
+			t.Fatalf("failed to save scored xlsx: %v", err)
+		}
+		_ = anonXl.Close()
+
+		// Restore file
+		restoreRes, err := app.RestoreFileTo(scoredPath, procRes.KeyPath, "", restoredPath)
+		if err != nil {
+			t.Fatalf("RestoreFileTo on xlsx failed: %v", err)
+		}
+		if !restoreRes.Success {
+			t.Fatalf("RestoreFileTo on xlsx failed: %s", restoreRes.Error)
+		}
+		if restoreRes.RestoredCells < 3 {
+			t.Errorf("expected at least 3 restored cells in xlsx, got %d", restoreRes.RestoredCells)
+		}
+
+		resXl, err := excelize.OpenFile(restoredPath)
+		if err != nil {
+			t.Fatalf("failed to open restored xlsx: %v", err)
+		}
+		defer resXl.Close()
+
+		fio, _ := resXl.GetCellValue(sheet, "A2")
+		snils, _ := resXl.GetCellValue(sheet, "B2")
+		pass, _ := resXl.GetCellValue(sheet, "C2")
+		dept, _ := resXl.GetCellValue(sheet, "D2")
+		risk, _ := resXl.GetCellValue(sheet, "E2")
+
+		if fio != "Сидоров Сидор Сидорович" {
+			t.Errorf("expected restored FIO 'Сидоров Сидор Сидорович', got '%s'", fio)
+		}
+		if snils != "334-455-667 17" {
+			t.Errorf("expected restored SNILS '334-455-667 17', got '%s'", snils)
+		}
+		if pass != "4510 123890" {
+			t.Errorf("expected restored Passport '4510 123890', got '%s'", pass)
+		}
+		if dept != "IT" {
+			t.Errorf("expected untouched Dept 'IT', got '%s'", dept)
+		}
+		if risk != "Tier-1" {
+			t.Errorf("expected preserved contractor column Risk_Segment 'Tier-1', got '%s'", risk)
+		}
+	})
+}
+
+func TestApp_InspectKeyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	app := NewApp()
+
+	// 1. Create a valid key
+	keyPath := filepath.Join(tmpDir, "valid.depmap")
+	dm := depmap.New("original_data.csv")
+	dm.Put("Синтетическое ФИО", "Иванов Иван Иванович")
+	dm.Put("111-222-333 44", "222-333-444 55")
+	if err := dm.SaveFile(keyPath, "mypassword"); err != nil {
+		t.Fatalf("failed to save depmap: %v", err)
+	}
+
+	// Test 1: Inspect valid key with correct password
+	info, err := app.InspectKeyFile(keyPath, "mypassword")
+	if err != nil {
+		t.Fatalf("InspectKeyFile failed: %v", err)
+	}
+	if !info.Valid {
+		t.Errorf("expected info.Valid=true, got false: %s", info.Error)
+	}
+	if info.RecordsCount != 2 {
+		t.Errorf("expected RecordsCount=2, got %d", info.RecordsCount)
+	}
+	if info.OriginalFileName != "original_data.csv" {
+		t.Errorf("expected OriginalFileName='original_data.csv', got '%s'", info.OriginalFileName)
+	}
+	if info.CreatedAt == "" {
+		t.Errorf("expected non-empty CreatedAt")
+	}
+
+	// Test 2: Inspect valid key with wrong password
+	infoWrong, err := app.InspectKeyFile(keyPath, "wrong_password")
+	if err != nil {
+		t.Fatalf("InspectKeyFile with wrong password returned error instead of invalid info: %v", err)
+	}
+	if infoWrong.Valid {
+		t.Errorf("expected infoWrong.Valid=false for wrong password")
+	}
+	if infoWrong.Error == "" {
+		t.Errorf("expected non-empty error message for wrong password")
+	}
+
+	// Test 3: Inspect invalid file (not a depmap container)
+	badFile := filepath.Join(tmpDir, "corrupted.depmap")
+	if err := os.WriteFile(badFile, []byte("NOT_A_VALID_DEPMAP_CONTAINER_DATA"), 0644); err != nil {
+		t.Fatalf("failed to write bad file: %v", err)
+	}
+	infoBad, err := app.InspectKeyFile(badFile, "")
+	if err != nil {
+		t.Fatalf("InspectKeyFile with bad file returned error instead of invalid info: %v", err)
+	}
+	if infoBad.Valid {
+		t.Errorf("expected infoBad.Valid=false for bad file")
+	}
+	if infoBad.Error == "" {
+		t.Errorf("expected non-empty error message for bad file")
+	}
+
+	// Test 4: Inspect non-existent file
+	_, err = app.InspectKeyFile(filepath.Join(tmpDir, "missing.depmap"), "")
+	if err == nil {
+		t.Errorf("expected error for non-existent file")
+	}
+
+	// Test 5: Inspect empty path
+	_, err = app.InspectKeyFile("", "")
+	if err == nil {
+		t.Errorf("expected error for empty path")
+	}
+}
+
+func TestApp_ContextNotInitialized(t *testing.T) {
+	app := NewApp()
+	// When app.ctx is nil:
+	_, err := app.SelectKeyFile()
+	if err == nil {
+		t.Errorf("expected error when app.ctx is nil for SelectKeyFile")
+	}
+	_, err = app.SaveKeyFileDialog("test.depmap")
+	if err == nil {
+		t.Errorf("expected error when app.ctx is nil for SaveKeyFileDialog")
+	}
+}
+
 

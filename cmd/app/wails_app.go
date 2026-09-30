@@ -22,6 +22,7 @@ import (
 	"github.com/xuri/excelize/v2"
 
 	"dep_service/pkg/anonymizer"
+	"dep_service/pkg/depmap"
 	"dep_service/pkg/detector"
 	"dep_service/pkg/formats"
 )
@@ -63,10 +64,32 @@ type ProcessResult struct {
 	Success       bool   `json:"success"`
 	InputPath     string `json:"inputPath"`
 	OutputPath    string `json:"outputPath"`
+	KeyPath       string `json:"keyPath,omitempty"`
 	RowsCount     int    `json:"rowsCount"`
 	EntitiesCount int    `json:"entitiesCount"`
 	DurationMs    int64  `json:"durationMs"`
 	Message       string `json:"message"`
+	Error         string `json:"error,omitempty"`
+}
+
+// KeyFileInfo holds metadata and validation status of a .depmap key container.
+type KeyFileInfo struct {
+	Path             string `json:"path"`
+	OriginalFileName string `json:"originalFileName"`
+	CreatedAt        string `json:"createdAt"`
+	RecordsCount     int    `json:"recordsCount"`
+	Valid            bool   `json:"valid"`
+	Error            string `json:"error,omitempty"`
+}
+
+// RestoreResult holds the outcome of a reverse depersonalization run.
+type RestoreResult struct {
+	Success       bool   `json:"success"`
+	InputPath     string `json:"inputPath"`
+	KeyPath       string `json:"keyPath"`
+	OutputPath    string `json:"outputPath"`
+	RestoredCells int    `json:"restoredCells"`
+	DurationMs    int64  `json:"durationMs"`
 	Error         string `json:"error,omitempty"`
 }
 
@@ -247,13 +270,14 @@ func (a *App) InspectFile(path string) (*FileInfo, error) {
 // ProcessFile processes the input file using the appropriate handler from pkg/formats,
 // writing to <dir>/<basename>_anonymized.<ext>, calculating execution time and stats.
 func (a *App) ProcessFile(path string, salt string) (*ProcessResult, error) {
-	return a.ProcessFileTo(path, "", salt, nil)
+	return a.ProcessFileTo(path, "", salt, nil, false, "", "")
 }
 
 // ProcessFileTo processes the input file and writes to outPath (or default if outPath is empty),
 // respecting disabledCols (which are preserved unaltered),
+// generating a .depmap key container if createKey is true,
 // and emitting progress events via Wails runtime.
-func (a *App) ProcessFileTo(path string, outPath string, salt string, disabledCols []int) (*ProcessResult, error) {
+func (a *App) ProcessFileTo(path string, outPath string, salt string, disabledCols []int, createKey bool, keyPassword string, keyPath string) (*ProcessResult, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("file path cannot be empty")
 	}
@@ -275,6 +299,10 @@ func (a *App) ProcessFileTo(path string, outPath string, salt string, disabledCo
 		dir := filepath.Dir(path)
 		base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 		outPath = filepath.Join(dir, base+"_anonymized"+ext)
+	}
+
+	if createKey && strings.TrimSpace(keyPath) == "" {
+		keyPath = outPath + ".depmap"
 	}
 
 	anon := anonymizer.New(salt)
@@ -347,6 +375,19 @@ func (a *App) ProcessFileTo(path string, outPath string, salt string, disabledCo
 		return nil, fmt.Errorf("anonymization error: %w", err)
 	}
 
+	// If key creation requested, extract mappings from input vs output and save .depmap
+	if createKey {
+		dm := depmap.New(filepath.Base(path))
+		if err := extractMappings(path, outPath, ext, dm); err != nil {
+			_ = os.Remove(outPath)
+			return nil, fmt.Errorf("failed to extract key mappings: %w", err)
+		}
+		if err := dm.SaveFile(keyPath, keyPassword); err != nil {
+			_ = os.Remove(outPath)
+			return nil, fmt.Errorf("failed to save key file: %w", err)
+		}
+	}
+
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "process-progress", map[string]interface{}{
 			"processed": totalRows,
@@ -357,7 +398,7 @@ func (a *App) ProcessFileTo(path string, outPath string, salt string, disabledCo
 
 	durationMs := time.Since(startTime).Milliseconds()
 
-	return &ProcessResult{
+	res := &ProcessResult{
 		Success:       true,
 		InputPath:     path,
 		OutputPath:    outPath,
@@ -365,6 +406,340 @@ func (a *App) ProcessFileTo(path string, outPath string, salt string, disabledCo
 		EntitiesCount: entitiesCount,
 		DurationMs:    durationMs,
 		Message:       fmt.Sprintf("Файл успешно сохранен: %s (%d мс)", filepath.Base(outPath), durationMs),
+	}
+	if createKey {
+		res.KeyPath = keyPath
+	}
+
+	return res, nil
+}
+
+func extractMappings(inputPath, outputPath, ext string, dm *depmap.DepMap) error {
+	switch ext {
+	case ".csv", ".tsv":
+		return extractCSVMappings(inputPath, outputPath, dm)
+	case ".xlsx", ".xlsm", ".xltx", ".xltm":
+		return extractExcelMappings(inputPath, outputPath, dm)
+	default:
+		return nil
+	}
+}
+
+func detectCSVDelimiter(r *bufio.Reader) rune {
+	comma := ','
+	peekBytes, _ := r.Peek(2048)
+	peekStr := strings.TrimPrefix(string(peekBytes), "\ufeff")
+	firstLine := peekStr
+	if idx := strings.IndexAny(peekStr, "\r\n"); idx != -1 {
+		firstLine = peekStr[:idx]
+	}
+	semiCount := strings.Count(firstLine, ";")
+	tabCount := strings.Count(firstLine, "\t")
+	commaCount := strings.Count(firstLine, ",")
+	if semiCount > commaCount && semiCount >= tabCount {
+		comma = ';'
+	} else if tabCount > commaCount && tabCount > semiCount {
+		comma = '\t'
+	}
+	return comma
+}
+
+func extractCSVMappings(inputPath, outputPath string, dm *depmap.DepMap) error {
+	inFile, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input csv for mapping: %w", err)
+	}
+	defer inFile.Close()
+
+	outFile, err := os.Open(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open output csv for mapping: %w", err)
+	}
+	defer outFile.Close()
+
+	inBuf := bufio.NewReader(inFile)
+	outBuf := bufio.NewReader(outFile)
+
+	inComma := detectCSVDelimiter(inBuf)
+	outComma := detectCSVDelimiter(outBuf)
+
+	inReader := csv.NewReader(inBuf)
+	inReader.Comma = inComma
+	inReader.FieldsPerRecord = -1
+	inReader.LazyQuotes = true
+
+	outReader := csv.NewReader(outBuf)
+	outReader.Comma = outComma
+	outReader.FieldsPerRecord = -1
+	outReader.LazyQuotes = true
+
+	for {
+		inRec, inErr := inReader.Read()
+		outRec, outErr := outReader.Read()
+
+		if inErr != nil || outErr != nil {
+			break
+		}
+
+		limit := len(inRec)
+		if len(outRec) < limit {
+			limit = len(outRec)
+		}
+
+		for i := 0; i < limit; i++ {
+			origVal := strings.TrimPrefix(inRec[i], "\ufeff")
+			anonVal := strings.TrimPrefix(outRec[i], "\ufeff")
+			if anonVal != origVal && strings.TrimSpace(origVal) != "" {
+				dm.Put(anonVal, origVal)
+				if strings.TrimSpace(anonVal) != anonVal {
+					dm.Put(strings.TrimSpace(anonVal), origVal)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func extractExcelMappings(inputPath, outputPath string, dm *depmap.DepMap) error {
+	inXl, err := excelize.OpenFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input excel for mapping: %w", err)
+	}
+	defer inXl.Close()
+
+	outXl, err := excelize.OpenFile(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open output excel for mapping: %w", err)
+	}
+	defer outXl.Close()
+
+	for _, sheet := range inXl.GetSheetList() {
+		inRows, err := inXl.Rows(sheet)
+		if err != nil {
+			continue
+		}
+
+		outRows, err := outXl.Rows(sheet)
+		if err != nil {
+			_ = inRows.Close()
+			continue
+		}
+
+		for inRows.Next() && outRows.Next() {
+			inCols, errIn := inRows.Columns()
+			outCols, errOut := outRows.Columns()
+			if errIn != nil || errOut != nil {
+				break
+			}
+
+			limit := len(inCols)
+			if len(outCols) < limit {
+				limit = len(outCols)
+			}
+
+			for i := 0; i < limit; i++ {
+				origVal := inCols[i]
+				anonVal := outCols[i]
+				if anonVal != origVal && strings.TrimSpace(origVal) != "" {
+					dm.Put(anonVal, origVal)
+					if strings.TrimSpace(anonVal) != anonVal {
+						dm.Put(strings.TrimSpace(anonVal), origVal)
+					}
+				}
+			}
+		}
+
+		_ = inRows.Close()
+		_ = outRows.Close()
+	}
+
+	return nil
+}
+
+// SelectKeyFile opens a native system file selection dialog filtering for .depmap key files.
+func (a *App) SelectKeyFile() (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("application context not initialized")
+	}
+
+	selected, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Выберите файл-ключ восстановления (.depmap)",
+		Filters: []runtime.FileFilter{
+			{
+				DisplayName: "Файлы-ключи восстановления (*.depmap)",
+				Pattern:     "*.depmap",
+			},
+			{
+				DisplayName: "Все файлы (*.*)",
+				Pattern:     "*.*",
+			},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to open file dialog: %w", err)
+	}
+	return selected, nil
+}
+
+// SaveKeyFileDialog opens a native system file save dialog for .depmap key files.
+func (a *App) SaveKeyFileDialog(defaultName string) (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("application context not initialized")
+	}
+
+	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Сохранить ключ восстановления (.depmap)",
+		DefaultFilename: defaultName,
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Файл-ключ восстановления (*.depmap)", Pattern: "*.depmap"},
+			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to open save dialog: %w", err)
+	}
+	return selected, nil
+}
+
+// InspectKeyFile inspects a .depmap key file, validates its header, and tests password if provided.
+func (a *App) InspectKeyFile(keyPath string, password string) (*KeyFileInfo, error) {
+	if strings.TrimSpace(keyPath) == "" {
+		return nil, errors.New("key path cannot be empty")
+	}
+
+	if _, err := os.Stat(keyPath); err != nil {
+		return nil, fmt.Errorf("key file not found: %w", err)
+	}
+
+	valid, err := depmap.InspectKeyFile(keyPath)
+	if err != nil || !valid {
+		errMsg := "неверный формат файла ключа .depmap"
+		if err != nil {
+			errMsg = err.Error()
+		}
+		return &KeyFileInfo{
+			Path:  keyPath,
+			Valid: false,
+			Error: errMsg,
+		}, nil
+	}
+
+	dm, err := depmap.LoadFile(keyPath, password)
+	if err != nil {
+		return &KeyFileInfo{
+			Path:  keyPath,
+			Valid: false,
+			Error: err.Error(),
+		}, nil
+	}
+
+	return &KeyFileInfo{
+		Path:             keyPath,
+		OriginalFileName: dm.OriginalFileName,
+		CreatedAt:        dm.CreatedAt.Format("2006-01-02 15:04:05"),
+		RecordsCount:     dm.RecordsCount,
+		Valid:            true,
+	}, nil
+}
+
+// RestoreFileTo restores original personal data in inputPath using keyPath (.depmap),
+// writing the restored file to destPath, and emitting restore-progress events.
+func (a *App) RestoreFileTo(inputPath string, keyPath string, password string, destPath string) (*RestoreResult, error) {
+	if strings.TrimSpace(inputPath) == "" {
+		return nil, errors.New("input file path cannot be empty")
+	}
+	if strings.TrimSpace(keyPath) == "" {
+		return nil, errors.New("key file path cannot be empty")
+	}
+
+	if _, err := os.Stat(inputPath); err != nil {
+		return nil, fmt.Errorf("input file not found: %w", err)
+	}
+	if _, err := os.Stat(keyPath); err != nil {
+		return nil, fmt.Errorf("key file not found: %w", err)
+	}
+
+	ext := strings.ToLower(filepath.Ext(inputPath))
+	if strings.TrimSpace(destPath) == "" {
+		dir := filepath.Dir(inputPath)
+		base := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
+		if strings.HasSuffix(base, "_anonymized") {
+			base = strings.TrimSuffix(base, "_anonymized")
+		}
+		destPath = filepath.Join(dir, base+"_restored"+ext)
+	}
+
+	dm, err := depmap.LoadFile(keyPath, password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load key file: %w", err)
+	}
+
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	startTime := time.Now()
+	var restoredCount int
+
+	switch ext {
+	case ".csv", ".tsv":
+		inFile, err := os.Open(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open input file: %w", err)
+		}
+		defer inFile.Close()
+
+		outFile, err := os.Create(destPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create destination file: %w", err)
+		}
+		defer outFile.Close()
+
+		restoredCount, err = formats.RestoreCSV(ctx, inFile, outFile, dm)
+		if err != nil {
+			_ = os.Remove(destPath)
+			return nil, fmt.Errorf("failed to restore csv: %w", err)
+		}
+
+	case ".xlsx", ".xlsm", ".xltx", ".xltm":
+		onProg := func(pct int, proc, total int) {
+			if a.ctx != nil {
+				runtime.EventsEmit(a.ctx, "restore-progress", map[string]interface{}{
+					"percent":   pct,
+					"processed": proc,
+					"total":     total,
+				})
+			}
+		}
+		restoredCount, err = formats.RestoreExcel(ctx, inputPath, destPath, dm, onProg)
+		if err != nil {
+			_ = os.Remove(destPath)
+			return nil, fmt.Errorf("failed to restore excel: %w", err)
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported file extension for restoration: %s", ext)
+	}
+
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "restore-progress", map[string]interface{}{
+			"percent":   100,
+			"processed": restoredCount,
+			"total":     restoredCount,
+		})
+	}
+
+	durationMs := time.Since(startTime).Milliseconds()
+
+	return &RestoreResult{
+		Success:       true,
+		InputPath:     inputPath,
+		KeyPath:       keyPath,
+		OutputPath:    destPath,
+		RestoredCells: restoredCount,
+		DurationMs:    durationMs,
 	}, nil
 }
 
