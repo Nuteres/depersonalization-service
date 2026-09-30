@@ -680,6 +680,7 @@
             loadRestoreDataFile(filePath);
           }
         } else {
+          setAppMode('depersonalize');
           loadFile(filePath);
         }
       } else {
@@ -1441,7 +1442,10 @@
         indicator.className = 'w-2.5 h-2.5 rounded-full bg-emerald-600';
       }
       if (successBox) successBox.classList.remove('hidden');
-      if (pathEl) pathEl.textContent = res.outputPath;
+      if (pathEl) {
+        pathEl.textContent = res.outputPath;
+        pathEl.title = res.outputPath || '';
+      }
 
       if (mode === 'restore') {
         if (statusText) statusText.textContent = 'Восстановление успешно завершено!';
@@ -1457,7 +1461,16 @@
           statsEl.textContent = `Обработано: ${res.rowsCount.toLocaleString('ru-RU')} строк • Время: ${res.durationMs} мс`;
         }
         if (res.keyPath && keyPathEl) {
-          keyPathEl.innerHTML = `<span class="font-bold">🔑 Сохранен ключ восстановления (.depmap):</span><div class="text-[10px] text-[#047857] mt-0.5">${escapeHtml(res.keyPath)}</div>`;
+          const escapedPath = escapeHtml(res.keyPath);
+          keyPathEl.innerHTML = `
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-bold">🔑 Сохранен ключ восстановления (.depmap):</span>
+              <button type="button" onclick="navigator.clipboard.writeText('${escapedPath.replace(/'/g, "\\'")}').then(() => { this.textContent = '✔ Скопировано!'; setTimeout(() => this.textContent = '📋 Копировать ключ', 2000); }).catch(() => {});" class="px-2 py-0.5 bg-white border border-emerald-300 hover:border-emerald-600 text-[10px] text-emerald-800 transition cursor-pointer font-sans shadow-2xs">
+                📋 Копировать ключ
+              </button>
+            </div>
+            <div class="text-[10px] text-[#047857] mt-1 break-all" title="${escapedPath}">${escapedPath}</div>
+          `;
           keyPathEl.classList.remove('hidden');
         } else if (keyPathEl) {
           keyPathEl.classList.add('hidden');
@@ -1645,6 +1658,7 @@
           badgeEl.textContent = '⚠ Ошибка';
           badgeEl.className = 'text-[10px] px-1.5 py-0.5 font-medium bg-rose-50 text-rose-700 border border-rose-200';
         }
+        if (metaEl) metaEl.classList.add('hidden');
         if (errorEl) {
           errorEl.textContent = String(err);
           errorEl.classList.remove('hidden');
