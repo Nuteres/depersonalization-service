@@ -1,29 +1,118 @@
-# Binaries and build artifacts
+# ==============================================================================
+# Binaries & Build Artifacts
+# ==============================================================================
 bin/
 build/bin/
+dist/
+depersonalizer*
 *.exe
 *.app
 *.dmg
 *.rpm
-depersonalizer*
+*.deb
+*.pkg
+*.iso
+*.so
+*.dylib
+*.dll
+*.test
+*.out
+coverage.*
 
-# OS specific
-.DS_Store
-Thumbs.db
+# ==============================================================================
+# Sensitive User & Anonymization Data (152-FZ)
+# ==============================================================================
+# Cryptographic key files & mapping dictionaries (.depmap contains real PII mappings)
+*.depmap
 
-# IDE & Editor
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Temporary & session
-tmp/
-.superpowers/
-*.log
-
-# User data files
+# Raw documents, spreadsheets, data dumps that may contain personal data
 *.xlsx
 *.xlsm
+*.xls
+*.xltx
+*.xltm
 *.csv
 *.tsv
+*.pdf
+*.docx
+*.doc
+*.odt
+*.rtf
+*.parquet
+*.db
+*.sqlite
+*.sqlite3
+
+# Archives containing user data
+*.zip
+*.7z
+*.rar
+*.tar.gz
+
+# ==============================================================================
+# Secrets, Credentials & Environment Configs
+# ==============================================================================
+.env
+.env.*
+!.env.example
+*.env
+*.key
+*.pem
+*.crt
+*.cer
+*.p12
+*.pfx
+*.secret
+*.token
+id_rsa*
+id_ed25519*
+credentials.json
+service-account*.json
+
+# ==============================================================================
+# OS & Filesystem Artifacts
+# ==============================================================================
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*~
+*.bak
+*.tmp
+*.temp
+
+# ==============================================================================
+# IDEs & Code Editors
+# ==============================================================================
+.idea/
+.vscode/
+*.sublime-*
+*.swp
+*.swo
+.fleet/
+*.code-workspace
+
+# ==============================================================================
+# Frontend & Node Artifacts
+# ==============================================================================
+node_modules/
+frontend/dist/
+frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ==============================================================================
+# Temporary Files, Logs & Agent / Assistant Metadata
+# ==============================================================================
+tmp/
+temp/
+*.log
+.superpowers/
+.gemini/
+.claude/
+.cursor/
+scratch/
