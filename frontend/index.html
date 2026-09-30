@@ -90,6 +90,13 @@
     .custom-scrollbar::-webkit-scrollbar-thumb:hover {
       background: #A8A29E;
     }
+    body.modal-open {
+      overflow: hidden !important;
+      height: 100vh !important;
+    }
+    .overscroll-contain {
+      overscroll-behavior: contain !important;
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col p-6 sm:p-10 max-w-6xl mx-auto selection:bg-amber-100">
@@ -310,8 +317,8 @@
   </div>
 
   <!-- EXPANDED TABLE PREVIEW MODAL -->
-  <div id="expanded-preview-modal" class="hidden fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 z-50">
-    <div class="bg-white border border-[#E8E7E3] shadow-2xl w-full h-[92vh] flex flex-col max-w-[96vw] overflow-hidden">
+  <div id="expanded-preview-modal" class="hidden fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 z-50 overscroll-contain" onclick="if (event.target === this) closeExpandedPreviewModal()">
+    <div class="bg-white border border-[#E8E7E3] shadow-2xl w-full h-[92vh] max-h-[92vh] flex flex-col max-w-[96vw] overflow-hidden overscroll-contain" onclick="event.stopPropagation()">
       <!-- Modal Header -->
       <div class="px-5 py-3.5 border-b border-[#E8E7E3] flex items-center justify-between bg-[#FAF9F5] shrink-0 gap-3">
         <div class="flex items-center space-x-3 truncate">
@@ -340,7 +347,7 @@
       </div>
 
       <!-- Resizable Table in Modal with Dynamic Infinite Scroll -->
-      <div id="modal-table-scroll-container" class="flex-1 overflow-x-auto overflow-y-auto custom-scrollbar" onscroll="handleModalTableScroll()">
+      <div id="modal-table-scroll-container" class="flex-1 min-h-0 w-full overflow-x-auto overflow-y-auto custom-scrollbar overscroll-contain" style="overscroll-behavior: contain; -webkit-overflow-scrolling: touch;" onscroll="handleModalTableScroll()">
         <table id="modal-preview-table" class="resizable-table text-left text-xs">
           <thead class="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#E8E7E3]">
             <tr id="modal-table-header-row" class="bg-white text-[#78716C] font-mono text-[11px] whitespace-nowrap">
@@ -394,10 +401,12 @@
     let columnWidths = [];
 
     function applyTableWidth() {
-      const table = document.getElementById('preview-table');
-      if (!table || columnWidths.length === 0) return;
+      if (columnWidths.length === 0) return;
       const total = columnWidths.reduce((a, b) => a + b, 0);
-      table.style.width = `${total}px`;
+      const table = document.getElementById('preview-table');
+      if (table) table.style.width = `${total}px`;
+      const modalTable = document.getElementById('modal-preview-table');
+      if (modalTable) modalTable.style.width = `${total}px`;
     }
 
     // 1. Initialize System Environment Badge
@@ -723,7 +732,7 @@
     }
 
     // Modal Expanded Preview Logic
-    function openExpandedPreviewModal() {
+    async function openExpandedPreviewModal() {
       if (!currentFileInfo || !currentFileInfo.headers) {
         alert("Пожалуйста, сначала откройте файл для предпросмотра");
         return;
@@ -731,6 +740,8 @@
       const modal = document.getElementById('expanded-preview-modal');
       if (!modal) return;
       modal.classList.remove('hidden');
+      document.body.classList.add('modal-open');
+      document.body.style.overflow = 'hidden';
 
       const titleEl = document.getElementById('modal-file-title');
       if (titleEl) titleEl.textContent = currentFileInfo.name || '';
@@ -742,11 +753,22 @@
       renderTableHeaders();
       renderModalTableBody();
       updateModalPreviewCountLabel();
+
+      // Immediately pre-fetch enough rows to fill the 92vh viewport
+      // so there is scrollable content right away!
+      if (hasMoreRows && allLoadedRows.length < 30) {
+        await loadNextRowBatch();
+        if (hasMoreRows && allLoadedRows.length < 50) {
+          await loadNextRowBatch();
+        }
+      }
     }
 
     function closeExpandedPreviewModal() {
       const modal = document.getElementById('expanded-preview-modal');
       if (modal) modal.classList.add('hidden');
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
     }
 
     function updateModalPreviewCountLabel() {
@@ -787,8 +809,8 @@
       const container = document.getElementById('modal-table-scroll-container');
       if (!container || isLoadingMore || !hasMoreRows || !currentFilePath) return;
 
-      // When approaching 120px from bottom of scroll container, load next batch
-      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 120) {
+      // When approaching 250px from bottom of scroll container, load next batch
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 250) {
         await loadNextRowBatch();
       }
     }
@@ -813,7 +835,7 @@
 
       try {
         const offset = allLoadedRows.length;
-        const limit = 20;
+        const limit = 30;
         const disabledArr = Array.from(disabledColumns);
 
         if (window.go && window.go.main && window.go.main.App && window.go.main.App.GetTableRows) {
@@ -822,12 +844,16 @@
             allLoadedRows.push(...newRows);
             
             // Append just the new rows to modal table
-            if (tbody && loadingTr) {
+            if (tbody) {
               newRows.forEach((row, idx) => {
                 const tr = document.createElement('tr');
                 tr.className = 'hover:bg-[#FAF9F5] transition-colors whitespace-nowrap';
                 tr.innerHTML = renderRowHtml(row, offset + idx);
-                tbody.insertBefore(tr, loadingTr);
+                if (loadingTr && loadingTr.parentElement === tbody) {
+                  tbody.insertBefore(tr, loadingTr);
+                } else {
+                  tbody.appendChild(tr);
+                }
               });
             }
 
@@ -1166,12 +1192,39 @@
       }
     }
 
+    // Modal scroll & wheel protection (prevents wheel from scrolling document.body)
+    function initModalWheelProtection() {
+      const modalScrollBox = document.getElementById('modal-table-scroll-container');
+      if (modalScrollBox) {
+        modalScrollBox.addEventListener('wheel', (e) => {
+          e.stopPropagation();
+
+          if (e.deltaY > 0 && hasMoreRows && !isLoadingMore) {
+            const isNearBottom = modalScrollBox.scrollTop + modalScrollBox.clientHeight >= modalScrollBox.scrollHeight - 250;
+            const isNotScrollable = modalScrollBox.scrollHeight <= modalScrollBox.clientHeight + 40;
+            if (isNearBottom || isNotScrollable) {
+              loadNextRowBatch();
+            }
+          }
+        }, { passive: true });
+      }
+
+      const modalBackdrop = document.getElementById('expanded-preview-modal');
+      if (modalBackdrop) {
+        modalBackdrop.addEventListener('wheel', (e) => {
+          e.stopPropagation();
+        }, { passive: true });
+      }
+    }
+
     // Initialize environment and listeners immediately & on events
     initAppEnv();
     initDropListeners();
+    initModalWheelProtection();
     window.addEventListener('DOMContentLoaded', () => {
       initAppEnv();
       initDropListeners();
+      initModalWheelProtection();
     });
 
     let wailsInitTries = 0;
@@ -1181,6 +1234,7 @@
         clearInterval(wailsInitInterval);
         initAppEnv();
         initDropListeners();
+        initModalWheelProtection();
       } else if (wailsInitTries > 30) {
         clearInterval(wailsInitInterval);
       }
