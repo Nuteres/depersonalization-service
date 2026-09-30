@@ -114,6 +114,24 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 		headerRowIndex, headers := FindHeaderRow(sample)
 		colTypes := ResolveColumnTypes(headers, options)
 
+		// Build map of disabled columns (1-based index)
+		disabledMap := make(map[int]bool)
+		if options != nil {
+			if dList, ok := options["disabled_columns"].([]int); ok {
+				for _, colIdx := range dList {
+					disabledMap[colIdx] = true
+				}
+			} else if dInterface, ok := options["disabled_columns"].([]interface{}); ok {
+				for _, itm := range dInterface {
+					if n, ok := itm.(int); ok {
+						disabledMap[n] = true
+					} else if f, ok := itm.(float64); ok {
+						disabledMap[int(f)] = true
+					}
+				}
+			}
+		}
+
 		// Check for optional progress callback
 		var progressFn func(int)
 		if cb, ok := options["progress_callback"].(func(int)); ok {
@@ -168,11 +186,12 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 					return fmt.Errorf("failed to write header row in sheet %s: %w", sheetName, err)
 				}
 			} else {
-				// Data row: anonymize according to detected column types
+				// Data row: anonymize according to detected column types (skipping disabled columns)
 				dataCells := make([]interface{}, len(colValues))
 				for i, v := range colValues {
 					var colType ColumnType
-					if i < len(colTypes) {
+					col1Based := i + 1
+					if i < len(colTypes) && !disabledMap[col1Based] {
 						colType = colTypes[i]
 					}
 					dataCells[i] = AnonymizeCell(h.Anon, colType, v, dateRange)

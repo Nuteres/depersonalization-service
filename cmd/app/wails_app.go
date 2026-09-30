@@ -242,12 +242,13 @@ func (a *App) InspectFile(path string) (*FileInfo, error) {
 // ProcessFile processes the input file using the appropriate handler from pkg/formats,
 // writing to <dir>/<basename>_anonymized.<ext>, calculating execution time and stats.
 func (a *App) ProcessFile(path string, salt string) (*ProcessResult, error) {
-	return a.ProcessFileTo(path, "", salt)
+	return a.ProcessFileTo(path, "", salt, nil)
 }
 
 // ProcessFileTo processes the input file and writes to outPath (or default if outPath is empty),
-// emitting progress events via Wails runtime.
-func (a *App) ProcessFileTo(path string, outPath string, salt string) (*ProcessResult, error) {
+// respecting disabledCols (which are preserved unaltered),
+// and emitting progress events via Wails runtime.
+func (a *App) ProcessFileTo(path string, outPath string, salt string, disabledCols []int) (*ProcessResult, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("file path cannot be empty")
 	}
@@ -313,6 +314,7 @@ func (a *App) ProcessFileTo(path string, outPath string, salt string) (*ProcessR
 	}
 
 	options := map[string]interface{}{
+		"disabled_columns": disabledCols,
 		"progress_callback": func(processed int) {
 			if a.ctx != nil {
 				pct := 0
@@ -359,6 +361,243 @@ func (a *App) ProcessFileTo(path string, outPath string, salt string) (*ProcessR
 		DurationMs:    durationMs,
 		Message:       fmt.Sprintf("Файл успешно сохранен: %s (%d мс)", filepath.Base(outPath), durationMs),
 	}, nil
+}
+
+// GetTableRows fetches a window of preview rows starting at offset with limit.
+// This enables dynamic infinite scrolling without loading the entire dataset into memory.
+// It applies anonymization rules while respecting disabledCols.
+func (a *App) GetTableRows(path string, offset int, limit int, salt string, disabledCols []int) ([]PreviewRow, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, errors.New("file path cannot be empty")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if strings.TrimSpace(salt) == "" {
+		salt = "152fz-secure-salt"
+	}
+
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".csv", ".tsv":
+		return getCSVRows(path, offset, limit, salt, disabledCols)
+	case ".xlsx", ".xlsm", ".xltx", ".xltm":
+		return getXLSXRows(path, offset, limit, salt, disabledCols)
+	default:
+		return nil, fmt.Errorf("динамическая подгрузка строк поддерживается только для таблиц: %s", ext)
+	}
+}
+
+func getXLSXRows(path string, offset, limit int, salt string, disabledCols []int) ([]PreviewRow, error) {
+	xl, err := excelize.OpenFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open xlsx file: %w", err)
+	}
+	defer xl.Close()
+
+	sheets := xl.GetSheetList()
+	if len(sheets) == 0 {
+		return nil, errors.New("xlsx file has no sheets")
+	}
+
+	sheetName := sheets[0]
+
+	// Sample top rows to find header
+	sampleIter, err := xl.Rows(sheetName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read rows: %w", err)
+	}
+	var sample [][]string
+	for sampleIter.Next() && len(sample) < 40 {
+		cols, err := sampleIter.Columns()
+		if err != nil {
+			break
+		}
+		sample = append(sample, cols)
+	}
+	_ = sampleIter.Close()
+
+	if len(sample) == 0 {
+		return nil, nil
+	}
+
+	headerIdx, headers := formats.FindHeaderRow(sample)
+	if len(headers) > 0 {
+		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
+	}
+	colTypes := formats.ResolveColumnTypes(headers, nil)
+
+	disabledMap := make(map[int]bool)
+	for _, col := range disabledCols {
+		disabledMap[col] = true
+	}
+
+	anon := anonymizer.New(salt)
+
+	rowsIter, err := xl.Rows(sheetName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate rows: %w", err)
+	}
+	defer rowsIter.Close()
+
+	targetSkip := headerIdx + 1 + offset
+	currentIdx := 0
+
+	var result []PreviewRow
+	for rowsIter.Next() {
+		currentIdx++
+		if currentIdx <= targetSkip {
+			continue
+		}
+
+		cols, err := rowsIter.Columns()
+		if err != nil {
+			break
+		}
+
+		before := make([]string, len(headers))
+		after := make([]string, len(headers))
+		for j := 0; j < len(headers); j++ {
+			val := ""
+			if j < len(cols) {
+				val = cols[j]
+			}
+			before[j] = val
+			var ct formats.ColumnType
+			col1Based := j + 1
+			if j < len(colTypes) && !disabledMap[col1Based] {
+				ct = colTypes[j]
+			}
+			after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+		}
+
+		result = append(result, PreviewRow{
+			Index:  offset + len(result) + 1,
+			Before: before,
+			After:  after,
+		})
+
+		if len(result) >= limit {
+			break
+		}
+	}
+
+	return result, nil
+}
+
+func getCSVRows(path string, offset, limit int, salt string, disabledCols []int) ([]PreviewRow, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open csv file: %w", err)
+	}
+	defer file.Close()
+
+	bufReader := bufio.NewReader(file)
+
+	// Auto-detect delimiter
+	comma := ','
+	peekBytes, _ := bufReader.Peek(2048)
+	peekStr := strings.TrimPrefix(string(peekBytes), "\ufeff")
+	firstLine := peekStr
+	if idx := strings.IndexAny(peekStr, "\r\n"); idx != -1 {
+		firstLine = peekStr[:idx]
+	}
+	semiCount := strings.Count(firstLine, ";")
+	tabCount := strings.Count(firstLine, "\t")
+	commaCount := strings.Count(firstLine, ",")
+	if semiCount > commaCount && semiCount >= tabCount {
+		comma = ';'
+	} else if tabCount > commaCount && tabCount > semiCount {
+		comma = '\t'
+	}
+
+	csvReader := csv.NewReader(bufReader)
+	csvReader.Comma = comma
+	csvReader.FieldsPerRecord = -1
+	csvReader.LazyQuotes = true
+
+	var sample [][]string
+	for len(sample) < 40 {
+		rec, err := csvReader.Read()
+		if err != nil {
+			break
+		}
+		sample = append(sample, rec)
+	}
+
+	if len(sample) == 0 {
+		return nil, nil
+	}
+
+	headerIdx, headers := formats.FindHeaderRow(sample)
+	if len(headers) > 0 {
+		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
+	}
+	colTypes := formats.ResolveColumnTypes(headers, nil)
+
+	disabledMap := make(map[int]bool)
+	for _, col := range disabledCols {
+		disabledMap[col] = true
+	}
+
+	anon := anonymizer.New(salt)
+
+	// Reopen file to seek from start cleanly
+	_, _ = file.Seek(0, io.SeekStart)
+	bufReader.Reset(file)
+	csvReader = csv.NewReader(bufReader)
+	csvReader.Comma = comma
+	csvReader.FieldsPerRecord = -1
+	csvReader.LazyQuotes = true
+
+	targetSkip := headerIdx + 1 + offset
+	currentIdx := 0
+
+	var result []PreviewRow
+	for {
+		rec, err := csvReader.Read()
+		if err != nil {
+			break
+		}
+		currentIdx++
+		if currentIdx <= targetSkip {
+			continue
+		}
+
+		before := make([]string, len(headers))
+		after := make([]string, len(headers))
+		for j := 0; j < len(headers); j++ {
+			val := ""
+			if j < len(rec) {
+				val = rec[j]
+			}
+			before[j] = val
+			var ct formats.ColumnType
+			col1Based := j + 1
+			if j < len(colTypes) && !disabledMap[col1Based] {
+				ct = colTypes[j]
+			}
+			after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+		}
+
+		result = append(result, PreviewRow{
+			Index:  offset + len(result) + 1,
+			Before: before,
+			After:  after,
+		})
+
+		if len(result) >= limit {
+			break
+		}
+	}
+
+	return result, nil
 }
 
 // columnTypeDetails returns user-friendly metadata for each PII ColumnType.
@@ -467,7 +706,7 @@ func inspectCSV(path string) (*FileInfo, error) {
 
 	for i := headerIdx + 1; i < len(sample); i++ {
 		rowCount++
-		if len(previewRows) < 5 {
+		if len(previewRows) < 20 {
 			cols := sample[i]
 			before := make([]string, len(headers))
 			after := make([]string, len(headers))
@@ -497,7 +736,7 @@ func inspectCSV(path string) (*FileInfo, error) {
 			break
 		}
 		rowCount++
-		if len(previewRows) < 5 {
+		if len(previewRows) < 20 {
 			before := make([]string, len(headers))
 			after := make([]string, len(headers))
 			for j := 0; j < len(headers); j++ {
@@ -603,7 +842,7 @@ func inspectXLSX(path string) (*FileInfo, error) {
 	// Preview rows and row count from sample
 	for i := headerIdx + 1; i < len(sample); i++ {
 		rowCount++
-		if len(previewRows) < 5 {
+		if len(previewRows) < 20 {
 			cols := sample[i]
 			before := make([]string, len(headers))
 			after := make([]string, len(headers))
@@ -635,7 +874,7 @@ func inspectXLSX(path string) (*FileInfo, error) {
 			skipped++
 			if skipped > len(sample) {
 				rowCount++
-				if len(previewRows) < 5 {
+				if len(previewRows) < 20 {
 					cols, _ := remainingIter.Columns()
 					before := make([]string, len(headers))
 					after := make([]string, len(headers))

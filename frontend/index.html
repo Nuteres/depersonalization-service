@@ -43,6 +43,41 @@
       display: inline-block;
       user-select: none;
     }
+    /* Resizable Table & Columns */
+    .resizable-table {
+      table-layout: fixed;
+      width: max-content;
+      min-width: 100%;
+      border-collapse: collapse;
+    }
+    .col-resizer {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 7px;
+      height: 100%;
+      cursor: col-resize;
+      user-select: none;
+      z-index: 20;
+    }
+    .col-resizer:hover, .col-resizer.resizing {
+      background-color: #1C1917;
+    }
+    /* Custom Clean Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #F5F5F4;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #D6D3D1;
+      border-radius: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #A8A29E;
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col p-6 sm:p-10 max-w-6xl mx-auto selection:bg-amber-100">
@@ -64,15 +99,15 @@
 
     <!-- Actions Bar -->
     <div class="flex items-center space-x-3 self-start sm:self-auto">
-      <button onclick="handleSelectFile()" class="px-4 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold shadow-sm transition flex items-center space-x-1.5 active:scale-[0.99]">
+      <button onclick="handleSelectFile()" class="px-4 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold shadow-sm transition flex items-center space-x-1.5 active:scale-[0.99] cursor-pointer">
         <span>📁 Открыть файл...</span>
       </button>
       <!-- Active Document Tabs -->
       <div class="flex items-center bg-[#F0EFEB] p-1 text-xs font-medium">
-        <button id="tab-table" onclick="setDocMode('table')" class="px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition">
+        <button id="tab-table" onclick="setDocMode('table')" class="px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition cursor-pointer">
           Выгрузка (Excel / CSV)
         </button>
-        <button id="tab-pdf" onclick="setDocMode('pdf')" class="px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition">
+        <button id="tab-pdf" onclick="setDocMode('pdf')" class="px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer">
           Документ (PDF)
         </button>
       </div>
@@ -97,7 +132,7 @@
       </div>
 
       <!-- Action Button -->
-      <button id="btn-save" onclick="handleSaveProcessedFile()" class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-6 py-3 transition active:scale-[0.99] flex items-center justify-center space-x-2 shadow-sm whitespace-nowrap">
+      <button id="btn-save" onclick="handleSaveProcessedFile()" class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-6 py-3 transition active:scale-[0.99] flex items-center justify-center space-x-2 shadow-sm whitespace-nowrap cursor-pointer">
         <span>💾 Сохранить обработанный файл</span>
         <span class="font-mono text-[11px] text-[#A8A29E]">(.xlsx)</span>
       </button>
@@ -106,7 +141,10 @@
     <!-- Entity Cards Grid -->
     <div>
       <div class="flex items-center justify-between mb-3">
-        <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">Обнаруженные категории ПДн</span>
+        <div class="flex items-center space-x-2">
+          <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">Обнаруженные категории ПДн</span>
+          <span class="text-[11px] text-[#78716C]">(нажмите на карточку или переключатель для отмены деперсонализации)</span>
+        </div>
         <span id="entity-count-badge" class="text-xs font-mono text-[#78716C]">0 категорий</span>
       </div>
       <div id="entity-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
@@ -118,7 +156,7 @@
               <div class="text-xs text-[#78716C]">Нажмите «Открыть файл...», чтобы загрузить Excel (.xlsx) или CSV для деперсонализации.</div>
             </div>
           </div>
-          <button onclick="handleSelectFile()" class="px-3.5 py-1.5 bg-[#FAF9F5] border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] transition">
+          <button onclick="handleSelectFile()" class="px-3.5 py-1.5 bg-[#FAF9F5] border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] transition cursor-pointer">
             Выбрать файл
           </button>
         </div>
@@ -132,27 +170,27 @@
       <div class="p-4 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]">
         <div class="flex items-center space-x-2">
           <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">Предпросмотр таблицы</span>
-          <span id="preview-count-label" class="text-xs text-[#78716C]">(первые строки)</span>
+          <span id="preview-count-label" class="text-xs text-[#78716C] font-mono">(первые строки)</span>
         </div>
 
         <!-- Toggle: Before vs After -->
         <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
-          <button id="btn-show-after" onclick="setViewMode('after')" class="px-3 py-1 bg-[#1C1917] text-white font-semibold transition">
+          <button id="btn-show-after" onclick="setViewMode('after')" class="px-3 py-1 bg-[#1C1917] text-white font-semibold transition cursor-pointer">
             Очищенные данные
           </button>
-          <button id="btn-show-before" onclick="setViewMode('before')" class="px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition">
+          <button id="btn-show-before" onclick="setViewMode('before')" class="px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer">
             Исходные с ПДн
           </button>
         </div>
       </div>
 
-      <!-- Table View -->
-      <div class="overflow-x-auto max-h-[500px] overflow-y-auto">
-        <table class="w-full text-left text-xs border-collapse">
-          <thead class="sticky top-0 z-10 bg-white">
-            <tr class="border-b border-[#E8E7E3] bg-white text-[#78716C] font-mono text-[11px] whitespace-nowrap">
-              <th class="py-3 px-4 font-normal w-12 text-center text-[#A8A29E]">#</th>
-              <th class="py-3 px-4 font-semibold text-[#1C1917]">Колонка</th>
+      <!-- Resizable Table View with Infinite Scroll -->
+      <div id="table-scroll-container" class="overflow-x-auto max-h-[540px] overflow-y-auto custom-scrollbar" onscroll="handleTableScroll()">
+        <table id="preview-table" class="resizable-table text-left text-xs">
+          <thead class="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#E8E7E3]">
+            <tr id="table-header-row" class="bg-white text-[#78716C] font-mono text-[11px] whitespace-nowrap">
+              <th style="width: 54px; min-width: 54px; max-width: 54px;" class="py-3 px-3 font-normal text-center text-[#A8A29E] bg-[#FAF9F5] border-r border-[#F0EFEB]">#</th>
+              <th style="min-width: 200px;" class="py-3 px-4 font-semibold text-[#1C1917]">Колонка</th>
             </tr>
           </thead>
           <tbody id="table-rows" class="divide-y divide-[#F0EFEB] text-[13px]">
@@ -182,7 +220,7 @@
         <h2 id="pdf-file-name-title" class="text-xl font-bold tracking-tight text-[#1C1917]">Документ PDF</h2>
         <p class="text-xs text-[#78716C] mt-0.5">Чувствительные персональные данные вырезаются физически и закрываются плашками</p>
       </div>
-      <button onclick="handleSaveProcessedFile()" class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-5 py-2.5 shadow-sm flex items-center space-x-1.5 transition">
+      <button onclick="handleSaveProcessedFile()" class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-5 py-2.5 shadow-sm flex items-center space-x-1.5 transition cursor-pointer">
         <span>💾</span><span>Сохранить обработанный PDF</span>
       </button>
     </div>
@@ -237,10 +275,10 @@
       </div>
 
       <div class="flex items-center justify-end space-x-2 pt-2 border-t border-[#F0EFEB]">
-        <button id="btn-reveal-folder" onclick="handleRevealFolder()" class="hidden px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold transition">
+        <button id="btn-reveal-folder" onclick="handleRevealFolder()" class="hidden px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold transition cursor-pointer">
           📁 Показать в папке
         </button>
-        <button id="btn-close-progress" onclick="closeProgressModal()" class="px-4 py-2 bg-[#1C1917] text-white text-xs font-semibold transition">
+        <button id="btn-close-progress" onclick="closeProgressModal()" class="px-4 py-2 bg-[#1C1917] text-white text-xs font-semibold transition cursor-pointer">
           Закрыть
         </button>
       </div>
@@ -253,6 +291,14 @@
     let currentSalt = '152fz-secure-salt';
     let currentSavedPath = '';
     let currentView = 'after';
+    
+    // Set of disabled column numbers (1-based index)
+    const disabledColumns = new Set();
+    
+    // Loaded preview rows for infinite scrolling
+    let allLoadedRows = [];
+    let isLoadingMore = false;
+    let hasMoreRows = true;
 
     // 1. Initialize System Environment Badge
     async function initAppEnv() {
@@ -297,21 +343,205 @@
       const btnBefore = document.getElementById('btn-show-before');
 
       if (mode === 'after') {
-        btnAfter.className = 'px-3 py-1 bg-[#1C1917] text-white font-semibold transition';
-        btnBefore.className = 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition';
+        btnAfter.className = 'px-3 py-1 bg-[#1C1917] text-white font-semibold transition cursor-pointer';
+        btnBefore.className = 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
       } else {
-        btnBefore.className = 'px-3 py-1 bg-[#1C1917] text-white font-semibold transition';
-        btnAfter.className = 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition';
+        btnBefore.className = 'px-3 py-1 bg-[#1C1917] text-white font-semibold transition cursor-pointer';
+        btnAfter.className = 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
       }
 
       renderTableBody();
+    }
+
+    // Toggle Column Modification
+    function toggleColumn(colIndex, event) {
+      if (event) {
+        event.stopPropagation();
+      }
+      if (disabledColumns.has(colIndex)) {
+        disabledColumns.delete(colIndex);
+      } else {
+        disabledColumns.add(colIndex);
+      }
+
+      renderEntityCards();
+      renderTableHeaders();
+      renderTableBody();
+    }
+
+    function renderEntityCards() {
+      const cardContainer = document.getElementById('entity-cards-container');
+      const countBadge = document.getElementById('entity-count-badge');
+      if (!cardContainer || !currentFileInfo) return;
+
+      if (!currentFileInfo.entities || currentFileInfo.entities.length === 0) {
+        cardContainer.innerHTML = `
+          <div class="col-span-full bg-white border border-[#E8E7E3] p-5 text-xs text-[#78716C] flex items-center space-x-3">
+            <span class="text-base text-emerald-600 font-bold">✔</span>
+            <div>
+              <div class="font-semibold text-[#1C1917] text-sm">В файле не обнаружено персональных данных</div>
+              <div class="text-xs text-[#78716C] mt-0.5">В таблице нет колонок ФИО, СНИЛС, ИНН, Паспортов, Телефонов, Почты или Дат. Все исходные колонки будут сохранены без изменений.</div>
+            </div>
+          </div>
+        `;
+        if (countBadge) countBadge.textContent = '0 категорий';
+        return;
+      }
+
+      const totalCount = currentFileInfo.entities.length;
+      const activeCount = totalCount - disabledColumns.size;
+      if (countBadge) {
+        countBadge.textContent = `${activeCount} из ${totalCount} активных`;
+      }
+
+      cardContainer.innerHTML = '';
+      currentFileInfo.entities.forEach((ent) => {
+        const isDisabled = disabledColumns.has(ent.columnIndex);
+        const card = document.createElement('div');
+        
+        card.className = `group relative bg-white border ${isDisabled ? 'border-dashed border-stone-300 opacity-80' : 'border-[#E8E7E3] hover:border-[#1C1917]'} p-4 flex flex-col justify-between shadow-xs transition-all cursor-pointer`;
+        card.onclick = () => toggleColumn(ent.columnIndex);
+
+        card.innerHTML = `
+          <div>
+            <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
+              <span>КОЛОНКА #${ent.columnIndex}</span>
+              <button type="button" onclick="toggleColumn(${ent.columnIndex}, event)" class="focus:outline-none flex items-center space-x-1.5 px-2 py-0.5 rounded text-[11px] font-mono font-medium transition cursor-pointer ${isDisabled ? 'bg-stone-100 text-stone-500 hover:bg-stone-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}">
+                <span class="w-2 h-2 rounded-full ${isDisabled ? 'bg-stone-400' : 'bg-emerald-500'}"></span>
+                <span>${isDisabled ? 'Отключено' : '● Заменено'}</span>
+              </button>
+            </div>
+            <div class="flex items-start justify-between gap-2">
+              <div class="font-bold text-sm text-[#1C1917] truncate" title="${escapeHtml(ent.columnName)}">
+                ${escapeHtml(ent.columnName)}
+              </div>
+              <!-- Notion-like Toggle Switch -->
+              <button type="button" onclick="toggleColumn(${ent.columnIndex}, event)" title="${isDisabled ? 'Включить деперсонализацию' : 'Отключить деперсонализацию'}" class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isDisabled ? 'bg-stone-300' : 'bg-emerald-600'}">
+                <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${isDisabled ? 'translate-x-0' : 'translate-x-4'}"></span>
+              </button>
+            </div>
+            <div class="text-xs text-[#78716C] mt-1">${escapeHtml(ent.description)}</div>
+          </div>
+          <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono -mx-4 -mb-4 p-2.5 transition-colors ${isDisabled ? 'text-[#78716C] bg-[#F5F5F4]' : 'text-[#065F46] bg-[#ECFDF5]'}">
+            ${isDisabled ? '○ Исходные данные без изменений' : `➜ ${escapeHtml(ent.action)}`}
+          </div>
+        `;
+        cardContainer.appendChild(card);
+      });
+    }
+
+    function renderTableHeaders() {
+      const headerRow = document.getElementById('table-header-row');
+      if (!headerRow || !currentFileInfo || !currentFileInfo.headers) return;
+
+      let ths = '<th style="width: 54px; min-width: 54px; max-width: 54px;" class="py-3 px-3 font-normal text-center text-[#A8A29E] bg-[#FAF9F5] border-r border-[#F0EFEB]">#</th>';
+      
+      currentFileInfo.headers.forEach((h, idx) => {
+        const col1Based = idx + 1;
+        const ent = currentFileInfo.entities ? currentFileInfo.entities.find(e => e.columnIndex === col1Based) : null;
+        const isPiiCol = !!ent;
+        const isDisabled = disabledColumns.has(col1Based);
+
+        let badge = '';
+        if (isPiiCol) {
+          if (isDisabled) {
+            badge = '<span class="ml-1.5 text-[10px] text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded font-mono line-through" title="Деперсонализация отключена">ПДн</span>';
+          } else {
+            badge = '<span class="ml-1.5 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-mono font-medium" title="Категория: ' + escapeHtml(ent.type) + '">ПДн: Замена</span>';
+          }
+        }
+
+        ths += `
+          <th style="min-width: 180px; width: 220px;" class="relative py-3 px-4 font-semibold text-[#1C1917] select-none group border-r border-[#F0EFEB]">
+            <div class="flex items-center justify-between gap-1 overflow-hidden pr-2">
+              <span class="truncate" title="${escapeHtml(h)}">${escapeHtml(h)}</span>
+              ${badge}
+            </div>
+            <div class="col-resizer" onmousedown="initResize(event, this)"></div>
+          </th>
+        `;
+      });
+
+      headerRow.innerHTML = ths;
+    }
+
+    // Resizable Column Logic
+    function initResize(e, resizer) {
+      e.preventDefault();
+      e.stopPropagation();
+      const th = resizer.parentElement;
+      const startX = e.pageX;
+      const startWidth = th.getBoundingClientRect().width;
+      resizer.classList.add('resizing');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      function onMouseMove(moveEvent) {
+        const diff = moveEvent.pageX - startX;
+        const newWidth = Math.max(70, Math.round(startWidth + diff));
+        th.style.width = `${newWidth}px`;
+        th.style.minWidth = `${newWidth}px`;
+        th.style.maxWidth = `${newWidth}px`;
+      }
+
+      function onMouseUp() {
+        resizer.classList.remove('resizing');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+      }
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    }
+
+    function renderRowHtml(row, i) {
+      const vals = row.before || [];
+      const afterVals = row.after || [];
+
+      let html = `<td class="py-3 px-3 font-mono text-center text-[#A8A29E] text-xs bg-[#FAF9F5] border-r border-[#F0EFEB]">${String(row.index || i + 1).padStart(2, '0')}</td>`;
+
+      vals.forEach((v, cIdx) => {
+        const col1Based = cIdx + 1;
+        const isPiiCol = currentFileInfo.entities && currentFileInfo.entities.some(e => e.columnIndex === col1Based);
+        const isDisabled = disabledColumns.has(col1Based);
+
+        let displayVal = '';
+        let cls = "py-3 px-4 text-xs font-mono border-r border-[#F0EFEB] truncate";
+
+        if (currentView === 'after') {
+          if (isDisabled) {
+            displayVal = v;
+            cls += ' text-[#78716C] bg-stone-50/70 italic';
+          } else if (isPiiCol) {
+            displayVal = afterVals[cIdx] !== undefined ? afterVals[cIdx] : v;
+            cls += ' font-medium text-[#1C1917] bg-emerald-50/40';
+          } else {
+            displayVal = v;
+            cls += ' text-[#57534E]';
+          }
+        } else {
+          // before view
+          displayVal = v;
+          if (isPiiCol) {
+            cls += isDisabled ? ' text-[#78716C] bg-stone-50/50' : ' font-medium text-rose-700 bg-rose-50/50';
+          } else {
+            cls += ' text-[#57534E]';
+          }
+        }
+
+        html += `<td class="${cls}" title="${escapeHtml(displayVal)}">${escapeHtml(displayVal)}</td>`;
+      });
+
+      return html;
     }
 
     function renderTableBody() {
       const tbody = document.getElementById('table-rows');
       if (!tbody) return;
 
-      if (!currentFileInfo || !currentFileInfo.previewRows || currentFileInfo.previewRows.length === 0) {
+      if (!currentFileInfo || allLoadedRows.length === 0) {
         tbody.innerHTML = `
           <tr>
             <td colspan="${(currentFileInfo && currentFileInfo.headers ? currentFileInfo.headers.length + 1 : 2)}" class="py-8 text-center text-xs text-[#78716C] font-mono">
@@ -323,25 +553,93 @@
       }
 
       tbody.innerHTML = '';
-      currentFileInfo.previewRows.forEach((row, i) => {
+      allLoadedRows.forEach((row, i) => {
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-[#FAF9F5] transition-colors whitespace-nowrap';
-        const vals = currentView === 'after' ? row.after : row.before;
-
-        let html = `<td class="py-3 px-4 font-mono text-center text-[#A8A29E] text-xs">${String(row.index || i+1).padStart(2, '0')}</td>`;
-        vals.forEach((v, cIdx) => {
-          const isPiiCol = currentFileInfo.entities && currentFileInfo.entities.some(e => e.columnIndex === (cIdx + 1));
-          let cls = "py-3 px-4 text-xs font-mono";
-          if (isPiiCol) {
-            cls += currentView === 'before' ? ' font-medium text-rose-700 bg-rose-50/40' : ' font-medium text-[#1C1917] bg-emerald-50/30';
-          } else {
-            cls += ' text-[#57534E]';
-          }
-          html += `<td class="${cls}">${escapeHtml(v)}</td>`;
-        });
-        tr.innerHTML = html;
+        tr.innerHTML = renderRowHtml(row, i);
         tbody.appendChild(tr);
       });
+
+      updatePreviewCountLabel();
+    }
+
+    function updatePreviewCountLabel() {
+      const previewLabel = document.getElementById('preview-count-label');
+      if (previewLabel && currentFileInfo) {
+        if (currentFileInfo.rowCount > 0) {
+          previewLabel.textContent = `(показано ${allLoadedRows.length.toLocaleString('ru-RU')} из ${currentFileInfo.rowCount.toLocaleString('ru-RU')} строк)`;
+        } else {
+          previewLabel.textContent = `(${allLoadedRows.length} строк)`;
+        }
+      }
+    }
+
+    // Dynamic Infinite Scrolling
+    async function handleTableScroll() {
+      const container = document.getElementById('table-scroll-container');
+      if (!container || isLoadingMore || !hasMoreRows || !currentFilePath) return;
+
+      // When approaching 100px from the bottom, load next batch of rows
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 100) {
+        await loadNextRowBatch();
+      }
+    }
+
+    async function loadNextRowBatch() {
+      if (isLoadingMore || !hasMoreRows || !currentFilePath) return;
+      isLoadingMore = true;
+
+      const tbody = document.getElementById('table-rows');
+      let loadingTr = null;
+      if (tbody) {
+        loadingTr = document.createElement('tr');
+        loadingTr.id = 'table-loading-row';
+        const colSpan = currentFileInfo && currentFileInfo.headers ? currentFileInfo.headers.length + 1 : 2;
+        loadingTr.innerHTML = `
+          <td colspan="${colSpan}" class="py-3 text-center text-xs text-[#78716C] font-mono bg-[#FAF9F5]">
+            <span class="inline-block animate-spin mr-2">⏳</span> Подгрузка следующих строк...
+          </td>
+        `;
+        tbody.appendChild(loadingTr);
+      }
+
+      try {
+        const offset = allLoadedRows.length;
+        const limit = 20;
+        const disabledArr = Array.from(disabledColumns);
+
+        if (window.go && window.go.main && window.go.main.App && window.go.main.App.GetTableRows) {
+          const newRows = await window.go.main.App.GetTableRows(currentFilePath, offset, limit, currentSalt, disabledArr);
+          if (newRows && newRows.length > 0) {
+            allLoadedRows.push(...newRows);
+            
+            // Append just the new rows to tbody
+            newRows.forEach((row, idx) => {
+              const tr = document.createElement('tr');
+              tr.className = 'hover:bg-[#FAF9F5] transition-colors whitespace-nowrap';
+              tr.innerHTML = renderRowHtml(row, offset + idx);
+              tbody.insertBefore(tr, loadingTr);
+            });
+
+            if (allLoadedRows.length >= currentFileInfo.rowCount || newRows.length < limit) {
+              hasMoreRows = false;
+            }
+          } else {
+            hasMoreRows = false;
+          }
+        } else {
+          hasMoreRows = false;
+        }
+      } catch (err) {
+        console.error("Error loading table rows batch:", err);
+        hasMoreRows = false;
+      } finally {
+        if (loadingTr && loadingTr.parentElement) {
+          loadingTr.parentElement.removeChild(loadingTr);
+        }
+        isLoadingMore = false;
+        updatePreviewCountLabel();
+      }
     }
 
     function setDocMode(mode) {
@@ -353,13 +651,13 @@
       if (mode === 'table') {
         contentTable.classList.remove('hidden');
         contentPdf.classList.add('hidden');
-        tabTable.className = 'px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition';
-        tabPdf.className = 'px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition';
+        tabTable.className = 'px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition cursor-pointer';
+        tabPdf.className = 'px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
       } else {
         contentTable.classList.add('hidden');
         contentPdf.classList.remove('hidden');
-        tabPdf.className = 'px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition';
-        tabTable.className = 'px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition';
+        tabPdf.className = 'px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition cursor-pointer';
+        tabTable.className = 'px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
       }
     }
 
@@ -378,7 +676,7 @@
           input.onchange = (e) => {
             const f = e.target.files[0];
             if (f) {
-              alert("В браузере выбран файл: " + f.name + ". В среде Wails десктопного приложения файл обрабатывается локально через движок Go.");
+              alert("В браузере выбран файл: " + f.name + ". В десктопном приложении файл обрабатывается локально через движок Go.");
             }
           };
           input.click();
@@ -398,6 +696,11 @@
 
         currentFilePath = path;
         currentFileInfo = info;
+        disabledColumns.clear();
+
+        allLoadedRows = info.previewRows ? [...info.previewRows] : [];
+        hasMoreRows = info.fileType === 'table' && allLoadedRows.length < info.rowCount;
+        isLoadingMore = false;
 
         // Update file titles
         const titleEl = document.getElementById('file-name-title');
@@ -419,70 +722,18 @@
           descEl.textContent = `Обнаружено категорий ПДн: ${entityCount}. Чувствительные поля подготовлены к безопасной деперсонализации по 152-ФЗ.`;
         }
 
-        const countBadge = document.getElementById('entity-count-badge');
-        if (countBadge) {
-          countBadge.textContent = `${entityCount} категорий`;
-        }
-
         // Update button badge
         const btnBadge = document.querySelector('#btn-save .font-mono');
         if (btnBadge && info.extension) {
           btnBadge.textContent = `(.${info.extension.toLowerCase()})`;
         }
 
-        // Render Entity Cards dynamically
-        const cardContainer = document.getElementById('entity-cards-container');
-        if (cardContainer) {
-          cardContainer.innerHTML = '';
-          if (info.entities && info.entities.length > 0) {
-            info.entities.forEach((ent) => {
-              const card = document.createElement('div');
-              card.className = 'bg-white border border-[#E8E7E3] p-4 flex flex-col justify-between shadow-xs hover:border-[#1C1917] transition-colors';
-              card.innerHTML = `
-                <div>
-                  <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
-                    <span>КОЛОНКА #${ent.columnIndex}</span>
-                    <span class="text-emerald-700 font-semibold">● Заменено</span>
-                  </div>
-                  <div class="font-bold text-sm text-[#1C1917] truncate" title="${escapeHtml(ent.columnName)}">${escapeHtml(ent.columnName)}</div>
-                  <div class="text-xs text-[#78716C] mt-0.5">${escapeHtml(ent.description)}</div>
-                </div>
-                <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono text-[#065F46] bg-[#ECFDF5] -mx-4 -mb-4 p-2.5">
-                  ➜ ${escapeHtml(ent.action)}
-                </div>
-              `;
-              cardContainer.appendChild(card);
-            });
-          } else {
-            // No PII found in file
-            cardContainer.innerHTML = `
-              <div class="col-span-full bg-white border border-[#E8E7E3] p-5 text-xs text-[#78716C] flex items-center space-x-3">
-                <span class="text-base text-emerald-600 font-bold">✔</span>
-                <div>
-                  <div class="font-semibold text-[#1C1917] text-sm">В файле не обнаружено персональных данных</div>
-                  <div class="text-xs text-[#78716C] mt-0.5">В таблице нет колонок ФИО, СНИЛС, ИНН, Паспортов, Телефонов, Почты или Дат. Все исходные колонки будут сохранены без изменений.</div>
-                </div>
-              </div>
-            `;
-          }
-        }
+        // Render Entity Cards
+        renderEntityCards();
 
-        // Render Headers for Table
-        if (info.fileType === 'table' && info.headers && info.headers.length > 0) {
-          const thead = document.querySelector('#mode-table-content thead tr');
-          if (thead) {
-            let ths = '<th class="py-3 px-4 font-normal w-12 text-center text-[#A8A29E]">#</th>';
-            info.headers.forEach((h, idx) => {
-              const isPiiCol = info.entities && info.entities.some(e => e.columnIndex === (idx + 1));
-              const badge = isPiiCol ? '<span class="ml-1 text-[10px] text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded font-mono">ПДн</span>' : '';
-              ths += `<th class="py-3 px-4 font-semibold text-[#1C1917]">${escapeHtml(h)}${badge}</th>`;
-            });
-            thead.innerHTML = ths;
-          }
-          const previewLabel = document.getElementById('preview-count-label');
-          if (previewLabel) {
-            previewLabel.textContent = `(первые ${info.previewRows ? info.previewRows.length : 0} строк)`;
-          }
+        // Render Table or PDF
+        if (info.fileType === 'table') {
+          renderTableHeaders();
           renderTableBody();
           setDocMode('table');
         } else if (info.fileType === 'pdf') {
@@ -520,8 +771,10 @@
         // Open progress modal
         openProgressModal(currentFileInfo ? currentFileInfo.rowCount : 0);
 
+        const disabledArr = Array.from(disabledColumns);
+
         if (window.go && window.go.main && window.go.main.App && window.go.main.App.ProcessFileTo) {
-          const res = await window.go.main.App.ProcessFileTo(currentFilePath, destPath, currentSalt);
+          const res = await window.go.main.App.ProcessFileTo(currentFilePath, destPath, currentSalt, disabledArr);
           if (res && res.success) {
             onProcessingCompleted(res);
           } else {

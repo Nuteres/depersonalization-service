@@ -124,6 +124,24 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 	}
 	colTypes := ResolveColumnTypes(headers, options)
 
+	// Build map of disabled columns (1-based index)
+	disabledMap := make(map[int]bool)
+	if options != nil {
+		if dList, ok := options["disabled_columns"].([]int); ok {
+			for _, colIdx := range dList {
+				disabledMap[colIdx] = true
+			}
+		} else if dInterface, ok := options["disabled_columns"].([]interface{}); ok {
+			for _, itm := range dInterface {
+				if n, ok := itm.(int); ok {
+					disabledMap[n] = true
+				} else if f, ok := itm.(float64); ok {
+					disabledMap[int(f)] = true
+				}
+			}
+		}
+	}
+
 	// Write any preamble rows before the header
 	for i := 0; i < headerIdx; i++ {
 		if err := csvWriter.Write(initialRows[i]); err != nil {
@@ -144,7 +162,8 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		outRow := make([]string, len(record))
 		for j, val := range record {
 			var ct ColumnType
-			if j < len(colTypes) {
+			col1Based := j + 1
+			if j < len(colTypes) && !disabledMap[col1Based] {
 				ct = colTypes[j]
 			}
 			outRow[j] = AnonymizeCell(h.Anon, ct, val, dateRange)
@@ -177,7 +196,8 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		outRow := make([]string, len(record))
 		for i, val := range record {
 			var colType ColumnType
-			if i < len(colTypes) {
+			col1Based := i + 1
+			if i < len(colTypes) && !disabledMap[col1Based] {
 				colType = colTypes[i]
 			}
 			outRow[i] = AnonymizeCell(h.Anon, colType, val, dateRange)

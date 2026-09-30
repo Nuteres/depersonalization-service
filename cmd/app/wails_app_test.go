@@ -336,3 +336,102 @@ func TestApp_InspectExcelWithPreamble(t *testing.T) {
 		t.Errorf("expected Email to be anonymized in preview")
 	}
 }
+
+func TestApp_GetTableRows(t *testing.T) {
+	tmpDir := t.TempDir()
+	csvPath := filepath.Join(tmpDir, "many_clients.csv")
+
+	var sb strings.Builder
+	sb.WriteString("ФИО,СНИЛС,Телефон\n")
+	for i := 1; i <= 35; i++ {
+		sb.WriteString(fmt.Sprintf("Иванов Иван %d,112-233-445 95,+7 916 111-22-%02d\n", i, i))
+	}
+	if err := os.WriteFile(csvPath, []byte(sb.String()), 0644); err != nil {
+		t.Fatalf("failed to write test csv: %v", err)
+	}
+
+	app := NewApp()
+
+	// Window 1: offset 0, limit 15
+	rows1, err := app.GetTableRows(csvPath, 0, 15, "test-salt", nil)
+	if err != nil {
+		t.Fatalf("GetTableRows offset 0 failed: %v", err)
+	}
+	if len(rows1) != 15 {
+		t.Fatalf("expected 15 rows, got %d", len(rows1))
+	}
+	if rows1[0].Index != 1 || rows1[14].Index != 15 {
+		t.Errorf("unexpected row indices in window 1: first=%d, last=%d", rows1[0].Index, rows1[14].Index)
+	}
+	// Verify FIO is anonymized
+	if rows1[0].Before[0] == rows1[0].After[0] {
+		t.Errorf("expected FIO to be anonymized in window 1")
+	}
+
+	// Window 2: offset 15, limit 15
+	rows2, err := app.GetTableRows(csvPath, 15, 15, "test-salt", nil)
+	if err != nil {
+		t.Fatalf("GetTableRows offset 15 failed: %v", err)
+	}
+	if len(rows2) != 15 {
+		t.Fatalf("expected 15 rows in window 2, got %d", len(rows2))
+	}
+	if rows2[0].Index != 16 || rows2[14].Index != 30 {
+		t.Errorf("unexpected row indices in window 2: first=%d, last=%d", rows2[0].Index, rows2[14].Index)
+	}
+
+	// Test with disabled column 2 (СНИЛС) -> 1-based index 2
+	rowsDisabled, err := app.GetTableRows(csvPath, 0, 5, "test-salt", []int{2})
+	if err != nil {
+		t.Fatalf("GetTableRows with disabled col failed: %v", err)
+	}
+	for i, r := range rowsDisabled {
+		// FIO (col 1) should be anonymized
+		if r.Before[0] == r.After[0] {
+			t.Errorf("row %d: col 1 (FIO) expected anonymized", i)
+		}
+		// SNILS (col 2) should NOT be anonymized because disabled
+		if r.Before[1] != r.After[1] {
+			t.Errorf("row %d: col 2 (SNILS) should remain original when disabled, got before=%s after=%s", i, r.Before[1], r.After[1])
+		}
+	}
+}
+
+func TestApp_ProcessFileTo_DisabledColumns(t *testing.T) {
+	tmpDir := t.TempDir()
+	csvPath := filepath.Join(tmpDir, "clients_to_disable.csv")
+	outPath := filepath.Join(tmpDir, "clients_disabled_out.csv")
+
+	content := "ФИО,СНИЛС,Телефон\n" +
+		"Иванов Иван Иванович,112-233-445 95,+7 916 123-45-67\n"
+
+	if err := os.WriteFile(csvPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test csv: %v", err)
+	}
+
+	app := NewApp()
+	// Disable column 2 (СНИЛС)
+	res, err := app.ProcessFileTo(csvPath, outPath, "test-salt", []int{2})
+	if err != nil {
+		t.Fatalf("ProcessFileTo failed: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("ProcessFileTo reported failure: %s", res.Error)
+	}
+
+	outBytes, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read output file: %v", err)
+	}
+	outStr := string(outBytes)
+
+	// FIO must be anonymized
+	if strings.Contains(outStr, "Иванов Иван Иванович") {
+		t.Errorf("expected FIO to be anonymized in output")
+	}
+	// SNILS was disabled, so it must be preserved
+	if !strings.Contains(outStr, "112-233-445 95") {
+		t.Errorf("expected disabled SNILS to be preserved in output")
+	}
+}
+
