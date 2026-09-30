@@ -83,6 +83,11 @@ func NewApp() *App {
 // Startup is called at application startup by Wails.
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	runtime.OnFileDrop(ctx, func(x, y int, paths []string) {
+		if len(paths) > 0 && paths[0] != "" {
+			runtime.EventsEmit(ctx, "app:file-dropped", paths[0])
+		}
+	})
 }
 
 // GetAppInfo returns system environment metadata (current operating system, architecture, app version).

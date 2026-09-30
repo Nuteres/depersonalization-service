@@ -428,10 +428,18 @@
         badge.textContent = `${version} • ${osName}`;
       }
 
-      // Subscribe to Wails progress events
+      // Subscribe to Wails progress and backend drop events
       if (window.runtime && window.runtime.EventsOn) {
         window.runtime.EventsOn('process-progress', (data) => {
           onProgressUpdate(data);
+        });
+        window.runtime.EventsOn('app:file-dropped', (filePath) => {
+          if (filePath) {
+            const overlay = document.getElementById('drag-drop-overlay');
+            if (overlay) overlay.classList.add('hidden');
+            dragCounter = 0;
+            loadFile(filePath);
+          }
         });
       }
     }
@@ -585,7 +593,6 @@
         `;
       });
 
-      const headerRow = document.getElementById('table-header-row');
       if (headerRow) headerRow.innerHTML = ths;
       const modalHeaderRow = document.getElementById('modal-table-header-row');
       if (modalHeaderRow) modalHeaderRow.innerHTML = ths;
@@ -1141,17 +1148,43 @@
       }
     });
 
-    // Native Wails Drag & Drop callback
-    if (window.runtime && window.runtime.OnFileDrop) {
-      window.runtime.OnFileDrop((x, y, paths) => {
-        const overlay = document.getElementById('drag-drop-overlay');
-        if (overlay) overlay.classList.add('hidden');
-        dragCounter = 0;
-        if (paths && paths.length > 0) {
-          loadFile(paths[0]);
+    // Native Wails Drag & Drop callback registration
+    function initDropListeners() {
+      if (window.runtime && window.runtime.OnFileDrop) {
+        try {
+          window.runtime.OnFileDrop((x, y, paths) => {
+            const overlay = document.getElementById('drag-drop-overlay');
+            if (overlay) overlay.classList.add('hidden');
+            dragCounter = 0;
+            if (paths && paths.length > 0) {
+              loadFile(paths[0]);
+            }
+          }, false);
+        } catch (e) {
+          console.warn("OnFileDrop registration error:", e);
         }
-      }, false);
+      }
     }
+
+    // Initialize environment and listeners immediately & on events
+    initAppEnv();
+    initDropListeners();
+    window.addEventListener('DOMContentLoaded', () => {
+      initAppEnv();
+      initDropListeners();
+    });
+
+    let wailsInitTries = 0;
+    const wailsInitInterval = setInterval(() => {
+      wailsInitTries++;
+      if (window.go && window.go.main && window.go.main.App) {
+        clearInterval(wailsInitInterval);
+        initAppEnv();
+        initDropListeners();
+      } else if (wailsInitTries > 30) {
+        clearInterval(wailsInitInterval);
+      }
+    }, 100);
   </script>
 </body>
 </html>
