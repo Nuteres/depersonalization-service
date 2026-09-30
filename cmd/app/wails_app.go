@@ -706,7 +706,7 @@ func inspectCSV(path string) (*FileInfo, error) {
 
 	for i := headerIdx + 1; i < len(sample); i++ {
 		rowCount++
-		if len(previewRows) < 20 {
+		if len(previewRows) < 10 {
 			cols := sample[i]
 			before := make([]string, len(headers))
 			after := make([]string, len(headers))
@@ -736,7 +736,7 @@ func inspectCSV(path string) (*FileInfo, error) {
 			break
 		}
 		rowCount++
-		if len(previewRows) < 20 {
+		if len(previewRows) < 10 {
 			before := make([]string, len(headers))
 			after := make([]string, len(headers))
 			for j := 0; j < len(headers); j++ {
@@ -842,7 +842,7 @@ func inspectXLSX(path string) (*FileInfo, error) {
 	// Preview rows and row count from sample
 	for i := headerIdx + 1; i < len(sample); i++ {
 		rowCount++
-		if len(previewRows) < 20 {
+		if len(previewRows) < 10 {
 			cols := sample[i]
 			before := make([]string, len(headers))
 			after := make([]string, len(headers))
@@ -874,7 +874,7 @@ func inspectXLSX(path string) (*FileInfo, error) {
 			skipped++
 			if skipped > len(sample) {
 				rowCount++
-				if len(previewRows) < 20 {
+				if len(previewRows) < 10 {
 					cols, _ := remainingIter.Columns()
 					before := make([]string, len(headers))
 					after := make([]string, len(headers))

@@ -21,6 +21,9 @@ func main() {
 			Assets: frontend.Assets,
 		},
 		OnStartup: app.Startup,
+		DragAndDrop: &options.DragAndDrop{
+			EnableFileDrop: true,
+		},
 		Bind: []interface{}{
 			app,
 		},

@@ -161,16 +161,13 @@
       </div>
       <div id="entity-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
         <div class="col-span-full bg-white border border-[#E8E7E3] p-6 text-sm text-[#78716C] flex items-center justify-between">
-          <div class="flex items-center space-x-3">
-            <span class="text-xl">📁</span>
+          <div class="flex items-center space-x-3.5">
+            <span class="text-2xl">📁</span>
             <div>
               <div class="font-semibold text-[#1C1917]">Файл пока не открыт</div>
-              <div class="text-xs text-[#78716C]">Нажмите «Открыть файл...», чтобы загрузить Excel (.xlsx) или CSV для деперсонализации.</div>
+              <div class="text-xs text-[#78716C] mt-0.5">Нажмите «Открыть файл...» вверху или перетащите файл в окно программы (Excel, CSV, PDF).</div>
             </div>
           </div>
-          <button onclick="handleSelectFile()" class="px-3.5 py-1.5 bg-[#FAF9F5] border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] transition cursor-pointer">
-            Выбрать файл
-          </button>
         </div>
       </div>
     </div>
@@ -182,22 +179,30 @@
       <div class="p-4 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]">
         <div class="flex items-center space-x-2">
           <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">Предпросмотр таблицы</span>
-          <span id="preview-count-label" class="text-xs text-[#78716C] font-mono">(первые строки)</span>
+          <span id="preview-count-label" class="text-xs text-[#78716C] font-mono">(первые 10 строк)</span>
         </div>
 
-        <!-- Toggle: Before vs After -->
-        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
-          <button id="btn-show-after" onclick="setViewMode('after')" class="px-3 py-1 bg-[#1C1917] text-white font-semibold transition cursor-pointer">
-            Очищенные данные
+        <div class="flex items-center space-x-3">
+          <!-- Button to Expand Preview Window -->
+          <button id="btn-expand-preview" onclick="openExpandedPreviewModal()" class="px-3 py-1 bg-white hover:bg-[#F5F5F4] border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold flex items-center space-x-1.5 transition cursor-pointer shadow-xs active:scale-[0.99]" title="Раскрыть окно предпросмотра таблицы">
+            <span>⤢</span>
+            <span>Раскрыть предпросмотр</span>
           </button>
-          <button id="btn-show-before" onclick="setViewMode('before')" class="px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer">
-            Исходные с ПДн
-          </button>
+
+          <!-- Toggle: Before vs After -->
+          <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
+            <button id="btn-show-after" onclick="setViewMode('after')" class="px-3 py-1 bg-[#1C1917] text-white font-semibold transition cursor-pointer">
+              Очищенные данные
+            </button>
+            <button id="btn-show-before" onclick="setViewMode('before')" class="px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer">
+              Исходные с ПДн
+            </button>
+          </div>
         </div>
       </div>
 
-      <!-- Resizable Table View with Infinite Scroll -->
-      <div id="table-scroll-container" class="overflow-x-auto max-h-[540px] overflow-y-auto custom-scrollbar" onscroll="handleTableScroll()">
+      <!-- Resizable Table View (Fixed 10 rows on main view) -->
+      <div id="table-scroll-container" class="overflow-x-auto max-h-[460px] overflow-y-auto custom-scrollbar">
         <table id="preview-table" class="resizable-table text-left text-xs">
           <thead class="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#E8E7E3]">
             <tr id="table-header-row" class="bg-white text-[#78716C] font-mono text-[11px] whitespace-nowrap">
@@ -215,9 +220,16 @@
         </table>
       </div>
 
-      <!-- Trust note at bottom -->
+      <!-- Trust note & Expand shortcut at bottom -->
       <div class="px-4 py-3 bg-[#FAF9F5] border-t border-[#E8E7E3] text-xs text-[#78716C] flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-mono">
-        <span>Ключ целостности связей: <strong class="text-[#1C1917]" id="salt-display">152fz-secure-salt</strong></span>
+        <div class="flex items-center space-x-2">
+          <span>Ключ целостности: <strong class="text-[#1C1917]" id="salt-display">152fz-secure-salt</strong></span>
+          <span>•</span>
+          <span id="main-preview-summary">Первые 10 строк</span>
+          <button onclick="openExpandedPreviewModal()" class="ml-1 text-[#1C1917] hover:underline font-semibold cursor-pointer">
+            (раскрыть все строки ⤢)
+          </button>
+        </div>
         <span class="text-[#065F46] font-semibold">✔ Деперсонализация необратима без секретного ключа</span>
       </div>
 
@@ -297,6 +309,72 @@
     </div>
   </div>
 
+  <!-- EXPANDED TABLE PREVIEW MODAL -->
+  <div id="expanded-preview-modal" class="hidden fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 z-50">
+    <div class="bg-white border border-[#E8E7E3] shadow-2xl w-full h-[92vh] flex flex-col max-w-[96vw] overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-5 py-3.5 border-b border-[#E8E7E3] flex items-center justify-between bg-[#FAF9F5] shrink-0 gap-3">
+        <div class="flex items-center space-x-3 truncate">
+          <span class="font-bold text-sm tracking-tight text-[#1C1917] whitespace-nowrap">Полный предпросмотр таблицы</span>
+          <span id="modal-file-title" class="text-xs font-mono font-semibold text-[#1C1917] bg-[#E8E7E3] px-2 py-0.5 truncate">data.xlsx</span>
+          <span id="modal-preview-count-label" class="text-xs text-[#78716C] font-mono whitespace-nowrap">(показано 10 из 8 542 строк)</span>
+        </div>
+
+        <div class="flex items-center space-x-3 shrink-0">
+          <!-- Toggle Before vs After inside Modal -->
+          <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
+            <button id="modal-btn-show-after" onclick="setViewMode('after')" class="px-3 py-1 bg-[#1C1917] text-white font-semibold transition cursor-pointer">
+              Очищенные данные
+            </button>
+            <button id="modal-btn-show-before" onclick="setViewMode('before')" class="px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer">
+              Исходные с ПДн
+            </button>
+          </div>
+
+          <!-- Close Modal Button -->
+          <button onclick="closeExpandedPreviewModal()" class="px-3.5 py-1.5 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold shadow-xs transition flex items-center space-x-1 cursor-pointer">
+            <span>✕ Свернуть</span>
+            <span class="text-[10px] text-[#A8A29E] font-mono ml-1">[Esc]</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Resizable Table in Modal with Dynamic Infinite Scroll -->
+      <div id="modal-table-scroll-container" class="flex-1 overflow-x-auto overflow-y-auto custom-scrollbar" onscroll="handleModalTableScroll()">
+        <table id="modal-preview-table" class="resizable-table text-left text-xs">
+          <thead class="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#E8E7E3]">
+            <tr id="modal-table-header-row" class="bg-white text-[#78716C] font-mono text-[11px] whitespace-nowrap">
+              <th style="width: 50px;" class="py-3 px-3 font-normal text-center text-[#A8A29E] bg-[#FAF9F5] border-r border-[#F0EFEB]">#</th>
+              <th style="min-width: 200px;" class="py-3 px-4 font-semibold text-[#1C1917]">Колонка</th>
+            </tr>
+          </thead>
+          <tbody id="modal-table-rows" class="divide-y divide-[#F0EFEB] text-[13px]">
+            <tr>
+              <td colspan="2" class="py-8 text-center text-xs text-[#78716C] font-mono">
+                Загрузка данных таблицы...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-5 py-2.5 bg-[#FAF9F5] border-t border-[#E8E7E3] text-xs text-[#78716C] flex items-center justify-between font-mono shrink-0">
+        <span id="modal-columns-summary">Колонок: 0</span>
+        <span class="text-[#065F46] font-semibold">Листайте вниз для динамической подгрузки строк файла</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drag and Drop Overlay -->
+  <div id="drag-drop-overlay" class="hidden fixed inset-0 bg-stone-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-8 pointer-events-none transition-all">
+    <div class="bg-white border-2 border-dashed border-[#1C1917] p-8 max-w-md w-full text-center shadow-2xl flex flex-col items-center gap-3">
+      <span class="text-4xl">📥</span>
+      <div class="text-base font-bold text-[#1C1917]">Отпустите файл для деперсонализации</div>
+      <div class="text-xs text-[#78716C] font-mono">Excel (.xlsx), CSV (.csv) или PDF (.pdf)</div>
+    </div>
+  </div>
+
   <script>
     let currentFilePath = '';
     let currentFileInfo = null;
@@ -363,16 +441,26 @@
       currentView = mode;
       const btnAfter = document.getElementById('btn-show-after');
       const btnBefore = document.getElementById('btn-show-before');
+      const modalBtnAfter = document.getElementById('modal-btn-show-after');
+      const modalBtnBefore = document.getElementById('modal-btn-show-before');
+
+      const activeCls = 'px-3 py-1 bg-[#1C1917] text-white font-semibold transition cursor-pointer';
+      const inactiveCls = 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
 
       if (mode === 'after') {
-        btnAfter.className = 'px-3 py-1 bg-[#1C1917] text-white font-semibold transition cursor-pointer';
-        btnBefore.className = 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
+        if (btnAfter) btnAfter.className = activeCls;
+        if (btnBefore) btnBefore.className = inactiveCls;
+        if (modalBtnAfter) modalBtnAfter.className = activeCls;
+        if (modalBtnBefore) modalBtnBefore.className = inactiveCls;
       } else {
-        btnBefore.className = 'px-3 py-1 bg-[#1C1917] text-white font-semibold transition cursor-pointer';
-        btnAfter.className = 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
+        if (btnBefore) btnBefore.className = activeCls;
+        if (btnAfter) btnAfter.className = inactiveCls;
+        if (modalBtnBefore) modalBtnBefore.className = activeCls;
+        if (modalBtnAfter) modalBtnAfter.className = inactiveCls;
       }
 
       renderTableBody();
+      renderModalTableBody();
     }
 
     // Toggle Column Modification
@@ -389,6 +477,7 @@
       renderEntityCards();
       renderTableHeaders();
       renderTableBody();
+      renderModalTableBody();
     }
 
     function renderEntityCards() {
@@ -496,7 +585,10 @@
         `;
       });
 
-      headerRow.innerHTML = ths;
+      const headerRow = document.getElementById('table-header-row');
+      if (headerRow) headerRow.innerHTML = ths;
+      const modalHeaderRow = document.getElementById('modal-table-header-row');
+      if (modalHeaderRow) modalHeaderRow.innerHTML = ths;
     }
 
     // Resizable Column Logic with free shrinking below content length
@@ -504,9 +596,8 @@
       e.preventDefault();
       e.stopPropagation();
 
-      const th = e.target.parentElement;
       const startX = e.pageX;
-      const startWidth = columnWidths[colIndex] || th.getBoundingClientRect().width;
+      const startWidth = columnWidths[colIndex] || 180;
       const resizer = e.target;
       resizer.classList.add('resizing');
       document.body.style.cursor = 'col-resize';
@@ -517,7 +608,13 @@
         // User can shrink down to 25px freely! Text not fitting will be clipped with ellipsis
         const newWidth = Math.max(25, Math.round(startWidth + diff));
         columnWidths[colIndex] = newWidth;
-        th.style.width = `${newWidth}px`;
+
+        // Apply width to both main and modal tables
+        const mainTh = document.querySelector(`#table-header-row th:nth-child(${colIndex + 1})`);
+        if (mainTh) mainTh.style.width = `${newWidth}px`;
+        const modalTh = document.querySelector(`#modal-table-header-row th:nth-child(${colIndex + 1})`);
+        if (modalTh) modalTh.style.width = `${newWidth}px`;
+
         applyTableWidth();
       }
 
@@ -574,8 +671,86 @@
       return html;
     }
 
+    // Render fixed 10 rows on main view
     function renderTableBody() {
       const tbody = document.getElementById('table-rows');
+      if (!tbody) return;
+
+      if (!currentFileInfo || allLoadedRows.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="${(currentFileInfo && currentFileInfo.headers ? currentFileInfo.headers.length + 1 : 2)}" class="py-8 text-center text-xs text-[#78716C] font-mono">
+              В таблице нет строк данных для отображения
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = '';
+      // Fixed 10 rows for main dashboard preview
+      const mainRows = allLoadedRows.slice(0, 10);
+      mainRows.forEach((row, i) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-[#FAF9F5] transition-colors whitespace-nowrap';
+        tr.innerHTML = renderRowHtml(row, i);
+        tbody.appendChild(tr);
+      });
+
+      updatePreviewCountLabel();
+    }
+
+    function updatePreviewCountLabel() {
+      const previewLabel = document.getElementById('preview-count-label');
+      const mainSummary = document.getElementById('main-preview-summary');
+      if (currentFileInfo) {
+        const rowCount = currentFileInfo.rowCount;
+        const shownCount = Math.min(10, allLoadedRows.length);
+        if (previewLabel) {
+          previewLabel.textContent = `(первые ${shownCount} строк)`;
+        }
+        if (mainSummary) {
+          mainSummary.textContent = `Показано ${shownCount} из ${rowCount.toLocaleString('ru-RU')} строк`;
+        }
+      }
+    }
+
+    // Modal Expanded Preview Logic
+    function openExpandedPreviewModal() {
+      if (!currentFileInfo || !currentFileInfo.headers) {
+        alert("Пожалуйста, сначала откройте файл для предпросмотра");
+        return;
+      }
+      const modal = document.getElementById('expanded-preview-modal');
+      if (!modal) return;
+      modal.classList.remove('hidden');
+
+      const titleEl = document.getElementById('modal-file-title');
+      if (titleEl) titleEl.textContent = currentFileInfo.name || '';
+      const colsSummary = document.getElementById('modal-columns-summary');
+      if (colsSummary) {
+        colsSummary.textContent = `Колонок: ${currentFileInfo.headers.length} • ПДн: ${currentFileInfo.entities ? currentFileInfo.entities.length : 0}`;
+      }
+
+      renderTableHeaders();
+      renderModalTableBody();
+      updateModalPreviewCountLabel();
+    }
+
+    function closeExpandedPreviewModal() {
+      const modal = document.getElementById('expanded-preview-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function updateModalPreviewCountLabel() {
+      const modalCount = document.getElementById('modal-preview-count-label');
+      if (modalCount && currentFileInfo) {
+        modalCount.textContent = `(показано ${allLoadedRows.length.toLocaleString('ru-RU')} из ${currentFileInfo.rowCount.toLocaleString('ru-RU')} строк)`;
+      }
+    }
+
+    function renderModalTableBody() {
+      const tbody = document.getElementById('modal-table-rows');
       if (!tbody) return;
 
       if (!currentFileInfo || allLoadedRows.length === 0) {
@@ -597,27 +772,16 @@
         tbody.appendChild(tr);
       });
 
-      updatePreviewCountLabel();
+      updateModalPreviewCountLabel();
     }
 
-    function updatePreviewCountLabel() {
-      const previewLabel = document.getElementById('preview-count-label');
-      if (previewLabel && currentFileInfo) {
-        if (currentFileInfo.rowCount > 0) {
-          previewLabel.textContent = `(показано ${allLoadedRows.length.toLocaleString('ru-RU')} из ${currentFileInfo.rowCount.toLocaleString('ru-RU')} строк)`;
-        } else {
-          previewLabel.textContent = `(${allLoadedRows.length} строк)`;
-        }
-      }
-    }
-
-    // Dynamic Infinite Scrolling
-    async function handleTableScroll() {
-      const container = document.getElementById('table-scroll-container');
+    // Dynamic Infinite Scrolling in Expanded Modal
+    async function handleModalTableScroll() {
+      const container = document.getElementById('modal-table-scroll-container');
       if (!container || isLoadingMore || !hasMoreRows || !currentFilePath) return;
 
-      // When approaching 100px from the bottom, load next batch of rows
-      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 100) {
+      // When approaching 120px from bottom of scroll container, load next batch
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 120) {
         await loadNextRowBatch();
       }
     }
@@ -626,11 +790,11 @@
       if (isLoadingMore || !hasMoreRows || !currentFilePath) return;
       isLoadingMore = true;
 
-      const tbody = document.getElementById('table-rows');
+      const tbody = document.getElementById('modal-table-rows');
       let loadingTr = null;
       if (tbody) {
         loadingTr = document.createElement('tr');
-        loadingTr.id = 'table-loading-row';
+        loadingTr.id = 'modal-table-loading-row';
         const colSpan = currentFileInfo && currentFileInfo.headers ? currentFileInfo.headers.length + 1 : 2;
         loadingTr.innerHTML = `
           <td colspan="${colSpan}" class="py-3 text-center text-xs text-[#78716C] font-mono bg-[#FAF9F5]">
@@ -650,13 +814,15 @@
           if (newRows && newRows.length > 0) {
             allLoadedRows.push(...newRows);
             
-            // Append just the new rows to tbody
-            newRows.forEach((row, idx) => {
-              const tr = document.createElement('tr');
-              tr.className = 'hover:bg-[#FAF9F5] transition-colors whitespace-nowrap';
-              tr.innerHTML = renderRowHtml(row, offset + idx);
-              tbody.insertBefore(tr, loadingTr);
-            });
+            // Append just the new rows to modal table
+            if (tbody && loadingTr) {
+              newRows.forEach((row, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-[#FAF9F5] transition-colors whitespace-nowrap';
+                tr.innerHTML = renderRowHtml(row, offset + idx);
+                tbody.insertBefore(tr, loadingTr);
+              });
+            }
 
             if (allLoadedRows.length >= currentFileInfo.rowCount || newRows.length < limit) {
               hasMoreRows = false;
@@ -675,6 +841,7 @@
           loadingTr.parentElement.removeChild(loadingTr);
         }
         isLoadingMore = false;
+        updateModalPreviewCountLabel();
         updatePreviewCountLabel();
       }
     }
@@ -773,6 +940,7 @@
         if (info.fileType === 'table') {
           renderTableHeaders();
           renderTableBody();
+          renderModalTableBody();
           setDocMode('table');
         } else if (info.fileType === 'pdf') {
           const pdfSnippetEl = document.getElementById('pdf-snippet-view');
@@ -923,6 +1091,66 @@
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+    }
+
+    // Close modal on Escape
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeExpandedPreviewModal();
+      }
+    });
+
+    // Drag & Drop event handling
+    let dragCounter = 0;
+    window.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter++;
+      const overlay = document.getElementById('drag-drop-overlay');
+      if (overlay) overlay.classList.remove('hidden');
+    });
+
+    window.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        const overlay = document.getElementById('drag-drop-overlay');
+        if (overlay) overlay.classList.add('hidden');
+      }
+    });
+
+    window.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter = 0;
+      const overlay = document.getElementById('drag-drop-overlay');
+      if (overlay) overlay.classList.add('hidden');
+
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        if (file.path) {
+          loadFile(file.path);
+        }
+      }
+    });
+
+    // Native Wails Drag & Drop callback
+    if (window.runtime && window.runtime.OnFileDrop) {
+      window.runtime.OnFileDrop((x, y, paths) => {
+        const overlay = document.getElementById('drag-drop-overlay');
+        if (overlay) overlay.classList.add('hidden');
+        dragCounter = 0;
+        if (paths && paths.length > 0) {
+          loadFile(paths[0]);
+        }
+      }, false);
     }
   </script>
 </body>
