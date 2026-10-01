@@ -1,1 +1,47 @@
 @import "tailwindcss";
+
+:root {
+  --bg: #FBFBFA;
+  --surface: #FFFFFF;
+  --border: #E8E7E3;
+  --border-subtle: #F0EFEB;
+  --ink: #1C1917;
+  --ink-muted: #78716C;
+  --ink-faint: #A8A29E;
+  --accent: #0F172A;
+  --safe-bg: #ECFDF5;
+  --safe-border: #A7F3D0;
+  --safe-text: #065F46;
+  --risk-bg: #FEF2F2;
+  --risk-border: #FECACA;
+  --risk-text: #991B1B;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  letter-spacing: -0.011em;
+}
+
+/* Custom Clean Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #F5F5F4;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #D6D3D1;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #A8A29E;
+}
+
+.overscroll-contain {
+  overscroll-behavior: contain !important;
+}
