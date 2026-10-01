@@ -772,4 +772,176 @@ func TestApp_ContextNotInitialized(t *testing.T) {
 	}
 }
 
+func TestApp_MultiSheetExcel(t *testing.T) {
+	tmpDir := t.TempDir()
+	app := NewApp()
+
+	xlsxPath := filepath.Join(tmpDir, "multisheet.xlsx")
+	anonPath := filepath.Join(tmpDir, "multisheet_anon.xlsx")
+	keyPath := filepath.Join(tmpDir, "multisheet.depmap")
+	restoredPath := filepath.Join(tmpDir, "multisheet_restored.xlsx")
+
+	xl := excelize.NewFile()
+	defer xl.Close()
+
+	// Sheet 1: Сотрудники
+	sheet1 := "Сотрудники"
+	_ = xl.SetSheetName("Sheet1", sheet1)
+	_ = xl.SetCellValue(sheet1, "A1", "ФИО")
+	_ = xl.SetCellValue(sheet1, "B1", "СНИЛС")
+	_ = xl.SetCellValue(sheet1, "A2", "Иванов Иван Иванович")
+	_ = xl.SetCellValue(sheet1, "B2", "112-233-445 95")
+	_ = xl.SetCellValue(sheet1, "A3", "Петров Петр Петрович")
+	_ = xl.SetCellValue(sheet1, "B3", "223-344-556 06")
+
+	// Sheet 2: Клиенты
+	sheet2 := "Клиенты"
+	_, _ = xl.NewSheet(sheet2)
+	_ = xl.SetCellValue(sheet2, "A1", "Клиент ФИО")
+	_ = xl.SetCellValue(sheet2, "B1", "Телефон")
+	_ = xl.SetCellValue(sheet2, "C1", "Сумма")
+	_ = xl.SetCellValue(sheet2, "A2", "Сидорова Анна Сергеевна")
+	_ = xl.SetCellValue(sheet2, "B2", "+7 (999) 111-22-33")
+	_ = xl.SetCellValue(sheet2, "C2", "50000")
+	_ = xl.SetCellValue(sheet2, "A3", "Кузнецов Дмитрий Павлович")
+	_ = xl.SetCellValue(sheet2, "B3", "+7 (999) 444-55-66")
+	_ = xl.SetCellValue(sheet2, "C3", "75000")
+
+	if err := xl.SaveAs(xlsxPath); err != nil {
+		t.Fatalf("failed to save multisheet xlsx: %v", err)
+	}
+
+	// 1. InspectFile
+	info, err := app.InspectFile(xlsxPath)
+	if err != nil {
+		t.Fatalf("InspectFile on multi-sheet excel failed: %v", err)
+	}
+
+	if len(info.Sheets) != 2 {
+		t.Fatalf("expected 2 sheets, got %d", len(info.Sheets))
+	}
+	if info.Sheets[0].Name != sheet1 {
+		t.Errorf("expected sheet 0 name %s, got %s", sheet1, info.Sheets[0].Name)
+	}
+	if info.Sheets[1].Name != sheet2 {
+		t.Errorf("expected sheet 1 name %s, got %s", sheet2, info.Sheets[1].Name)
+	}
+	if info.ActiveSheet != sheet1 {
+		t.Errorf("expected activeSheet %s, got %s", sheet1, info.ActiveSheet)
+	}
+	if info.Sheets[0].RowCount != 2 {
+		t.Errorf("expected sheet 0 rowCount 2, got %d", info.Sheets[0].RowCount)
+	}
+	if info.Sheets[1].RowCount != 2 {
+		t.Errorf("expected sheet 1 rowCount 2, got %d", info.Sheets[1].RowCount)
+	}
+	if len(info.Sheets[0].Entities) != 2 {
+		t.Errorf("expected 2 entities in sheet 0 (FIO, SNILS), got %d", len(info.Sheets[0].Entities))
+	}
+	if len(info.Sheets[1].Entities) != 2 {
+		t.Errorf("expected 2 entities in sheet 1 (FIO, Phone), got %d", len(info.Sheets[1].Entities))
+	}
+
+	// 2. GetSheetRows for sheet 1 vs sheet 2
+	rows1, err := app.GetSheetRows(xlsxPath, sheet1, 0, 10, "test-salt", nil)
+	if err != nil {
+		t.Fatalf("GetSheetRows sheet 1 failed: %v", err)
+	}
+	if len(rows1) != 2 {
+		t.Fatalf("expected 2 rows for sheet 1, got %d", len(rows1))
+	}
+	if rows1[0].Before[0] != "Иванов Иван Иванович" {
+		t.Errorf("expected sheet 1 row 0 before[0] 'Иванов Иван Иванович', got %s", rows1[0].Before[0])
+	}
+
+	rows2, err := app.GetSheetRows(xlsxPath, sheet2, 0, 10, "test-salt", nil)
+	if err != nil {
+		t.Fatalf("GetSheetRows sheet 2 failed: %v", err)
+	}
+	if len(rows2) != 2 {
+		t.Fatalf("expected 2 rows for sheet 2, got %d", len(rows2))
+	}
+	if rows2[0].Before[0] != "Сидорова Анна Сергеевна" {
+		t.Errorf("expected sheet 2 row 0 before[0] 'Сидорова Анна Сергеевна', got %s", rows2[0].Before[0])
+	}
+
+	// 3. ProcessFileWithSheets: disable column 2 (СНИЛС) on sheet1 only!
+	disabledBySheet := map[string][]int{
+		sheet1: {2}, // column 2: СНИЛС
+	}
+
+	procRes, err := app.ProcessFileWithSheets(xlsxPath, anonPath, "multi-salt", nil, disabledBySheet, true, "pass-multi", keyPath)
+	if err != nil {
+		t.Fatalf("ProcessFileWithSheets failed: %v", err)
+	}
+	if !procRes.Success {
+		t.Fatalf("ProcessFileWithSheets reported failure: %s", procRes.Error)
+	}
+	if procRes.RowsCount != 4 {
+		t.Errorf("expected total 4 rows across both sheets, got %d", procRes.RowsCount)
+	}
+
+	// Verify anonymized file
+	anonXl, err := excelize.OpenFile(anonPath)
+	if err != nil {
+		t.Fatalf("failed to open anon xlsx: %v", err)
+	}
+	defer anonXl.Close()
+
+	// Sheet 1: FIO must be anonymized, SNILS must be preserved (column 2 was disabled)
+	fio1, _ := anonXl.GetCellValue(sheet1, "A2")
+	snils1, _ := anonXl.GetCellValue(sheet1, "B2")
+	if fio1 == "Иванов Иван Иванович" || fio1 == "" {
+		t.Errorf("expected Sheet 1 FIO to be anonymized, got: %s", fio1)
+	}
+	if snils1 != "112-233-445 95" {
+		t.Errorf("expected Sheet 1 SNILS to be preserved unaltered, got: %s", snils1)
+	}
+
+	// Sheet 2: FIO and Phone must be anonymized, Sum preserved
+	client2, _ := anonXl.GetCellValue(sheet2, "A2")
+	phone2, _ := anonXl.GetCellValue(sheet2, "B2")
+	sum2, _ := anonXl.GetCellValue(sheet2, "C2")
+	if client2 == "Сидорова Анна Сергеевна" || client2 == "" {
+		t.Errorf("expected Sheet 2 Client FIO to be anonymized, got: %s", client2)
+	}
+	if phone2 == "+7 (999) 111-22-33" || phone2 == "" {
+		t.Errorf("expected Sheet 2 Phone to be anonymized, got: %s", phone2)
+	}
+	if sum2 != "50000" {
+		t.Errorf("expected Sheet 2 Sum to be preserved 50000, got: %s", sum2)
+	}
+
+	// 4. RestoreFileTo across multi-sheet workbook
+	restoreRes, err := app.RestoreFileTo(anonPath, keyPath, "pass-multi", restoredPath)
+	if err != nil {
+		t.Fatalf("RestoreFileTo on multisheet workbook failed: %v", err)
+	}
+	if !restoreRes.Success {
+		t.Fatalf("RestoreFileTo failed: %s", restoreRes.Error)
+	}
+
+	resXl, err := excelize.OpenFile(restoredPath)
+	if err != nil {
+		t.Fatalf("failed to open restored multisheet xlsx: %v", err)
+	}
+	defer resXl.Close()
+
+	// Verify restored Sheet 1
+	restoredFio1, _ := resXl.GetCellValue(sheet1, "A2")
+	if restoredFio1 != "Иванов Иван Иванович" {
+		t.Errorf("expected restored Sheet 1 FIO 'Иванов Иван Иванович', got: %s", restoredFio1)
+	}
+	// Verify restored Sheet 2
+	restoredClient2, _ := resXl.GetCellValue(sheet2, "A2")
+	restoredPhone2, _ := resXl.GetCellValue(sheet2, "B2")
+	if restoredClient2 != "Сидорова Анна Сергеевна" {
+		t.Errorf("expected restored Sheet 2 Client 'Сидорова Анна Сергеевна', got: %s", restoredClient2)
+	}
+	if restoredPhone2 != "+7 (999) 111-22-33" {
+		t.Errorf("expected restored Sheet 2 Phone '+7 (999) 111-22-33', got: %s", restoredPhone2)
+	}
+}
+
+
 

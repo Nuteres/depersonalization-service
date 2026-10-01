@@ -116,17 +116,46 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 
 		// Build map of disabled columns (1-based index)
 		disabledMap := make(map[int]bool)
+		hasSheetSpecific := false
 		if options != nil {
-			if dList, ok := options["disabled_columns"].([]int); ok {
-				for _, colIdx := range dList {
-					disabledMap[colIdx] = true
+			if bySheet, ok := options["disabled_columns_by_sheet"].(map[string][]int); ok && len(bySheet) > 0 {
+				if dList, found := bySheet[sheetName]; found {
+					hasSheetSpecific = true
+					for _, colIdx := range dList {
+						disabledMap[colIdx] = true
+					}
 				}
-			} else if dInterface, ok := options["disabled_columns"].([]interface{}); ok {
-				for _, itm := range dInterface {
-					if n, ok := itm.(int); ok {
-						disabledMap[n] = true
-					} else if f, ok := itm.(float64); ok {
-						disabledMap[int(f)] = true
+			} else if bySheetIntf, ok := options["disabled_columns_by_sheet"].(map[string]interface{}); ok && len(bySheetIntf) > 0 {
+				if sheetVal, found := bySheetIntf[sheetName]; found {
+					hasSheetSpecific = true
+					if dList, ok := sheetVal.([]int); ok {
+						for _, colIdx := range dList {
+							disabledMap[colIdx] = true
+						}
+					} else if dInterface, ok := sheetVal.([]interface{}); ok {
+						for _, itm := range dInterface {
+							if n, ok := itm.(int); ok {
+								disabledMap[n] = true
+							} else if f, ok := itm.(float64); ok {
+								disabledMap[int(f)] = true
+							}
+						}
+					}
+				}
+			}
+
+			if !hasSheetSpecific {
+				if dList, ok := options["disabled_columns"].([]int); ok {
+					for _, colIdx := range dList {
+						disabledMap[colIdx] = true
+					}
+				} else if dInterface, ok := options["disabled_columns"].([]interface{}); ok {
+					for _, itm := range dInterface {
+						if n, ok := itm.(int); ok {
+							disabledMap[n] = true
+						} else if f, ok := itm.(float64); ok {
+							disabledMap[int(f)] = true
+						}
 					}
 				}
 			}

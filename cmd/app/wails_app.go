@@ -43,6 +43,16 @@ type PreviewRow struct {
 	After  []string `json:"after"`
 }
 
+// SheetInfo represents metadata, detected entities, and preview rows of an individual sheet in a workbook.
+type SheetInfo struct {
+	Name        string       `json:"name"`
+	Index       int          `json:"index"` // 0-based
+	RowCount    int          `json:"rowCount"`
+	Headers     []string     `json:"headers"`
+	Entities    []EntityInfo `json:"entities"`
+	PreviewRows []PreviewRow `json:"previewRows"`
+}
+
 // FileInfo holds metadata, detected entities, and preview rows for an inspected file.
 type FileInfo struct {
 	Path               string       `json:"path"`
@@ -55,6 +65,8 @@ type FileInfo struct {
 	Entities           []EntityInfo `json:"entities"`
 	Headers            []string     `json:"headers"`
 	PreviewRows        []PreviewRow `json:"previewRows"`
+	Sheets             []SheetInfo  `json:"sheets,omitempty"`
+	ActiveSheet        string       `json:"activeSheet,omitempty"`
 	PDFTextSnippet     string       `json:"pdfTextSnippet,omitempty"`
 	PDFRedactedSnippet string       `json:"pdfRedactedSnippet,omitempty"`
 }
@@ -278,6 +290,12 @@ func (a *App) ProcessFile(path string, salt string) (*ProcessResult, error) {
 // generating a .depmap key container if createKey is true,
 // and emitting progress events via Wails runtime.
 func (a *App) ProcessFileTo(path string, outPath string, salt string, disabledCols []int, createKey bool, keyPassword string, keyPath string) (*ProcessResult, error) {
+	return a.ProcessFileWithSheets(path, outPath, salt, disabledCols, nil, createKey, keyPassword, keyPath)
+}
+
+// ProcessFileWithSheets processes the input file and writes to outPath (or default if outPath is empty),
+// supporting per-sheet disabled columns (disabledBySheet: map of sheetName -> []int 1-based column indices).
+func (a *App) ProcessFileWithSheets(path string, outPath string, salt string, disabledCols []int, disabledBySheet map[string][]int, createKey bool, keyPassword string, keyPath string) (*ProcessResult, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("file path cannot be empty")
 	}
@@ -342,12 +360,20 @@ func (a *App) ProcessFileTo(path string, outPath string, salt string, disabledCo
 	var entitiesCount int
 	info, inspectErr := a.InspectFile(path)
 	if inspectErr == nil && info != nil {
-		totalRows = info.RowCount
-		entitiesCount = len(info.Entities)
+		if len(info.Sheets) > 1 {
+			for _, s := range info.Sheets {
+				totalRows += s.RowCount
+				entitiesCount += len(s.Entities)
+			}
+		} else {
+			totalRows = info.RowCount
+			entitiesCount = len(info.Entities)
+		}
 	}
 
 	options := map[string]interface{}{
-		"disabled_columns": disabledCols,
+		"disabled_columns":          disabledCols,
+		"disabled_columns_by_sheet": disabledBySheet,
 		"progress_callback": func(processed int) {
 			if a.ctx != nil {
 				pct := 0
@@ -747,6 +773,11 @@ func (a *App) RestoreFileTo(inputPath string, keyPath string, password string, d
 // This enables dynamic infinite scrolling without loading the entire dataset into memory.
 // It applies anonymization rules while respecting disabledCols.
 func (a *App) GetTableRows(path string, offset int, limit int, salt string, disabledCols []int) ([]PreviewRow, error) {
+	return a.GetSheetRows(path, "", offset, limit, salt, disabledCols)
+}
+
+// GetSheetRows fetches a paginated window of rows for a specific sheet in a workbook or table.
+func (a *App) GetSheetRows(path string, sheetName string, offset int, limit int, salt string, disabledCols []int) ([]PreviewRow, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("file path cannot be empty")
 	}
@@ -768,13 +799,17 @@ func (a *App) GetTableRows(path string, offset int, limit int, salt string, disa
 	case ".csv", ".tsv":
 		return getCSVRows(path, offset, limit, salt, disabledCols)
 	case ".xlsx", ".xlsm", ".xltx", ".xltm":
-		return getXLSXRows(path, offset, limit, salt, disabledCols)
+		return getXLSXRowsForSheet(path, sheetName, offset, limit, salt, disabledCols)
 	default:
 		return nil, fmt.Errorf("динамическая подгрузка строк поддерживается только для таблиц: %s", ext)
 	}
 }
 
 func getXLSXRows(path string, offset, limit int, salt string, disabledCols []int) ([]PreviewRow, error) {
+	return getXLSXRowsForSheet(path, "", offset, limit, salt, disabledCols)
+}
+
+func getXLSXRowsForSheet(path string, targetSheet string, offset, limit int, salt string, disabledCols []int) ([]PreviewRow, error) {
 	xl, err := excelize.OpenFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open xlsx file: %w", err)
@@ -787,6 +822,14 @@ func getXLSXRows(path string, offset, limit int, salt string, disabledCols []int
 	}
 
 	sheetName := sheets[0]
+	if targetSheet != "" {
+		for _, s := range sheets {
+			if s == targetSheet {
+				sheetName = s
+				break
+			}
+		}
+	}
 
 	// Sample top rows to find header
 	sampleIter, err := xl.Rows(sheetName)
@@ -1153,25 +1196,7 @@ func inspectCSV(path string) (*FileInfo, error) {
 	}, nil
 }
 
-func inspectXLSX(path string) (*FileInfo, error) {
-	stat, err := os.Stat(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat file: %w", err)
-	}
-
-	xl, err := excelize.OpenFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open xlsx file: %w", err)
-	}
-	defer xl.Close()
-
-	sheets := xl.GetSheetList()
-	if len(sheets) == 0 {
-		return nil, errors.New("xlsx file has no sheets")
-	}
-
-	sheetName := sheets[0]
-
+func inspectSingleSheet(xl *excelize.File, sheetName string, sheetIndex int, anon *anonymizer.Anonymizer) (*SheetInfo, error) {
 	// Sample up to 40 rows to find table header row (skipping preamble metadata if present)
 	sampleIter, err := xl.Rows(sheetName)
 	if err != nil {
@@ -1188,7 +1213,14 @@ func inspectXLSX(path string) (*FileInfo, error) {
 	_ = sampleIter.Close()
 
 	if len(sample) == 0 {
-		return nil, errors.New("xlsx sheet is empty")
+		return &SheetInfo{
+			Name:        sheetName,
+			Index:       sheetIndex,
+			RowCount:    0,
+			Headers:     nil,
+			Entities:    nil,
+			PreviewRows: nil,
+		}, nil
 	}
 
 	headerIdx, headers := formats.FindHeaderRow(sample)
@@ -1215,7 +1247,6 @@ func inspectXLSX(path string) (*FileInfo, error) {
 		}
 	}
 
-	anon := anonymizer.New("preview-salt-152fz")
 	var previewRows []PreviewRow
 	rowCount := 0
 
@@ -1281,17 +1312,61 @@ func inspectXLSX(path string) (*FileInfo, error) {
 		_ = remainingIter.Close()
 	}
 
+	return &SheetInfo{
+		Name:        sheetName,
+		Index:       sheetIndex,
+		RowCount:    rowCount,
+		Headers:     headers,
+		Entities:    entities,
+		PreviewRows: previewRows,
+	}, nil
+}
+
+func inspectXLSX(path string) (*FileInfo, error) {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat file: %w", err)
+	}
+
+	xl, err := excelize.OpenFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open xlsx file: %w", err)
+	}
+	defer xl.Close()
+
+	sheets := xl.GetSheetList()
+	if len(sheets) == 0 {
+		return nil, errors.New("xlsx file has no sheets")
+	}
+
+	anon := anonymizer.New("preview-salt-152fz")
+	var allSheets []SheetInfo
+	for idx, sName := range sheets {
+		sInfo, err := inspectSingleSheet(xl, sName, idx, anon)
+		if err == nil && sInfo != nil {
+			allSheets = append(allSheets, *sInfo)
+		}
+	}
+
+	if len(allSheets) == 0 {
+		return nil, errors.New("xlsx file has no readable sheets")
+	}
+
+	primarySheet := allSheets[0]
+
 	return &FileInfo{
 		Path:        path,
 		Name:        filepath.Base(path),
 		Extension:   strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."),
 		FileType:    "table",
 		Size:        stat.Size(),
-		RowCount:    rowCount,
+		RowCount:    primarySheet.RowCount,
 		PageCount:   len(sheets),
-		Entities:    entities,
-		Headers:     headers,
-		PreviewRows: previewRows,
+		Entities:    primarySheet.Entities,
+		Headers:     primarySheet.Headers,
+		PreviewRows: primarySheet.PreviewRows,
+		Sheets:      allSheets,
+		ActiveSheet: primarySheet.Name,
 	}, nil
 }
 

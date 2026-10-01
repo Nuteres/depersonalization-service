@@ -178,6 +178,22 @@
       </div>
     </div>
 
+    <!-- Multi-Sheet Navigation Tabs Bar (Visible when Excel workbook has multiple sheets) -->
+    <div id="excel-sheets-bar" class="hidden flex-col sm:flex-row sm:items-center justify-between bg-[#F5F5F4] border border-[#E8E7E3] px-3.5 py-2.5 gap-2">
+      <div class="flex items-center space-x-2 overflow-x-auto custom-scrollbar py-0.5 max-w-full">
+        <span class="text-xs font-mono font-bold text-[#78716C] uppercase tracking-wider mr-1.5 shrink-0 flex items-center space-x-1">
+          <span>📑</span>
+          <span>Листы книги:</span>
+        </span>
+        <div id="excel-sheets-list" class="flex items-center space-x-1.5 shrink-0">
+          <!-- Dynamically populated sheet buttons -->
+        </div>
+      </div>
+      <div id="excel-sheets-summary" class="hidden sm:flex items-center text-[11px] font-mono text-[#78716C] shrink-0">
+        <span>Все листы книги будут деперсонализированы в один файл</span>
+      </div>
+    </div>
+
     <!-- Entity Cards Grid -->
     <div>
       <div id="entity-cards-header" class="hidden items-center justify-between mb-3">
@@ -581,6 +597,17 @@
         </div>
       </div>
 
+      <!-- Modal Sheets Tab Bar (Visible if multiple sheets) -->
+      <div id="modal-excel-sheets-bar" class="hidden px-5 py-2 border-b border-[#E8E7E3] bg-[#F5F5F4] flex items-center space-x-2 overflow-x-auto custom-scrollbar shrink-0">
+        <span class="text-xs font-mono font-bold text-[#78716C] uppercase tracking-wider mr-1 shrink-0 flex items-center space-x-1">
+          <span>📑</span>
+          <span>Лист:</span>
+        </span>
+        <div id="modal-excel-sheets-list" class="flex items-center space-x-1.5 shrink-0">
+          <!-- Dynamically populated sheet buttons -->
+        </div>
+      </div>
+
       <!-- Resizable Table in Modal with Dynamic Infinite Scroll -->
       <div id="modal-table-scroll-container" class="flex-1 min-h-0 w-full overflow-x-auto overflow-y-auto custom-scrollbar overscroll-contain" style="overscroll-behavior: contain; -webkit-overflow-scrolling: touch;" onscroll="handleModalTableScroll()">
         <table id="modal-preview-table" class="resizable-table text-left text-xs">
@@ -632,8 +659,44 @@
     let restoreKeyInfo = null;
     let restorePassword = '';
     
-    // Set of disabled column numbers (1-based index)
-    const disabledColumns = new Set();
+    // Active sheet index (0-based) for multi-sheet Excel workbooks
+    let currentActiveSheetIndex = 0;
+
+    // Per-sheet disabled column sets: map of sheetName -> Set<number> (1-based index)
+    let disabledColumnsBySheet = {};
+
+    function getActiveSheetName() {
+      if (currentFileInfo && currentFileInfo.sheets && currentFileInfo.sheets.length > 0) {
+        const s = currentFileInfo.sheets[currentActiveSheetIndex];
+        return s ? s.name : (currentFileInfo.activeSheet || '');
+      }
+      return '';
+    }
+
+    function getActiveDisabledSet() {
+      const sName = getActiveSheetName();
+      if (!disabledColumnsBySheet[sName]) {
+        disabledColumnsBySheet[sName] = new Set();
+      }
+      return disabledColumnsBySheet[sName];
+    }
+
+    // Set of disabled column numbers (1-based index) - proxy for active sheet
+    const disabledColumns = {
+      has: (idx) => getActiveDisabledSet().has(idx),
+      add: (idx) => getActiveDisabledSet().add(idx),
+      delete: (idx) => getActiveDisabledSet().delete(idx),
+      clear: () => {
+        const set = getActiveDisabledSet();
+        set.clear();
+      },
+      get size() {
+        return getActiveDisabledSet().size;
+      },
+      [Symbol.iterator]: function* () {
+        yield* getActiveDisabledSet();
+      }
+    };
     
     // Loaded preview rows for infinite scrolling
     let allLoadedRows = [];
@@ -780,17 +843,131 @@
       renderModalTableBody();
     }
 
+    // Render Multi-Sheet Tabs Bar (Main view and Expanded Modal)
+    function renderSheetTabs() {
+      const bar = document.getElementById('excel-sheets-bar');
+      const list = document.getElementById('excel-sheets-list');
+      const modalBar = document.getElementById('modal-excel-sheets-bar');
+      const modalList = document.getElementById('modal-excel-sheets-list');
+
+      if (!currentFileInfo || !currentFileInfo.sheets || currentFileInfo.sheets.length <= 1) {
+        if (bar) { bar.classList.add('hidden'); bar.classList.remove('flex'); }
+        if (modalBar) { modalBar.classList.add('hidden'); modalBar.classList.remove('flex'); }
+        return;
+      }
+
+      if (bar) { bar.classList.remove('hidden'); bar.classList.add('flex'); }
+      if (modalBar) { modalBar.classList.remove('hidden'); modalBar.classList.add('flex'); }
+
+      let tabsHtml = '';
+      let modalTabsHtml = '';
+
+      currentFileInfo.sheets.forEach((sheet, idx) => {
+        const isActive = idx === currentActiveSheetIndex;
+        const disabledSet = disabledColumnsBySheet[sheet.name] || new Set();
+        const disabledCount = disabledSet.size;
+        const rowCountStr = (sheet.rowCount || 0).toLocaleString('ru-RU');
+
+        let badgeHtml = '';
+        if (disabledCount > 0) {
+          badgeHtml = `<span class="text-[10px] font-mono text-stone-500 bg-stone-200/80 px-1 py-0.2 rounded" title="Отключено колонок: ${disabledCount}">-${disabledCount}</span>`;
+        }
+
+        if (isActive) {
+          tabsHtml += `
+            <button type="button" onclick="switchActiveSheet(${idx})" class="px-3 py-1.5 bg-white border border-[#1C1917] text-[#1C1917] font-semibold text-xs shadow-xs transition flex items-center space-x-1.5 cursor-pointer">
+              <span class="w-2 h-2 rounded-full bg-emerald-600"></span>
+              <span class="truncate max-w-[180px]">${escapeHtml(sheet.name)}</span>
+              <span class="text-[10px] font-mono text-[#78716C] bg-[#F0EFEB] px-1.5 py-0.2 rounded">(${rowCountStr})</span>
+              ${badgeHtml}
+            </button>
+          `;
+          modalTabsHtml += `
+            <button type="button" onclick="switchActiveSheet(${idx})" class="px-3 py-1 bg-white border border-[#1C1917] text-[#1C1917] font-semibold text-xs shadow-xs transition flex items-center space-x-1.5 cursor-pointer">
+              <span class="w-2 h-2 rounded-full bg-emerald-600"></span>
+              <span class="truncate max-w-[180px]">${escapeHtml(sheet.name)}</span>
+              <span class="text-[10px] font-mono text-[#78716C] bg-[#F0EFEB] px-1.5 py-0.2 rounded">(${rowCountStr})</span>
+              ${badgeHtml}
+            </button>
+          `;
+        } else {
+          tabsHtml += `
+            <button type="button" onclick="switchActiveSheet(${idx})" class="px-3 py-1.5 bg-transparent border border-transparent hover:border-[#D6D3D1] hover:bg-white text-[#78716C] hover:text-[#1C1917] text-xs font-medium transition flex items-center space-x-1.5 cursor-pointer">
+              <span class="truncate max-w-[180px]">${escapeHtml(sheet.name)}</span>
+              <span class="text-[10px] font-mono text-[#A8A29E]">(${rowCountStr})</span>
+              ${badgeHtml}
+            </button>
+          `;
+          modalTabsHtml += `
+            <button type="button" onclick="switchActiveSheet(${idx})" class="px-3 py-1 bg-transparent border border-transparent hover:border-[#D6D3D1] hover:bg-white text-[#78716C] hover:text-[#1C1917] text-xs font-medium transition flex items-center space-x-1.5 cursor-pointer">
+              <span class="truncate max-w-[180px]">${escapeHtml(sheet.name)}</span>
+              <span class="text-[10px] font-mono text-[#A8A29E]">(${rowCountStr})</span>
+              ${badgeHtml}
+            </button>
+          `;
+        }
+      });
+
+      if (list) list.innerHTML = tabsHtml;
+      if (modalList) modalList.innerHTML = modalTabsHtml;
+    }
+
+    // Switch currently active preview sheet in multi-sheet workbook
+    async function switchActiveSheet(idx) {
+      if (!currentFileInfo || !currentFileInfo.sheets || !currentFileInfo.sheets[idx]) return;
+      if (currentActiveSheetIndex === idx) return;
+
+      currentActiveSheetIndex = idx;
+      const sheet = currentFileInfo.sheets[idx];
+
+      // Update current active sheet state
+      currentFileInfo.activeSheet = sheet.name;
+      currentFileInfo.headers = sheet.headers || [];
+      currentFileInfo.entities = sheet.entities || [];
+      currentFileInfo.rowCount = sheet.rowCount || 0;
+      currentFileInfo.previewRows = sheet.previewRows || [];
+
+      allLoadedRows = sheet.previewRows ? [...sheet.previewRows] : [];
+      hasMoreRows = allLoadedRows.length < sheet.rowCount;
+      isLoadingMore = false;
+      columnWidths = []; // recalculate widths for this sheet
+
+      renderSheetTabs();
+      renderEntityCards();
+      renderTableHeaders();
+      renderTableBody();
+      renderModalTableBody();
+      updatePreviewCountLabel();
+      updateModalPreviewCountLabel();
+
+      // Scroll tables back to top-left
+      const scrollBox = document.getElementById('table-scroll-container');
+      if (scrollBox) { scrollBox.scrollTop = 0; scrollBox.scrollLeft = 0; }
+      const modalScrollBox = document.getElementById('modal-table-scroll-container');
+      if (modalScrollBox) { modalScrollBox.scrollTop = 0; modalScrollBox.scrollLeft = 0; }
+
+      // If in expanded modal and few rows loaded, pre-fetch to fill screen
+      const modal = document.getElementById('expanded-preview-modal');
+      if (modal && !modal.classList.contains('hidden')) {
+        if (hasMoreRows && allLoadedRows.length < 30) {
+          await loadNextRowBatch();
+        }
+      }
+    }
+
     // Toggle Column Modification
     function toggleColumn(colIndex, event) {
       if (event) {
         event.stopPropagation();
       }
-      if (disabledColumns.has(colIndex)) {
-        disabledColumns.delete(colIndex);
+      const dSet = getActiveDisabledSet();
+      if (dSet.has(colIndex)) {
+        dSet.delete(colIndex);
       } else {
-        disabledColumns.add(colIndex);
+        dSet.add(colIndex);
       }
 
+      renderSheetTabs();
       renderEntityCards();
       renderTableHeaders();
       renderTableBody();
@@ -1102,13 +1279,15 @@
       const previewLabel = document.getElementById('preview-count-label');
       const mainSummary = document.getElementById('main-preview-summary');
       if (currentFileInfo) {
-        const rowCount = currentFileInfo.rowCount;
+        const rowCount = currentFileInfo.rowCount || 0;
         const shownCount = Math.min(10, allLoadedRows.length);
+        const sheetName = getActiveSheetName();
+        const prefix = (currentFileInfo.sheets && currentFileInfo.sheets.length > 1) ? `[Лист: ${sheetName}] ` : '';
         if (previewLabel) {
-          previewLabel.textContent = `(первые ${shownCount} строк)`;
+          previewLabel.textContent = `${prefix}(первые ${shownCount} строк)`;
         }
         if (mainSummary) {
-          mainSummary.textContent = `Показано ${shownCount} из ${rowCount.toLocaleString('ru-RU')} строк`;
+          mainSummary.textContent = `${prefix}Показано ${shownCount} из ${rowCount.toLocaleString('ru-RU')} строк`;
         }
       }
     }
@@ -1128,10 +1307,13 @@
       const titleEl = document.getElementById('modal-file-title');
       if (titleEl) titleEl.textContent = currentFileInfo.name || '';
       const colsSummary = document.getElementById('modal-columns-summary');
-      if (colsSummary) {
-        colsSummary.textContent = `Колонок: ${currentFileInfo.headers.length} • ПДн: ${currentFileInfo.entities ? currentFileInfo.entities.length : 0}`;
+      if (colsSummary && currentFileInfo) {
+        const sheetName = getActiveSheetName();
+        const sheetText = (currentFileInfo.sheets && currentFileInfo.sheets.length > 1) ? `Лист: ${sheetName} • ` : '';
+        colsSummary.textContent = `${sheetText}Колонок: ${currentFileInfo.headers ? currentFileInfo.headers.length : 0} • ПДн: ${currentFileInfo.entities ? currentFileInfo.entities.length : 0}`;
       }
 
+      renderSheetTabs();
       renderTableHeaders();
       renderModalTableBody();
       updateModalPreviewCountLabel();
@@ -1156,7 +1338,9 @@
     function updateModalPreviewCountLabel() {
       const modalCount = document.getElementById('modal-preview-count-label');
       if (modalCount && currentFileInfo) {
-        modalCount.textContent = `(показано ${allLoadedRows.length.toLocaleString('ru-RU')} из ${currentFileInfo.rowCount.toLocaleString('ru-RU')} строк)`;
+        const sheetName = getActiveSheetName();
+        const prefix = (currentFileInfo.sheets && currentFileInfo.sheets.length > 1) ? `[Лист: ${sheetName}] ` : '';
+        modalCount.textContent = `${prefix}(показано ${allLoadedRows.length.toLocaleString('ru-RU')} из ${currentFileInfo.rowCount.toLocaleString('ru-RU')} строк)`;
       }
     }
 
@@ -1218,10 +1402,17 @@
       try {
         const offset = allLoadedRows.length;
         const limit = 30;
-        const disabledArr = Array.from(disabledColumns);
+        const disabledArr = Array.from(getActiveDisabledSet());
+        const sheetName = getActiveSheetName();
 
-        if (window.go && window.go.main && window.go.main.App && window.go.main.App.GetTableRows) {
-          const newRows = await window.go.main.App.GetTableRows(currentFilePath, offset, limit, currentSalt, disabledArr);
+        if (window.go && window.go.main && window.go.main.App) {
+          let newRows = null;
+          if (window.go.main.App.GetSheetRows) {
+            newRows = await window.go.main.App.GetSheetRows(currentFilePath, sheetName, offset, limit, currentSalt, disabledArr);
+          } else if (window.go.main.App.GetTableRows) {
+            newRows = await window.go.main.App.GetTableRows(currentFilePath, offset, limit, currentSalt, disabledArr);
+          }
+
           if (newRows && newRows.length > 0) {
             allLoadedRows.push(...newRows);
             
@@ -1315,7 +1506,15 @@
 
         currentFilePath = path;
         currentFileInfo = info;
-        disabledColumns.clear();
+        currentActiveSheetIndex = 0;
+        disabledColumnsBySheet = {};
+        if (info.sheets && info.sheets.length > 0) {
+          info.sheets.forEach(s => {
+            disabledColumnsBySheet[s.name] = new Set();
+          });
+        } else {
+          disabledColumnsBySheet[''] = new Set();
+        }
         columnWidths = [];
 
         allLoadedRows = info.previewRows ? [...info.previewRows] : [];
@@ -1331,7 +1530,15 @@
         // Update meta bar
         const metaEl = document.getElementById('file-meta-bar');
         if (metaEl) {
-          const units = info.fileType === 'pdf' ? `${info.pageCount} стр.` : `${info.rowCount.toLocaleString('ru-RU')} строк`;
+          let units = '';
+          if (info.fileType === 'pdf') {
+            units = `${info.pageCount} стр.`;
+          } else if (info.sheets && info.sheets.length > 1) {
+            const totalR = info.sheets.reduce((acc, s) => acc + (s.rowCount || 0), 0);
+            units = `${info.sheets.length} листов (${totalR.toLocaleString('ru-RU')} строк)`;
+          } else {
+            units = `${info.rowCount.toLocaleString('ru-RU')} строк`;
+          }
           metaEl.innerHTML = `<span>Файл загружен</span><span>•</span><span>${units}</span><span>•</span><span>${info.extension.toUpperCase()}</span>`;
         }
 
@@ -1339,7 +1546,12 @@
         const entityCount = info.entities ? info.entities.length : 0;
         const descEl = document.getElementById('file-desc-text');
         if (descEl) {
-          descEl.textContent = `Обнаружено категорий ПДн: ${entityCount}. Чувствительные поля подготовлены к безопасной деперсонализации по 152-ФЗ.`;
+          if (info.sheets && info.sheets.length > 1) {
+            const totalEntities = info.sheets.reduce((acc, s) => acc + (s.entities ? s.entities.length : 0), 0);
+            descEl.textContent = `Книга Excel содержит ${info.sheets.length} листа. Всего найдено ${totalEntities} категорий ПДн. Переключайтесь между вкладками листов для настройки колонок каждого листа.`;
+          } else {
+            descEl.textContent = `Обнаружено категорий ПДн: ${entityCount}. Чувствительные поля подготовлены к безопасной деперсонализации по 152-ФЗ.`;
+          }
         }
 
         // Update action buttons in hero
@@ -1355,6 +1567,9 @@
         if (btnBadge && info.extension) {
           btnBadge.textContent = `(.${info.extension.toLowerCase()})`;
         }
+
+        // Render sheet tabs if multi-sheet
+        renderSheetTabs();
 
         // Render Entity Cards
         renderEntityCards();
@@ -1414,7 +1629,12 @@
       const fileMetaEl = document.getElementById('save-modal-file-meta');
       if (fileNameEl && currentFileInfo) fileNameEl.textContent = currentFileInfo.name || 'data';
       if (fileMetaEl && currentFileInfo) {
-        fileMetaEl.textContent = `${currentFileInfo.rowCount.toLocaleString('ru-RU')} строк`;
+        if (currentFileInfo.sheets && currentFileInfo.sheets.length > 1) {
+          const totalR = currentFileInfo.sheets.reduce((acc, s) => acc + (s.rowCount || 0), 0);
+          fileMetaEl.textContent = `${currentFileInfo.sheets.length} листов • ${totalR.toLocaleString('ru-RU')} строк`;
+        } else {
+          fileMetaEl.textContent = `${currentFileInfo.rowCount.toLocaleString('ru-RU')} строк`;
+        }
       }
       if (modal) modal.classList.remove('hidden');
     }
@@ -1444,13 +1664,30 @@
           }
         }
 
-        // Open progress modal
-        openProgressModal(currentFileInfo ? currentFileInfo.rowCount : 0, 'depersonalize');
+        // Open progress modal with true total rows across all sheets
+        let totalRowsToProcess = currentFileInfo ? currentFileInfo.rowCount : 0;
+        if (currentFileInfo && currentFileInfo.sheets && currentFileInfo.sheets.length > 1) {
+          totalRowsToProcess = currentFileInfo.sheets.reduce((acc, s) => acc + (s.rowCount || 0), 0);
+        }
+        openProgressModal(totalRowsToProcess, 'depersonalize');
 
-        const disabledArr = Array.from(disabledColumns);
+        // Build per-sheet disabled column map
+        const disabledBySheetMap = {};
+        for (const [sName, colSet] of Object.entries(disabledColumnsBySheet)) {
+          if (colSet && colSet.size > 0) {
+            disabledBySheetMap[sName] = Array.from(colSet);
+          }
+        }
+        const globalDisabledArr = Array.from(getActiveDisabledSet());
 
-        if (window.go && window.go.main && window.go.main.App && window.go.main.App.ProcessFileTo) {
-          const res = await window.go.main.App.ProcessFileTo(currentFilePath, destPath, currentSalt, disabledArr, createKey, keyPassword, "");
+        if (window.go && window.go.main && window.go.main.App) {
+          let res = null;
+          if (window.go.main.App.ProcessFileWithSheets) {
+            res = await window.go.main.App.ProcessFileWithSheets(currentFilePath, destPath, currentSalt, globalDisabledArr, disabledBySheetMap, createKey, keyPassword, "");
+          } else if (window.go.main.App.ProcessFileTo) {
+            res = await window.go.main.App.ProcessFileTo(currentFilePath, destPath, currentSalt, globalDisabledArr, createKey, keyPassword, "");
+          }
+
           if (res && res.success) {
             onProcessingCompleted(res, 'depersonalize');
           } else {

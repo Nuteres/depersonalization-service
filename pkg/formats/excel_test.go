@@ -385,3 +385,60 @@ func TestExcelHandler_ContextCancellation(t *testing.T) {
 		t.Fatal("expected context cancellation error, got nil")
 	}
 }
+
+func TestExcelHandler_DisabledColumnsBySheet(t *testing.T) {
+	anon := anonymizer.New("test-salt-sheets")
+	handler := formats.NewExcelHandler(anon)
+
+	f := excelize.NewFile()
+	defer f.Close()
+
+	sheet1 := "Сотрудники"
+	sheet2 := "Клиенты"
+	f.SetSheetName("Sheet1", sheet1)
+	_, _ = f.NewSheet(sheet2)
+
+	_ = f.SetCellValue(sheet1, "A1", "ФИО")
+	_ = f.SetCellValue(sheet1, "B1", "Должность")
+	_ = f.SetCellValue(sheet1, "A2", "Иванов Иван Иванович")
+	_ = f.SetCellValue(sheet1, "B2", "Директор")
+
+	_ = f.SetCellValue(sheet2, "A1", "ФИО")
+	_ = f.SetCellValue(sheet2, "B1", "Статус")
+	_ = f.SetCellValue(sheet2, "A2", "Петров Петр Петрович")
+	_ = f.SetCellValue(sheet2, "B2", "VIP")
+
+	var inBuf, outBuf bytes.Buffer
+	if err := f.Write(&inBuf); err != nil {
+		t.Fatalf("failed to write workbook: %v", err)
+	}
+
+	// Disable column 1 only for "Сотрудники", leave "Клиенты" enabled
+	options := map[string]interface{}{
+		"disabled_columns_by_sheet": map[string][]int{
+			"Сотрудники": {1},
+		},
+	}
+
+	if err := handler.Process(context.Background(), &inBuf, &outBuf, options); err != nil {
+		t.Fatalf("handler.Process failed: %v", err)
+	}
+
+	outExcel, err := excelize.OpenReader(&outBuf)
+	if err != nil {
+		t.Fatalf("failed to open processed file: %v", err)
+	}
+	defer outExcel.Close()
+
+	// Sheet 1: FIO must NOT be anonymized
+	s1Val, _ := outExcel.GetCellValue(sheet1, "A2")
+	if s1Val != "Иванов Иван Иванович" {
+		t.Errorf("expected Sheet 1 FIO to be untouched, got %q", s1Val)
+	}
+
+	// Sheet 2: FIO MUST be anonymized
+	s2Val, _ := outExcel.GetCellValue(sheet2, "A2")
+	if s2Val == "Петров Петр Петрович" || s2Val == "" {
+		t.Errorf("expected Sheet 2 FIO to be anonymized, got %q", s2Val)
+	}
+}
