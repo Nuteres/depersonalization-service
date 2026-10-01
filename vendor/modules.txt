@@ -5,9 +5,27 @@ git.sr.ht/~jackmordaunt/go-toast/v2/internal/winrt/data/xml/dom
 git.sr.ht/~jackmordaunt/go-toast/v2/internal/winrt/ui/notifications
 git.sr.ht/~jackmordaunt/go-toast/v2/tmpl
 git.sr.ht/~jackmordaunt/go-toast/v2/wintoast
+# github.com/TsubasaBE/go-xlsb v1.1.1
+## explicit; go 1.25
+github.com/TsubasaBE/go-xlsb
+github.com/TsubasaBE/go-xlsb/biff12
+github.com/TsubasaBE/go-xlsb/internal/dateformat
+github.com/TsubasaBE/go-xlsb/internal/rels
+github.com/TsubasaBE/go-xlsb/numfmt
+github.com/TsubasaBE/go-xlsb/record
+github.com/TsubasaBE/go-xlsb/stringtable
+github.com/TsubasaBE/go-xlsb/styles
+github.com/TsubasaBE/go-xlsb/workbook
+github.com/TsubasaBE/go-xlsb/worksheet
 # github.com/bep/debounce v1.2.1
 ## explicit
 github.com/bep/debounce
+# github.com/extrame/ole2 v0.0.0-20160812065207-d69429661ad7
+## explicit
+github.com/extrame/ole2
+# github.com/extrame/xls v0.0.1
+## explicit
+github.com/extrame/xls
 # github.com/go-ole/go-ole v1.3.0
 ## explicit; go 1.12
 github.com/go-ole/go-ole

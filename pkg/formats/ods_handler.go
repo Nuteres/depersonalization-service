@@ -16,13 +16,8 @@ import (
 	"dep_service/pkg/depmap"
 )
 
-// ODSSheetInfo represents metadata and detected column headers for an individual sheet in an ODS workbook.
-type ODSSheetInfo struct {
-	Index    int      `json:"index"`
-	Name     string   `json:"name"`
-	Columns  []string `json:"columns"`
-	RowCount int      `json:"rowCount"`
-}
+// ODSSheetInfo is a type alias of SheetInfo for backward compatibility.
+type ODSSheetInfo = SheetInfo
 
 // ODSHandler implements processing and inspection for OpenDocument Spreadsheet (.ods) files.
 type ODSHandler struct {
@@ -80,6 +75,7 @@ func (h *ODSHandler) Inspect(r io.ReaderAt, size int64) ([]ODSSheetInfo, error) 
 			Index:    i,
 			Name:     s.name,
 			Columns:  headers,
+			Headers:  headers,
 			RowCount: len(s.rows),
 		})
 	}
