@@ -1,0 +1,105 @@
+:root {
+  --bg: #FBFBFA;
+  --surface: #FFFFFF;
+  --border: #E8E7E3;
+  --border-subtle: #F0EFEB;
+  --ink: #1C1917;
+  --ink-muted: #78716C;
+  --ink-faint: #A8A29E;
+  --accent: #0F172A;
+  --safe-bg: #ECFDF5;
+  --safe-border: #A7F3D0;
+  --safe-text: #065F46;
+  --risk-bg: #FEF2F2;
+  --risk-border: #FECACA;
+  --risk-text: #991B1B;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: -0.011em;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: -0.02em;
+}
+
+.redaction-bar {
+  background-color: #18181B;
+  color: #FAFAFA;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  display: inline-block;
+  user-select: none;
+}
+
+/* Resizable Table & Columns */
+.resizable-table {
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.resizable-table th {
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.resizable-table td {
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 0;
+}
+
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 20;
+}
+
+.col-resizer:hover, .col-resizer.resizing {
+  background-color: #1C1917;
+}
+
+/* Custom Clean Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #F5F5F4;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #D6D3D1;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #A8A29E;
+}
+
+body.modal-open {
+  overflow: hidden !important;
+  height: 100vh !important;
+}
+
+.overscroll-contain {
+  overscroll-behavior: contain !important;
+}
