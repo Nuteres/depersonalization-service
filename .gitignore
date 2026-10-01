@@ -116,3 +116,7 @@ temp/
 .claude/
 .cursor/
 scratch/
+
+# Worktrees
+.worktrees/
+worktrees/
