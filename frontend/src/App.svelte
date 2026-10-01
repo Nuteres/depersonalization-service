@@ -2,10 +2,12 @@
   import { onMount } from 'svelte';
   import Header from './lib/components/layout/Header.svelte';
   import DepersonalizeView from './lib/components/depersonalize/DepersonalizeView.svelte';
+  import RestoreView from './lib/components/restore/RestoreView.svelte';
   import ProgressModal from './lib/components/common/ProgressModal.svelte';
   import SuccessModal from './lib/components/common/SuccessModal.svelte';
   import Toast from './lib/components/common/Toast.svelte';
   import { appState } from './lib/stores/appState.svelte';
+  import { restoreState } from './lib/stores/restoreState.svelte';
   import { GetAppInfo, EventsOn } from './lib/api/wails';
   import { loadFile } from './lib/services/fileLoader';
   import type { ProgressEventData } from './lib/types/domain';
@@ -37,16 +39,28 @@
       if (filePath) {
         if (filePath.toLowerCase().endsWith('.depmap')) {
           appState.setMode('restore');
+          restoreState.loadKeyFile(filePath);
         } else if (appState.currentAppMode === 'depersonalize') {
           loadFile(filePath);
+        } else if (appState.currentAppMode === 'restore') {
+          restoreState.loadDataFile(filePath);
         }
       }
     });
+
+    // Prevent default browser file open when dropping outside dropzones
+    const preventDefaults = (e: DragEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('dragover', preventDefaults);
+    window.addEventListener('drop', preventDefaults);
 
     return () => {
       unsubProcess();
       unsubRestore();
       unsubDrop();
+      window.removeEventListener('dragover', preventDefaults);
+      window.removeEventListener('drop', preventDefaults);
     };
   });
 </script>
@@ -57,13 +71,8 @@
   <main class="flex-1 flex flex-col pt-8">
     {#if appState.currentAppMode === 'depersonalize'}
       <DepersonalizeView />
-    {:else}
-      <div id="restoration-view" class="flex-1 flex flex-col gap-6">
-        <div class="border border-[#E8E7E3] bg-[#FAF9F5] p-8 text-center text-[#78716C]">
-          <p class="text-sm font-medium">Режим обратного восстановления данных</p>
-          <p class="text-xs text-[#A8A29E] mt-1">Вид восстановления будет подключен в следующем шаге.</p>
-        </div>
-      </div>
+    {:else if appState.currentAppMode === 'restore'}
+      <RestoreView />
     {/if}
   </main>
 
