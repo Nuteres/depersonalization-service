@@ -116,10 +116,15 @@
         appState.finishProgress();
         appState.showToast(`Ошибка при восстановлении данных: ${errMsg}`, 'error');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to restore file:', err);
       appState.finishProgress();
-      appState.showToast(`Ошибка восстановления: ${err}`, 'error');
+      const errStr = String(err);
+      if (errStr.includes('context canceled') || errStr.includes('canceled') || errStr.includes('отменена')) {
+        appState.showToast('Операция отменена', 'info');
+      } else {
+        appState.showToast(`Ошибка восстановления: ${err}`, 'error');
+      }
     }
   }
 </script>

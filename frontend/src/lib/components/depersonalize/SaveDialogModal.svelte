@@ -150,10 +150,15 @@
         appState.finishProgress();
         appState.showToast(result?.error || 'Ошибка при деперсонализации', 'error');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error during depersonalization:', err);
       appState.finishProgress();
-      appState.showToast(`Ошибка деперсонализации: ${err}`, 'error');
+      const errStr = String(err);
+      if (errStr.includes('context canceled') || errStr.includes('canceled') || errStr.includes('отменена')) {
+        appState.showToast('Операция отменена', 'info');
+      } else {
+        appState.showToast(`Ошибка деперсонализации: ${err}`, 'error');
+      }
     }
   }
 
