@@ -124,7 +124,9 @@ bin/depersonalizer-windows-amd64.exe
 
 ## 🛠️ Сборка из исходников
 
-Для сборки требуются **Go 1.23+**, компилятор C (для сборки CGO под macOS/Linux) и Docker (для Alt Linux). Все зависимости завендорены в директории `vendor/` для полной автономности (Air-Gapped).
+Для сборки требуются **Go 1.23+**, **Node.js 18+** (с npm, для компиляции Svelte 5 фронтенда), компилятор C (для сборки CGO под macOS/Linux) и Docker (для сборки под Alt Linux). Все зависимости Go завендорены в директории `vendor/` для полной автономности (Air-Gapped).
+
+Фронтенд автоматически собирается через Vite перед компиляцией исполняемых файлов Go при вызове команд `make`.
 
 ### Сборка под все платформы сразу:
 ```bash
@@ -144,6 +146,11 @@ make build-macos
 ### Сборка под Windows (x86_64):
 ```bash
 make build-windows
+```
+
+### Сборка только фронтенда:
+```bash
+make build-frontend
 ```
 
 ### Запуск тестов:
@@ -167,25 +174,40 @@ dep_service/
 │       └── Dockerfile               # Контейнер сборки под Alt Linux p10 (glibc 2.32)
 ├── cmd/
 │   └── app/
-│       ├── main.go                  # Точка входа Wails v2
-│       ├── wails_app.go             # IPC-методы (ProcessFileWithSheets, RestoreFileTo, InspectKeyFile)
+│       ├── main.go                  # Точка входа Wails v2 (DI Composition Root)
 │       └── wails_app_test.go        # Интеграционные тесты полного цикла
+├── internal/                        # Clean Architecture: чистый сервисный слой и адаптеры
+│   ├── domain/                      # Доменные сущности (FileInfo, PreviewRow, результаты, ошибки)
+│   ├── service/                     # Изолированная бизнес-логика (без привязки к GUI/Wails):
+│   │   ├── inspector/               # Инспекция всех 8 форматов документов
+│   │   ├── preview/                 # Пагинация и маскирование предпросмотра
+│   │   ├── processor/               # Потоковая деперсонализация с context-отменой
+│   │   ├── keymanager/              # Управление криптоконтейнерами ключей .depmap
+│   │   └── restorer/                # Обратная персонализация документов
+│   └── desktop/                     # Тонкий адаптер Wails (IPC-методы, события, диалоги)
 ├── pkg/
 │   ├── anonymizer/                  # Генераторы синтетических ПДн (ФИО, СНИЛС, ИНН, Карты, Паспорта)
 │   ├── depmap/                      # Зашифрованный контейнер ключа .depmap (AES-256-GCM + PBKDF2)
 │   ├── detector/                    # Валидаторы контрольных сумм и эвристический поиск шапки
 │   └── formats/                     # Обработчики XLSX, XLSB, ODS, XLS, CSV, DOCX, ODT и PDF
-├── frontend/                        # Встраиваемый веб-интерфейс (//go:embed)
-│   ├── index.html                   # Одностраничное приложение в стиле Notion / Linear
-│   ├── js/                          # Модули логики (state, ui_common, depersonalize, restore)
-│   ├── assets.go                    # Go-пакет для встраивания ресурсов
-│   └── tailwind.min.js              # Автономный локальный Tailwind CSS (без внешних CDN)
+├── frontend/                        # Современный веб-интерфейс на Svelte 5 + Vite + Tailwind v4
+│   ├── src/
+│   │   ├── lib/
+│   │   │   ├── api/                 # Типизированный фасад Wails IPC с dev-фоллбэками
+│   │   │   ├── components/          # Компоненты UI (depersonalize, restore, layout, common)
+│   │   │   ├── stores/              # Реактивные хранилища Runes ($state.raw для тяжелых таблиц)
+│   │   │   └── types/               # TypeScript-интерфейсы доменных моделей
+│   │   ├── App.svelte               # Корневая оболочка приложения с вкладками
+│   │   └── main.ts                  # Точка монтирования Svelte 5
+│   ├── assets.go                    # Встраивание собранного бандла (//go:embed all:dist)
+│   ├── vite.config.ts               # Конфигурация Vite 6 с плагинами Svelte и Tailwind v4
+│   └── package.json
 ├── docs/
 │   ├── USER_GUIDE.md                # Подробное пошаговое руководство пользователя
 │   ├── ARCHITECTURE.md              # Техническая архитектура и спецификация протоколов
 │   └── superpowers/                 # Архитектурные дизайн-документы и планы реализации
-├── vendor/                          # 100% завендоренные зависимости (Air-Gapped)
-├── Makefile                         # Автоматизация кроссплатформенной сборки
+├── vendor/                          # 100% завендоренные Go-зависимости (Air-Gapped)
+├── Makefile                         # Автоматизация сборки и тестирования
 └── go.mod
 ```
 

@@ -10,33 +10,46 @@
 
 ```mermaid
 graph TD
-    UI[Frontend: HTML5 / Tailwind / Vanilla JS] <-->|Wails IPC Bridge: JSON-RPC over WebSockets/Pipes| Core[cmd/app: Wails App Controller]
-    
-    subgraph "Go Core Engine"
-        Core --> Formats[pkg/formats: Форматные парсеры]
-        Core --> DepMap[pkg/depmap: Контейнер ключа .depmap]
-        Core --> Detector[pkg/detector: Анализ и контрольные суммы]
-        Core --> Anonymizer[pkg/anonymizer: Детерминированная генерация]
+    subgraph "Frontend (Svelte 5 + Runes + Vite + Tailwind v4)"
+        UI[UI Components: DepersonalizeView, RestoreView, TableView, Modals]
+        Stores[Runes Stores: appState, tableState with $state.raw]
+        Facade[Wails IPC Facade: typed wrappers & Event listeners]
+        UI --> Stores
+        UI --> Facade
     end
 
-    subgraph "Обработчики форматов (Streaming)"
-        Formats --> CSV[CSV/TSV Handler & Restorer]
-        Formats --> Excel[Excel Handler & Restorer excelize/v2]
-        Formats --> PDF[PDF Blackout Engine]
+    Facade <-->|Wails IPC Bridge: JSON-RPC over WebSockets/Pipes| Adapter[internal/desktop: DesktopApp Presentation Adapter]
+
+    subgraph "Service Layer (internal/service)"
+        Adapter --> Insp[Inspector: 8-format document inspection]
+        Adapter --> Prev[PreviewService: Row pagination & column masking]
+        Adapter --> Proc[ProcessorService: Streaming anonymization & cancellation]
+        Adapter --> KM[KeyManager: .depmap PBKDF2/AES-GCM management]
+        Adapter --> Rest[RestorerService: Multi-format reverse depersonalization]
+        Proc --> KM
+        Proc --> Insp
+        Rest --> KM
     end
 
-    subgraph "Криптографический слой"
-        DepMap --> GCM[AES-256-GCM AEAD]
-        DepMap --> KDF[PBKDF2-HMAC-SHA256 100k iter]
-        Anonymizer --> HMAC[HMAC-SHA256 Referential Integrity]
+    subgraph "Core Engines & Formats (pkg/)"
+        Insp --> Formats[pkg/formats: XLSX, XLSB, ODS, XLS, CSV, DOCX, ODT, PDF]
+        Prev --> Formats
+        Proc --> Formats
+        Rest --> Formats
+        Proc --> Anonymizer[pkg/anonymizer: Synthetic PII generation]
+        Insp --> Detector[pkg/detector: Checksums & header heuristics]
+        KM --> DepMap[pkg/depmap: Encrypted container engine]
     end
 ```
 
 ### Принципы проектирования:
-1. **Строгий Air-Gapped режим**: Приложение не открывает сетевых слушающих портов (listen socket) наружу, не выполняет внешних HTTP/DNS-запросов и не использует внешние CDN. Все графические ресурсы и стили встроены в исполняемый файл через директиву `//go:embed`.
-2. **Потоковая обработка (Streaming I/O)**: Обработка больших файлов (сотни тысяч строк) выполняется чанками и строковыми потоками с низким потреблением оперативной памяти.
-3. **Ссылочная целостность (Referential Integrity)**: Синтетические данные генерируются псевдослучайно, но строго детерминировано на основе `HMAC-SHA256(исходное_значение, соль)`.
-4. **Неинвазивная обратимость (Reversibility via `.depmap`)**: Обратная персонализация не требует изменения бизнес-логики генераторов; соответствия вычисляются стриминговым сравнением входа и выхода и упаковываются в зашифрованный файл-контейнер.
+1. **Чистая архитектура (Clean Architecture)**: Полное разделение UI/Wails адаптера (`internal/desktop`), сервисов бизнес-логики (`internal/service`), доменных сущностей (`internal/domain`) и низкоуровневых процессоров (`pkg/`). Любой сервис может быть протестирован автономно без запуска WebView.
+2. **Мгновенная отмена (Context Cancellation)**: Долгосрочные операции (потоковое обезличивание, инспекция, восстановление) поддерживают прерывание пользователем в 1 клик через `context.Context` с безопасным закрытием дескрипторов и удалением незавершенных файлов.
+3. **Строгий Air-Gapped режим**: Приложение не открывает сетевых слушающих портов наружу, не выполняет внешних HTTP/DNS-запросов и не использует внешние CDN. Все графические ресурсы и стили встроены в исполняемый файл через директиву `//go:embed all:dist`.
+4. **Высокая производительность UI**: Использование `$state.raw` в Svelte 5 для коллекций предпросмотра строк исключает оверхед глубокого проксирования на больших объемах данных.
+5. **Потоковая обработка (Streaming I/O)**: Обработка больших файлов выполняется чанками и строковыми потоками с низким потреблением оперативной памяти.
+6. **Ссылочная целостность (Referential Integrity)**: Синтетические данные генерируются псевдослучайно, но строго детерминировано на основе `HMAC-SHA256(исходное_значение, соль)`.
+7. **Неинвазивная обратимость (Reversibility via `.depmap`)**: Обратная персонализация не требует изменения бизнес-логики генераторов; соответствия вычисляются стриминговым сравнением входа и выхода и упаковываются в зашифрованный файл-контейнер.
 
 ---
 
@@ -121,25 +134,30 @@ graph TD
 
 ## 3. Взаимодействие компонентов (IPC Wails)
 
-Связь между JavaScript-фронтендом и ядром Go осуществляется через IPC-мост Wails:
+Связь между фронтендом Svelte 5 и адаптером Go осуществляется через типизированный фасад `frontend/src/lib/api/wails.ts` и IPC-мост Wails:
 
 | Метод Wails Go | Аргументы | Назначение |
 |---|---|---|
 | `GetAppInfo` | `()` | Возвращает ОС (`macOS`, `ALT Linux 10.4`, `Windows`), архитектуру и версию |
-| `SelectFile` | `()` | Открывает нативный системный диалог выбора документов (`.xlsx`, `.csv`, `.pdf`) |
+| `SelectFile` | `()` | Открывает нативный системный диалог выбора документов (все 8 форматов) |
 | `SelectKeyFile` | `()` | Открывает системный диалог выбора файлов-ключей (`*.depmap`) |
 | `SaveFileDialog` | `(defaultName)` | Открывает диалог сохранения обработанного документа |
+| `SaveKeyFileDialog` | `(defaultName)` | Открывает диалог сохранения ключа восстановления `.depmap` |
 | `InspectFile` | `(path)` | Анализирует структуру файла, находит шапку и категории ПДн |
 | `GetTableRows` | `(path, offset, limit, salt, disabledCols)` | Динамическая подгрузка строк для бесконечного скролла таблицы |
-| `ProcessFileTo` | `(path, outPath, salt, disabledCols, createKey, password, keyPath)` | Потоковая деперсонализация с генерацией `.depmap` ключа |
+| `GetSheetRows` | `(path, sheet, offset, limit, salt, disabledCols)` | Подгрузка строк конкретного листа многостраничной книги |
+| `ProcessFile` | `(path, salt)` | Быстрое обезличивание в файл по умолчанию |
+| `ProcessFileTo` | `(path, outPath, salt, disabledCols, createKey, password, keyPath)` | Обезличивание с выборочным исключением колонок и ключом |
+| `ProcessFileWithSheets` | `(path, outPath, salt, disabledCols, disabledBySheet, createKey, password, keyPath)` | Пакетное обезличивание многостраничных книг с раздельными колонками |
+| `CancelCurrentOperation` | `()` | **Мгновенная отмена текущей операции** (потока деперсонализации или восстановления) |
 | `InspectKeyFile` | `(keyPath, password)` | Проверка валидности контейнера `.depmap` и чтение метаданных |
-| `RestoreFileTo` | `(inputPath, keyPath, password, destPath)` | Обратная персонализация таблицы по ключу `.depmap` |
+| `RestoreFileTo` | `(inputPath, keyPath, password, destPath)` | Обратная персонализация документа по ключу `.depmap` |
 | `OpenContainingFolder` | `(path)` | Открывает папку с файлом в Finder / Explorer / Nautilus |
 
 ### События (Wails Events):
 - `process-progress`: `{ "processed": 1500, "total": 8500, "percent": 17 }`
 - `restore-progress`: `{ "processed": 320, "total": 1420, "percent": 22 }`
-- `app:file-dropped`: Эмитится при перетаскивании файла из операционной системы в окно программы.
+- `app:file-dropped`: Эмитится при перетаскивании файла из операционной системы в окно программы (с автоматическим определением режима).
 
 ---
 
