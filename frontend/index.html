@@ -883,6 +883,62 @@
       });
     }
 
+    let _textMeasureCtx = null;
+    function measureTextPx(text, font) {
+      if (!text) return 0;
+      try {
+        if (!_textMeasureCtx) {
+          const c = document.createElement('canvas');
+          _textMeasureCtx = c.getContext('2d');
+        }
+        if (_textMeasureCtx) {
+          _textMeasureCtx.font = font || '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          return Math.ceil(_textMeasureCtx.measureText(String(text)).width);
+        }
+      } catch (e) {
+        // Fallback for environments without canvas context
+      }
+      return Math.ceil(String(text).length * 8.8);
+    }
+
+    function calculateOptimalColumnWidth(h, col1Based) {
+      const ent = currentFileInfo && currentFileInfo.entities ? currentFileInfo.entities.find(e => e.columnIndex === col1Based) : null;
+      const isPiiCol = !!ent;
+
+      // 1. Measure header text width (bold 12px font)
+      const headerTextW = measureTextPx(h, '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif');
+
+      // 2. Badge "[ ПДн: Замена ]" takes ~88px + 6px margin
+      const badgeW = isPiiCol ? 96 : 0;
+
+      // 3. Padding & spacing: th px-3 (24px) + gap-1.5 (6px) + col-resizer handle (10px) + safety buffer (16px) = 56px
+      let maxNeeded = headerTextW + badgeW + 56;
+
+      // 4. Sample preview rows (up to 15 rows) so cell data also displays comfortably
+      if (currentFileInfo && currentFileInfo.previewRows && currentFileInfo.previewRows.length > 0) {
+        const cIdx = col1Based - 1;
+        const sampleRows = currentFileInfo.previewRows.slice(0, 15);
+        for (const row of sampleRows) {
+          const vBefore = (row.before && row.before[cIdx] != null) ? String(row.before[cIdx]) : '';
+          const vAfter = (row.after && row.after[cIdx] != null) ? String(row.after[cIdx]) : '';
+          
+          if (vBefore) {
+            const font = isPiiCol ? '400 12px "JetBrains Mono", monospace' : '400 13px -apple-system, BlinkMacSystemFont, sans-serif';
+            const wBefore = measureTextPx(vBefore, font) + 36;
+            if (wBefore > maxNeeded) maxNeeded = wBefore;
+          }
+          if (vAfter) {
+            const font = isPiiCol ? '500 12px "JetBrains Mono", monospace' : '400 13px -apple-system, BlinkMacSystemFont, sans-serif';
+            const wAfter = measureTextPx(vAfter, font) + 36;
+            if (wAfter > maxNeeded) maxNeeded = wAfter;
+          }
+        }
+      }
+
+      // Minimum 130px, maximum default 520px
+      return Math.min(520, Math.max(130, Math.ceil(maxNeeded)));
+    }
+
     function renderTableHeaders() {
       const headerRow = document.getElementById('table-header-row');
       if (!headerRow || !currentFileInfo || !currentFileInfo.headers) return;
@@ -890,8 +946,9 @@
       // Initialize column widths if not already populated for current header count
       if (columnWidths.length !== currentFileInfo.headers.length + 1) {
         columnWidths = [50]; // Column 0: '#'
-        currentFileInfo.headers.forEach((h) => {
-          const defaultW = Math.min(260, Math.max(130, h.length * 9 + 40));
+        currentFileInfo.headers.forEach((h, idx) => {
+          const col1Based = idx + 1;
+          const defaultW = calculateOptimalColumnWidth(h, col1Based);
           columnWidths.push(defaultW);
         });
       }
@@ -918,8 +975,8 @@
 
         ths += `
           <th style="width: ${colW}px;" class="py-3 px-3 font-semibold text-[#1C1917] select-none border-r border-[#F0EFEB]">
-            <div class="flex items-center justify-between gap-1 w-full min-w-0 overflow-hidden pr-1">
-              <span class="truncate min-w-0 flex-1" title="${escapeHtml(h)}">${escapeHtml(h)}</span>
+            <div class="flex items-center justify-between gap-1.5 w-full min-w-0 overflow-hidden pr-1">
+              <span class="truncate min-w-0 flex-1 whitespace-nowrap" title="${escapeHtml(h)}">${escapeHtml(h)}</span>
               ${badge}
             </div>
             <div class="col-resizer" onmousedown="initResize(event, ${col1Based})"></div>
