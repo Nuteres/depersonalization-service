@@ -13,6 +13,7 @@ import (
 	"dep_service/internal/service/preview"
 	"dep_service/internal/service/processor"
 	"dep_service/internal/service/restorer"
+	"dep_service/internal/version"
 )
 
 // DesktopApp is the presentation adapter struct bound to the Wails runtime.
@@ -74,7 +75,7 @@ func (a *DesktopApp) Startup(ctx context.Context) {
 // GetAppInfo returns system environment metadata (current operating system, architecture, app version).
 func (a *DesktopApp) GetAppInfo() map[string]string {
 	return map[string]string{
-		"version": "v1.0",
+		"version": "v" + version.Version,
 		"os":      detectOS(),
 		"arch":    goruntime.GOARCH,
 	}

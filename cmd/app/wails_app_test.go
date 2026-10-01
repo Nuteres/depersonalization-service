@@ -20,6 +20,7 @@ import (
 	"dep_service/internal/service/preview"
 	"dep_service/internal/service/processor"
 	"dep_service/internal/service/restorer"
+	"dep_service/internal/version"
 	"dep_service/pkg/depmap"
 )
 
@@ -303,8 +304,12 @@ func TestApp_EdgeCases(t *testing.T) {
 func TestApp_GetAppInfo(t *testing.T) {
 	app := NewApp()
 	info := app.GetAppInfo()
-	if info["version"] != "v1.0" {
-		t.Errorf("expected version v1.0, got %s", info["version"])
+	expectedVersion := "v" + version.Version
+	if info["version"] != expectedVersion {
+		t.Errorf("expected version %s, got %s", expectedVersion, info["version"])
+	}
+	if info["version"] != "v1.1.0" {
+		t.Errorf("expected version v1.1.0, got %s", info["version"])
 	}
 	if info["os"] == "" {
 		t.Errorf("expected non-empty OS name")

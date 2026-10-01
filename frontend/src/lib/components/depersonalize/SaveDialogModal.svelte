@@ -211,7 +211,7 @@
       <div class="space-y-4 text-xs">
         <!-- Input File Meta Box -->
         <div class="p-3 bg-[#FAF9F5] border border-[#E8E7E3] flex items-center justify-between font-mono">
-          <span class="font-bold text-[#1C1917] truncate max-w-[280px]" title={appState.currentFileInfo.name}>
+          <span class="font-bold text-[#1C1917] truncate flex-1 min-w-0" title={appState.currentFileInfo.name}>
             {appState.currentFileInfo.name}
           </span>
           <span class="text-[#78716C] shrink-0 ml-2">
@@ -249,32 +249,32 @@
           </div>
         </div>
 
-        <!-- Salt Field with Random Salt Generator -->
+        <!-- Salt / Key Field with Random Key Generator -->
         <div class="space-y-2 border border-[#E8E7E3] p-4 bg-white">
           <div class="flex items-center justify-between">
             <label
               for="salt-input"
               class="block text-[11px] font-mono font-bold text-[#1C1917] uppercase tracking-wider"
             >
-              Ключ целостности (соль хеширования):
+              Ключ шифрования:
             </label>
             <button
               type="button"
               onclick={generateRandomSalt}
               class="text-[11px] text-[#065F46] hover:text-[#047857] font-semibold underline cursor-pointer"
             >
-              🎲 Случайная соль
+              🎲 Случайный ключ
             </button>
           </div>
           <input
             id="salt-input"
             type="text"
             bind:value={salt}
-            placeholder="Введите или сгенерируйте соль..."
+            placeholder="Введите или сгенерируйте ключ..."
             class="w-full px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5]"
           />
-          <div class="text-[10px] text-[#78716C]">
-            Используется для детерминированного псевдонимизирования. Одинаковая соль гарантирует воспроизводимость замен.
+          <div class="text-[11px] text-[#78716C] leading-relaxed">
+            Одинаковый ключ гарантирует, что одни и те же ФИО и значения во всех файлах будут заменяться одинаково.
           </div>
         </div>
 

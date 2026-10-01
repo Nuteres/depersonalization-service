@@ -129,17 +129,5 @@
         {/each}
       {/if}
     </div>
-
-    <!-- Trust note at bottom of text inspection -->
-    <div
-      class="px-4 py-3 bg-[#FAF9F5] border-t border-[#E8E7E3] text-xs text-[#78716C] flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-mono"
-    >
-      <div class="flex items-center space-x-2">
-        <span>Ключ целостности: <strong class="text-[#1C1917]">{appState.currentSalt}</strong></span>
-        <span>•</span>
-        <span>Все стили, таблицы и форматирование документа сохраняются</span>
-      </div>
-      <span class="text-[#065F46] font-semibold">✔ Заменяются только найденные ПДн</span>
-    </div>
   </div>
 {/if}

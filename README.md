@@ -1,5 +1,6 @@
 # Деперсонализация ПД (152-ФЗ РФ)
 
+[![Версия](https://img.shields.io/badge/Версия-v1.1.0-065F46?style=flat-square)](CHANGELOG.md)
 [![152-ФЗ](https://img.shields.io/badge/152--ФЗ-Соответствие-065F46?style=flat-square)](#)
 [![Форматы](https://img.shields.io/badge/Форматы-XLSX%20|%20XLSB%20|%20ODS%20|%20XLS%20|%20CSV%20|%20DOCX%20|%20ODT%20|%20PDF-065F46?style=flat-square)](#)
 [![Air-Gapped](https://img.shields.io/badge/Security-100%25%20Air--Gapped-1C1917?style=flat-square)](#)
@@ -215,8 +216,10 @@ dep_service/
 
 ## 📚 Дополнительная документация
 
+- [История изменений проекта (CHANGELOG.md)](CHANGELOG.md)
 - [Подробное руководство пользователя (docs/USER_GUIDE.md)](docs/USER_GUIDE.md)
 - [Техническое описание архитектуры и криптографии (docs/ARCHITECTURE.md)](docs/ARCHITECTURE.md)
+- [Инструкции и регламент разработки для агентов (AGENTS.md)](AGENTS.md)
 - [Спецификация обратной персонализации (docs/superpowers/specs/2026-09-30-reverse-depersonalization-design.md)](docs/superpowers/specs/2026-09-30-reverse-depersonalization-design.md)
 
 ---

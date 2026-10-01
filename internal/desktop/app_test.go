@@ -29,8 +29,8 @@ func newTestApp() *desktop.DesktopApp {
 func TestDesktopAppInitialization(t *testing.T) {
 	app := newTestApp()
 	info := app.GetAppInfo()
-	if info["version"] == "" {
-		t.Errorf("expected non-empty version, got empty")
+	if info["version"] != "v1.1.0" {
+		t.Errorf("expected v1.1.0, got %s", info["version"])
 	}
 	if info["os"] == "" {
 		t.Errorf("expected non-empty os, got empty")

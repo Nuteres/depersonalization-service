@@ -5,6 +5,7 @@
   function switchSheet(idx: number) {
     if (tableState.activeSheetIndex === idx) return;
     tableState.setActiveSheet(idx);
+    tableState.setColumnWidths([]);
     const sheet = appState.currentFileInfo?.sheets?.[idx];
     if (sheet) {
       tableState.setPreviewRows(sheet.previewRows || []);

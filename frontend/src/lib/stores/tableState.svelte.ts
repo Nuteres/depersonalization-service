@@ -5,11 +5,23 @@ class TableState {
   previewRows = $state.raw<PreviewRow[]>([]);
   activeSheetIndex = $state<number>(0);
   disabledColumnsBySheet = $state<Record<string, number[]>>({});
+  columnWidths = $state<number[]>([]);
   isBefore = $state<boolean>(false);
   isFullscreen = $state<boolean>(false);
   page = $state<number>(1);
   pageSize = $state<number>(50);
   isLoadingRows = $state<boolean>(false);
+
+  setColumnWidths(widths: number[]): void {
+    this.columnWidths = widths;
+  }
+
+  setColumnWidth(colIndex: number, width: number): void {
+    if (this.columnWidths[colIndex] !== undefined) {
+      this.columnWidths[colIndex] = width;
+      this.columnWidths = [...this.columnWidths];
+    }
+  }
 
   setPreviewRows(rows: PreviewRow[]): void {
     this.previewRows = rows;
@@ -64,6 +76,7 @@ class TableState {
     this.previewRows = [];
     this.activeSheetIndex = 0;
     this.disabledColumnsBySheet = {};
+    this.columnWidths = [];
     this.isBefore = false;
     this.isFullscreen = false;
     this.page = 1;
