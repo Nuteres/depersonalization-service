@@ -55,20 +55,24 @@ type SheetInfo struct {
 
 // FileInfo holds metadata, detected entities, and preview rows for an inspected file.
 type FileInfo struct {
-	Path               string       `json:"path"`
-	Name               string       `json:"name"`
-	Extension          string       `json:"extension"`
-	FileType           string       `json:"fileType"` // "table" or "pdf"
-	Size               int64        `json:"size"`
-	RowCount           int          `json:"rowCount"`
-	PageCount          int          `json:"pageCount"`
-	Entities           []EntityInfo `json:"entities"`
-	Headers            []string     `json:"headers"`
-	PreviewRows        []PreviewRow `json:"previewRows"`
-	Sheets             []SheetInfo  `json:"sheets,omitempty"`
-	ActiveSheet        string       `json:"activeSheet,omitempty"`
-	PDFTextSnippet     string       `json:"pdfTextSnippet,omitempty"`
-	PDFRedactedSnippet string       `json:"pdfRedactedSnippet,omitempty"`
+	Path                   string                    `json:"path"`
+	Name                   string                    `json:"name"`
+	Extension              string                    `json:"extension"`
+	FileType               string                    `json:"fileType"` // "table", "text", or "pdf"
+	Format                 string                    `json:"format"`   // "xlsx", "xlsb", "ods", "xls", "csv", "docx", "odt", "pdf"
+	SupportedExportFormats []string                  `json:"supportedExportFormats,omitempty"`
+	Size                   int64                     `json:"size"`
+	RowCount               int                       `json:"rowCount"`
+	ParagraphCount         int                       `json:"paragraphCount,omitempty"`
+	PageCount              int                       `json:"pageCount"`
+	Entities               []EntityInfo              `json:"entities"`
+	Headers                []string                  `json:"headers"`
+	PreviewRows            []PreviewRow              `json:"previewRows"`
+	Sheets                 []SheetInfo               `json:"sheets,omitempty"`
+	ActiveSheet            string                    `json:"activeSheet,omitempty"`
+	TextSnippets           []formats.DocxTextSnippet `json:"textSnippets,omitempty"`
+	PDFTextSnippet         string                    `json:"pdfTextSnippet,omitempty"`
+	PDFRedactedSnippet     string                    `json:"pdfRedactedSnippet,omitempty"`
 }
 
 // ProcessResult holds the outcome of a batch anonymization run.
@@ -174,9 +178,27 @@ func (a *App) SaveFileDialog(defaultName string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(defaultName))
 	var filters []runtime.FileFilter
 	switch ext {
-	case ".xlsx", ".xlsm":
+	case ".xlsx", ".xlsm", ".xlsb", ".xls":
 		filters = []runtime.FileFilter{
 			{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
+			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
+		}
+	case ".ods":
+		filters = []runtime.FileFilter{
+			{DisplayName: "Таблица OpenDocument (*.ods)", Pattern: "*.ods"},
+			{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
+			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
+		}
+	case ".docx":
+		filters = []runtime.FileFilter{
+			{DisplayName: "Документ Word (*.docx)", Pattern: "*.docx"},
+			{DisplayName: "Документ OpenDocument Text (*.odt)", Pattern: "*.odt"},
+			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
+		}
+	case ".odt":
+		filters = []runtime.FileFilter{
+			{DisplayName: "Документ OpenDocument Text (*.odt)", Pattern: "*.odt"},
+			{DisplayName: "Документ Word (*.docx)", Pattern: "*.docx"},
 			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
 		}
 	case ".pdf":
@@ -187,6 +209,7 @@ func (a *App) SaveFileDialog(defaultName string) (string, error) {
 	default:
 		filters = []runtime.FileFilter{
 			{DisplayName: "Таблица CSV (*.csv)", Pattern: "*.csv"},
+			{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
 			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
 		}
 	}
@@ -229,12 +252,16 @@ func (a *App) SelectFile() (string, error) {
 		Title: "Выберите файл для обезличивания",
 		Filters: []runtime.FileFilter{
 			{
-				DisplayName: "Поддерживаемые документы (*.csv, *.tsv, *.xlsx, *.pdf)",
-				Pattern:     "*.csv;*.tsv;*.xlsx;*.xlsm;*.pdf",
+				DisplayName: "Все поддерживаемые форматы (*.xlsx, *.xlsb, *.ods, *.xls, *.csv, *.docx, *.odt, *.pdf)",
+				Pattern:     "*.xlsx;*.xlsb;*.ods;*.xls;*.csv;*.tsv;*.docx;*.odt;*.pdf",
 			},
 			{
-				DisplayName: "Таблицы Excel и CSV (*.csv, *.tsv, *.xlsx, *.xlsm)",
-				Pattern:     "*.csv;*.tsv;*.xlsx;*.xlsm",
+				DisplayName: "Таблицы Excel и ODS (*.xlsx, *.xlsb, *.ods, *.xls, *.csv)",
+				Pattern:     "*.xlsx;*.xlsb;*.ods;*.xls;*.csv;*.tsv",
+			},
+			{
+				DisplayName: "Текстовые документы Word и ODT (*.docx, *.odt)",
+				Pattern:     "*.docx;*.odt",
 			},
 			{
 				DisplayName: "Документы PDF (*.pdf)",
@@ -272,6 +299,16 @@ func (a *App) InspectFile(path string) (*FileInfo, error) {
 		return inspectCSV(path)
 	case ".xlsx", ".xlsm", ".xltx", ".xltm":
 		return inspectXLSX(path)
+	case ".ods":
+		return inspectODS(path)
+	case ".xlsb":
+		return inspectXLSB(path)
+	case ".xls":
+		return inspectXLS(path)
+	case ".docx":
+		return inspectDOCX(path)
+	case ".odt":
+		return inspectODT(path)
 	case ".pdf":
 		return inspectPDF(path)
 	default:
@@ -313,10 +350,14 @@ func (a *App) ProcessFileWithSheets(path string, outPath string, salt string, di
 	}
 
 	ext := strings.ToLower(filepath.Ext(path))
+	targetExt := ext
+	if ext == ".xls" || ext == ".xlsb" {
+		targetExt = ".xlsx"
+	}
 	if strings.TrimSpace(outPath) == "" {
 		dir := filepath.Dir(path)
 		base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		outPath = filepath.Join(dir, base+"_anonymized"+ext)
+		outPath = filepath.Join(dir, base+"_anonymized"+targetExt)
 	}
 
 	if createKey && strings.TrimSpace(keyPath) == "" {
@@ -339,20 +380,6 @@ func (a *App) ProcessFileWithSheets(path string, outPath string, salt string, di
 	outFile, err := os.Create(outPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output file: %w", err)
-	}
-
-	var handler formats.FormatHandler
-	switch ext {
-	case ".csv", ".tsv":
-		handler = formats.NewCSVHandler(anon)
-	case ".xlsx", ".xlsm", ".xltx", ".xltm":
-		handler = formats.NewExcelHandler(anon)
-	case ".pdf":
-		handler = formats.NewPDFHandler(anon)
-	default:
-		outFile.Close()
-		_ = os.Remove(outPath)
-		return nil, fmt.Errorf("unsupported file extension: %s", ext)
 	}
 
 	// Determine total row count for progress percentage
@@ -392,8 +419,55 @@ func (a *App) ProcessFileWithSheets(path string, outPath string, salt string, di
 		},
 	}
 
+	if ext == ".docx" || ext == ".odt" {
+		if len(disabledCols) > 0 && info != nil {
+			var disabledEntityTypes []string
+			for _, cIdx := range disabledCols {
+				if cIdx >= 1 && cIdx <= len(info.Entities) {
+					disabledEntityTypes = append(disabledEntityTypes, info.Entities[cIdx-1].Type)
+				}
+			}
+			options["disabled_entities"] = disabledEntityTypes
+		}
+	}
+
 	startTime := time.Now()
-	err = handler.Process(ctx, inFile, outFile, options)
+	var directDepMap *depmap.DepMap
+
+	switch ext {
+	case ".csv", ".tsv":
+		handler := formats.NewCSVHandler(anon)
+		err = handler.Process(ctx, inFile, outFile, options)
+	case ".xlsx", ".xlsm", ".xltx", ".xltm":
+		handler := formats.NewExcelHandler(anon)
+		err = handler.Process(ctx, inFile, outFile, options)
+	case ".ods":
+		odsHandler := formats.NewODSHandler(anon)
+		if strings.EqualFold(filepath.Ext(outPath), ".xlsx") {
+			directDepMap, err = odsHandler.ProcessToXLSX(ctx, inFile, stat.Size(), outFile, options)
+		} else {
+			directDepMap, err = odsHandler.Process(ctx, inFile, stat.Size(), outFile, options)
+		}
+	case ".xlsb":
+		xlsbHandler := formats.NewXLSBHandler(anon)
+		directDepMap, err = xlsbHandler.ProcessToXLSX(ctx, path, outFile, options)
+	case ".xls":
+		xlsHandler := formats.NewXLSHandler(anon)
+		directDepMap, err = xlsHandler.ProcessToXLSX(ctx, path, outFile, options)
+	case ".docx":
+		docxHandler := formats.NewDOCXHandler(anon)
+		directDepMap, err = docxHandler.Process(ctx, inFile, stat.Size(), outFile, options)
+	case ".odt":
+		odtHandler := formats.NewODTHandler(anon)
+		directDepMap, err = odtHandler.Process(ctx, inFile, stat.Size(), outFile, options)
+	case ".pdf":
+		handler := formats.NewPDFHandler(anon)
+		err = handler.Process(ctx, inFile, outFile, options)
+	default:
+		outFile.Close()
+		_ = os.Remove(outPath)
+		return nil, fmt.Errorf("unsupported file extension: %s", ext)
+	}
 	outFile.Close()
 
 	if err != nil {
@@ -401,16 +475,23 @@ func (a *App) ProcessFileWithSheets(path string, outPath string, salt string, di
 		return nil, fmt.Errorf("anonymization error: %w", err)
 	}
 
-	// If key creation requested, extract mappings from input vs output and save .depmap
+	// If key creation requested, save .depmap
 	if createKey {
-		dm := depmap.New(filepath.Base(path))
-		if err := extractMappings(path, outPath, ext, dm); err != nil {
-			_ = os.Remove(outPath)
-			return nil, fmt.Errorf("failed to extract key mappings: %w", err)
-		}
-		if err := dm.SaveFile(keyPath, keyPassword); err != nil {
-			_ = os.Remove(outPath)
-			return nil, fmt.Errorf("failed to save key file: %w", err)
+		if directDepMap != nil {
+			if err := directDepMap.SaveFile(keyPath, keyPassword); err != nil {
+				_ = os.Remove(outPath)
+				return nil, fmt.Errorf("failed to save key file: %w", err)
+			}
+		} else {
+			dm := depmap.New(filepath.Base(path))
+			if err := extractMappings(path, outPath, ext, dm); err != nil {
+				_ = os.Remove(outPath)
+				return nil, fmt.Errorf("failed to extract key mappings: %w", err)
+			}
+			if err := dm.SaveFile(keyPath, keyPassword); err != nil {
+				_ = os.Remove(outPath)
+				return nil, fmt.Errorf("failed to save key file: %w", err)
+			}
 		}
 	}
 
@@ -743,6 +824,78 @@ func (a *App) RestoreFileTo(inputPath string, keyPath string, password string, d
 		if err != nil {
 			_ = os.Remove(destPath)
 			return nil, fmt.Errorf("failed to restore excel: %w", err)
+		}
+
+	case ".ods":
+		inStat, err := os.Stat(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat input file: %w", err)
+		}
+
+		inFile, err := os.Open(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open input file: %w", err)
+		}
+		defer inFile.Close()
+
+		outFile, err := os.Create(destPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create destination file: %w", err)
+		}
+		defer outFile.Close()
+
+		restoredCount, err = formats.RestoreODS(ctx, inFile, inStat.Size(), outFile, dm)
+		if err != nil {
+			_ = os.Remove(destPath)
+			return nil, fmt.Errorf("failed to restore ods: %w", err)
+		}
+
+	case ".docx":
+		inStat, err := os.Stat(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat input file: %w", err)
+		}
+
+		inFile, err := os.Open(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open input file: %w", err)
+		}
+		defer inFile.Close()
+
+		outFile, err := os.Create(destPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create destination file: %w", err)
+		}
+		defer outFile.Close()
+
+		restoredCount, err = formats.RestoreDOCX(ctx, inFile, inStat.Size(), outFile, dm)
+		if err != nil {
+			_ = os.Remove(destPath)
+			return nil, fmt.Errorf("failed to restore docx: %w", err)
+		}
+
+	case ".odt":
+		inStat, err := os.Stat(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat input file: %w", err)
+		}
+
+		inFile, err := os.Open(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open input file: %w", err)
+		}
+		defer inFile.Close()
+
+		outFile, err := os.Create(destPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create destination file: %w", err)
+		}
+		defer outFile.Close()
+
+		restoredCount, err = formats.RestoreODT(ctx, inFile, inStat.Size(), outFile, dm)
+		if err != nil {
+			_ = os.Remove(destPath)
+			return nil, fmt.Errorf("failed to restore odt: %w", err)
 		}
 
 	default:
@@ -1183,16 +1336,18 @@ func inspectCSV(path string) (*FileInfo, error) {
 	}
 
 	return &FileInfo{
-		Path:        path,
-		Name:        filepath.Base(path),
-		Extension:   strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."),
-		FileType:    "table",
-		Size:        stat.Size(),
-		RowCount:    rowCount,
-		PageCount:   1,
-		Entities:    entities,
-		Headers:     headers,
-		PreviewRows: previewRows,
+		Path:                   path,
+		Name:                   filepath.Base(path),
+		Extension:              strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."),
+		FileType:               "table",
+		Format:                 "csv",
+		SupportedExportFormats: []string{"csv", "xlsx"},
+		Size:                   stat.Size(),
+		RowCount:               rowCount,
+		PageCount:              1,
+		Entities:               entities,
+		Headers:                headers,
+		PreviewRows:            previewRows,
 	}, nil
 }
 
@@ -1355,18 +1510,369 @@ func inspectXLSX(path string) (*FileInfo, error) {
 	primarySheet := allSheets[0]
 
 	return &FileInfo{
-		Path:        path,
-		Name:        filepath.Base(path),
-		Extension:   strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."),
-		FileType:    "table",
-		Size:        stat.Size(),
-		RowCount:    primarySheet.RowCount,
-		PageCount:   len(sheets),
-		Entities:    primarySheet.Entities,
-		Headers:     primarySheet.Headers,
-		PreviewRows: primarySheet.PreviewRows,
-		Sheets:      allSheets,
-		ActiveSheet: primarySheet.Name,
+		Path:                   path,
+		Name:                   filepath.Base(path),
+		Extension:              strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."),
+		FileType:               "table",
+		Format:                 "xlsx",
+		SupportedExportFormats: []string{"xlsx", "csv"},
+		Size:                   stat.Size(),
+		RowCount:               primarySheet.RowCount,
+		PageCount:              len(sheets),
+		Entities:               primarySheet.Entities,
+		Headers:                primarySheet.Headers,
+		PreviewRows:            primarySheet.PreviewRows,
+		Sheets:                 allSheets,
+		ActiveSheet:            primarySheet.Name,
+	}, nil
+}
+
+func buildSheetInfoFromRows(sheetName string, sheetIndex int, rowCount int, sampleRows [][]string, anon *anonymizer.Anonymizer) SheetInfo {
+	if len(sampleRows) == 0 {
+		return SheetInfo{
+			Name:        sheetName,
+			Index:       sheetIndex,
+			RowCount:    rowCount,
+			Headers:     nil,
+			Entities:    nil,
+			PreviewRows: nil,
+		}
+	}
+
+	headerIdx, headers := formats.FindHeaderRow(sampleRows)
+	if len(headers) > 0 {
+		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
+	}
+
+	colTypes := formats.ResolveColumnTypes(headers, nil)
+	var entities []EntityInfo
+	for i, ct := range colTypes {
+		if ct != formats.ColUnknown {
+			typeName, desc, action := columnTypeDetails(ct)
+			colName := ""
+			if i < len(headers) {
+				colName = headers[i]
+			}
+			entities = append(entities, EntityInfo{
+				ColumnIndex: i + 1,
+				ColumnName:  colName,
+				Type:        typeName,
+				Description: desc,
+				Action:      action,
+			})
+		}
+	}
+
+	var previewRows []PreviewRow
+	limit := 10
+	currRow := 0
+	for i := headerIdx + 1; i < len(sampleRows); i++ {
+		currRow++
+		if len(previewRows) < limit {
+			cols := sampleRows[i]
+			before := make([]string, len(headers))
+			after := make([]string, len(headers))
+			for j := 0; j < len(headers); j++ {
+				val := ""
+				if j < len(cols) {
+					val = cols[j]
+				}
+				before[j] = val
+				ct := formats.ColUnknown
+				if j < len(colTypes) {
+					ct = colTypes[j]
+				}
+				after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+			}
+			previewRows = append(previewRows, PreviewRow{
+				Index:  currRow,
+				Before: before,
+				After:  after,
+			})
+		}
+	}
+
+	return SheetInfo{
+		Name:        sheetName,
+		Index:       sheetIndex,
+		RowCount:    rowCount,
+		Headers:     headers,
+		Entities:    entities,
+		PreviewRows: previewRows,
+	}
+}
+
+func inspectODS(path string) (*FileInfo, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open ods file: %w", err)
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat ods file: %w", err)
+	}
+
+	anon := anonymizer.New("preview-salt-152fz")
+	handler := formats.NewODSHandler(anon)
+	sheets, samples, err := handler.InspectRows(file, stat.Size(), 40)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect ods file: %w", err)
+	}
+	if len(sheets) == 0 {
+		return nil, errors.New("ods file has no sheets")
+	}
+
+	var allSheets []SheetInfo
+	for _, s := range sheets {
+		sampleRows := samples[s.Name]
+		sInfo := buildSheetInfoFromRows(s.Name, s.Index, s.RowCount, sampleRows, anon)
+		allSheets = append(allSheets, sInfo)
+	}
+
+	primarySheet := allSheets[0]
+	return &FileInfo{
+		Path:                   path,
+		Name:                   filepath.Base(path),
+		Extension:              "ods",
+		FileType:               "table",
+		Format:                 "ods",
+		SupportedExportFormats: []string{"ods", "xlsx", "csv"},
+		Size:                   stat.Size(),
+		RowCount:               primarySheet.RowCount,
+		PageCount:              len(allSheets),
+		Entities:               primarySheet.Entities,
+		Headers:                primarySheet.Headers,
+		PreviewRows:            primarySheet.PreviewRows,
+		Sheets:                 allSheets,
+		ActiveSheet:            primarySheet.Name,
+	}, nil
+}
+
+func inspectXLSB(path string) (*FileInfo, error) {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat xlsb file: %w", err)
+	}
+
+	anon := anonymizer.New("preview-salt-152fz")
+	handler := formats.NewXLSBHandler(anon)
+	sheets, samples, err := handler.InspectRows(path, 40)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect xlsb file: %w", err)
+	}
+	if len(sheets) == 0 {
+		return nil, errors.New("xlsb file has no sheets")
+	}
+
+	var allSheets []SheetInfo
+	for _, s := range sheets {
+		sampleRows := samples[s.Name]
+		sInfo := buildSheetInfoFromRows(s.Name, s.Index, s.RowCount, sampleRows, anon)
+		allSheets = append(allSheets, sInfo)
+	}
+
+	primarySheet := allSheets[0]
+	return &FileInfo{
+		Path:                   path,
+		Name:                   filepath.Base(path),
+		Extension:              "xlsb",
+		FileType:               "table",
+		Format:                 "xlsb",
+		SupportedExportFormats: []string{"xlsx"},
+		Size:                   stat.Size(),
+		RowCount:               primarySheet.RowCount,
+		PageCount:              len(allSheets),
+		Entities:               primarySheet.Entities,
+		Headers:                primarySheet.Headers,
+		PreviewRows:            primarySheet.PreviewRows,
+		Sheets:                 allSheets,
+		ActiveSheet:            primarySheet.Name,
+	}, nil
+}
+
+func inspectXLS(path string) (*FileInfo, error) {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat xls file: %w", err)
+	}
+
+	anon := anonymizer.New("preview-salt-152fz")
+	handler := formats.NewXLSHandler(anon)
+	sheets, samples, err := handler.InspectRows(path, 40)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect xls file: %w", err)
+	}
+	if len(sheets) == 0 {
+		return nil, errors.New("xls file has no sheets")
+	}
+
+	var allSheets []SheetInfo
+	for _, s := range sheets {
+		sampleRows := samples[s.Name]
+		sInfo := buildSheetInfoFromRows(s.Name, s.Index, s.RowCount, sampleRows, anon)
+		allSheets = append(allSheets, sInfo)
+	}
+
+	primarySheet := allSheets[0]
+	return &FileInfo{
+		Path:                   path,
+		Name:                   filepath.Base(path),
+		Extension:              "xls",
+		FileType:               "table",
+		Format:                 "xls",
+		SupportedExportFormats: []string{"xlsx"},
+		Size:                   stat.Size(),
+		RowCount:               primarySheet.RowCount,
+		PageCount:              len(allSheets),
+		Entities:               primarySheet.Entities,
+		Headers:                primarySheet.Headers,
+		PreviewRows:            primarySheet.PreviewRows,
+		Sheets:                 allSheets,
+		ActiveSheet:            primarySheet.Name,
+	}, nil
+}
+
+func textEntityTypeName(t string) string {
+	switch t {
+	case "FIO":
+		return "ФИО"
+	case "SNILS":
+		return "СНИЛС"
+	case "PASSPORT":
+		return "Паспорт РФ"
+	case "PHONE":
+		return "Телефон"
+	case "INN":
+		return "ИНН"
+	case "BANK_CARD":
+		return "Банковская карта"
+	case "DATE":
+		return "Дата"
+	case "EMAIL":
+		return "Email"
+	default:
+		return t
+	}
+}
+
+func textEntityDetails(t string) (desc, action string) {
+	switch t {
+	case "FIO":
+		return "Русские фамилии, имена и отчества", "Синтетический профиль"
+	case "SNILS":
+		return "Страховые номера РФ (модуль 101)", "Валидный СНИЛС"
+	case "PASSPORT":
+		return "Серия и номер гражданина РФ", "Случайная серия/номер"
+	case "PHONE":
+		return "Мобильные операторы РФ", "Псевдонимный номер"
+	case "INN":
+		return "ИНН физлица (алгоритм ФНС)", "Контрольная сумма ФНС"
+	case "BANK_CARD":
+		return "Номера банковских карт", "Карта МИР (Luhn)"
+	case "DATE":
+		return "Даты и периоды", "Смещение ±30 дней"
+	case "EMAIL":
+		return "Корпоративная и личная почта", "Псевдонимный адрес"
+	default:
+		return "Персональные данные", "Обезличивание"
+	}
+}
+
+func inspectDOCX(path string) (*FileInfo, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open docx file: %w", err)
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat docx file: %w", err)
+	}
+
+	anon := anonymizer.New("preview-salt-152fz")
+	handler := formats.NewDOCXHandler(anon)
+	paramCount, entitiesCounts, snippets, err := handler.Inspect(file, stat.Size())
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect docx file: %w", err)
+	}
+
+	var entities []EntityInfo
+	for i, ec := range entitiesCounts {
+		desc, action := textEntityDetails(ec.Type)
+		entities = append(entities, EntityInfo{
+			ColumnIndex: i + 1,
+			ColumnName:  fmt.Sprintf("%s (%d)", textEntityTypeName(ec.Type), ec.Count),
+			Type:        ec.Type,
+			Description: desc,
+			Action:      action,
+		})
+	}
+
+	return &FileInfo{
+		Path:                   path,
+		Name:                   filepath.Base(path),
+		Extension:              "docx",
+		FileType:               "text",
+		Format:                 "docx",
+		SupportedExportFormats: []string{"docx", "odt"},
+		Size:                   stat.Size(),
+		RowCount:               paramCount,
+		ParagraphCount:         paramCount,
+		PageCount:              1,
+		Entities:               entities,
+		Headers:                []string{"Тип сущности", "Количество", "Действие"},
+		TextSnippets:           snippets,
+	}, nil
+}
+
+func inspectODT(path string) (*FileInfo, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open odt file: %w", err)
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat odt file: %w", err)
+	}
+
+	anon := anonymizer.New("preview-salt-152fz")
+	handler := formats.NewODTHandler(anon)
+	paramCount, entitiesCounts, snippets, err := handler.Inspect(file, stat.Size())
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect odt file: %w", err)
+	}
+
+	var entities []EntityInfo
+	for i, ec := range entitiesCounts {
+		desc, action := textEntityDetails(ec.Type)
+		entities = append(entities, EntityInfo{
+			ColumnIndex: i + 1,
+			ColumnName:  fmt.Sprintf("%s (%d)", textEntityTypeName(ec.Type), ec.Count),
+			Type:        ec.Type,
+			Description: desc,
+			Action:      action,
+		})
+	}
+
+	return &FileInfo{
+		Path:                   path,
+		Name:                   filepath.Base(path),
+		Extension:              "odt",
+		FileType:               "text",
+		Format:                 "odt",
+		SupportedExportFormats: []string{"odt", "docx"},
+		Size:                   stat.Size(),
+		RowCount:               paramCount,
+		ParagraphCount:         paramCount,
+		PageCount:              1,
+		Entities:               entities,
+		Headers:                []string{"Тип сущности", "Количество", "Действие"},
+		TextSnippets:           snippets,
 	}, nil
 }
 
@@ -1408,17 +1914,19 @@ func inspectPDF(path string) (*FileInfo, error) {
 	entities, snippetBefore, snippetAfter := detectPDFEntitiesAndSnippets(extractedText)
 
 	return &FileInfo{
-		Path:               path,
-		Name:               filepath.Base(path),
-		Extension:          "pdf",
-		FileType:           "pdf",
-		Size:               int64(len(pdfBytes)),
-		RowCount:           pageCount,
-		PageCount:          pageCount,
-		Entities:           entities,
-		Headers:            []string{"Сущность", "Категория", "Режим защиты"},
-		PDFTextSnippet:     snippetBefore,
-		PDFRedactedSnippet: snippetAfter,
+		Path:                   path,
+		Name:                   filepath.Base(path),
+		Extension:              "pdf",
+		FileType:               "pdf",
+		Format:                 "pdf",
+		SupportedExportFormats: []string{"pdf"},
+		Size:                   int64(len(pdfBytes)),
+		RowCount:               pageCount,
+		PageCount:              pageCount,
+		Entities:               entities,
+		Headers:                []string{"Сущность", "Категория", "Режим защиты"},
+		PDFTextSnippet:         snippetBefore,
+		PDFRedactedSnippet:     snippetAfter,
 	}, nil
 }
 

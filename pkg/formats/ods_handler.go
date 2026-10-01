@@ -14,6 +14,8 @@ import (
 
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/depmap"
+
+	"github.com/xuri/excelize/v2"
 )
 
 // ODSSheetInfo is a type alias of SheetInfo for backward compatibility.
@@ -81,6 +83,61 @@ func (h *ODSHandler) Inspect(r io.ReaderAt, size int64) ([]ODSSheetInfo, error) 
 	}
 
 	return sheets, nil
+}
+
+// InspectRows returns sheet metadata and up to sampleLimit rows per sheet.
+func (h *ODSHandler) InspectRows(r io.ReaderAt, size int64, sampleLimit int) ([]ODSSheetInfo, map[string][][]string, error) {
+	if r == nil {
+		return nil, nil, errors.New("reader cannot be nil")
+	}
+	if size <= 0 {
+		return nil, nil, errors.New("invalid file size")
+	}
+
+	zr, err := zip.NewReader(r, size)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open ods zip: %w", err)
+	}
+
+	contentBytes, err := readZipEntry(zr, "content.xml")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	doc, err := parseODSDoc(contentBytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse content.xml: %w", err)
+	}
+
+	if sampleLimit <= 0 {
+		sampleLimit = 40
+	}
+
+	var sheets []ODSSheetInfo
+	samples := make(map[string][][]string)
+
+	for i, s := range doc.sheets {
+		limit := len(s.rows)
+		if limit > sampleLimit {
+			limit = sampleLimit
+		}
+		sampleRows := make([][]string, limit)
+		for rIdx := 0; rIdx < limit; rIdx++ {
+			sampleRows[rIdx] = rowToStrings(s.rows[rIdx])
+		}
+		samples[s.name] = sampleRows
+
+		_, headers := FindHeaderRow(sampleRows)
+		sheets = append(sheets, ODSSheetInfo{
+			Index:    i,
+			Name:     s.name,
+			Columns:  headers,
+			Headers:  headers,
+			RowCount: len(s.rows),
+		})
+	}
+
+	return sheets, samples, nil
 }
 
 // Process reads sheets and rows from r, anonymizes detected PII columns,
@@ -736,3 +793,202 @@ func updateAttrInTag(tag []byte, attrName, oldVal, newVal string) []byte {
 	res = bytes.Replace(tag, []byte(needleSglRaw), []byte(replacementDbl), 1)
 	return res
 }
+
+// ProcessToXLSX reads sheets from an ODS archive at r/size, anonymizes sensitive PII cells,
+// and streams the result into an Excel (.xlsx) file written to w, returning a populated DepMap.
+func (h *ODSHandler) ProcessToXLSX(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, options map[string]interface{}) (*depmap.DepMap, error) {
+	if h.Anon == nil {
+		return nil, fmt.Errorf("anonymizer is not initialized")
+	}
+	if r == nil {
+		return nil, errors.New("reader cannot be nil")
+	}
+	if w == nil {
+		return nil, errors.New("writer cannot be nil")
+	}
+	if size <= 0 {
+		return nil, errors.New("invalid file size")
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	zr, err := zip.NewReader(r, size)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open source ods zip: %w", err)
+	}
+
+	contentBytes, err := readZipEntry(zr, "content.xml")
+	if err != nil {
+		return nil, err
+	}
+
+	doc, err := parseODSDoc(contentBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse content.xml: %w", err)
+	}
+
+	origFileName := "document.ods"
+	if options != nil {
+		if fn, ok := options["filename"].(string); ok && fn != "" {
+			origFileName = fn
+		} else if fn, ok := options["file_name"].(string); ok && fn != "" {
+			origFileName = fn
+		}
+	}
+	dm := depmap.New(origFileName)
+
+	var targetSheet string
+	if options != nil {
+		if s, ok := options["sheet"].(string); ok {
+			targetSheet = s
+		}
+	}
+
+	dateRange := getDateRange(options)
+
+	var progressFn func(int)
+	if options != nil {
+		if cb, ok := options["progress_callback"].(func(int)); ok {
+			progressFn = cb
+		}
+	}
+
+	outFile := excelize.NewFile()
+	defer outFile.Close()
+
+	totalProcessedRows := 0
+
+	for sheetIdx, sheet := range doc.sheets {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		if targetSheet != "" && sheet.name != targetSheet {
+			continue
+		}
+
+		sheetName := sheet.name
+		if sheetIdx == 0 {
+			outFile.SetSheetName("Sheet1", sheetName)
+		} else {
+			outFile.NewSheet(sheetName)
+		}
+
+		// Sample leading rows to find the header row
+		sampleLimit := len(sheet.rows)
+		if sampleLimit > 40 {
+			sampleLimit = 40
+		}
+		sampleRows := make([][]string, sampleLimit)
+		for rIdx := 0; rIdx < sampleLimit; rIdx++ {
+			sampleRows[rIdx] = rowToStrings(sheet.rows[rIdx])
+		}
+
+		headerRowIndex, headers := FindHeaderRow(sampleRows)
+		colTypes := ResolveColumnTypes(headers, options)
+
+		// Build map of disabled columns (1-based index)
+		disabledMap := make(map[int]bool)
+		hasSheetSpecific := false
+		if options != nil {
+			if bySheet, ok := options["disabled_columns_by_sheet"].(map[string][]int); ok && len(bySheet) > 0 {
+				if dList, found := bySheet[sheet.name]; found {
+					hasSheetSpecific = true
+					for _, colIdx := range dList {
+						disabledMap[colIdx] = true
+					}
+				}
+			}
+			if !hasSheetSpecific {
+				if dList, ok := options["disabled_columns"].([]int); ok {
+					for _, colIdx := range dList {
+						disabledMap[colIdx] = true
+					}
+				}
+			}
+		}
+
+		sw, err := outFile.NewStreamWriter(sheetName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create stream writer for sheet %s: %w", sheetName, err)
+		}
+
+		for rIdx, row := range sheet.rows {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
+
+			rowValues := rowToStrings(row)
+			rowCells := make([]interface{}, len(rowValues))
+
+			for cIdx, val := range rowValues {
+				if rIdx <= headerRowIndex {
+					rowCells[cIdx] = val
+					continue
+				}
+
+				col1Based := cIdx + 1
+				if disabledMap[col1Based] {
+					rowCells[cIdx] = val
+					continue
+				}
+
+				colType := ColUnknown
+				if cIdx < len(colTypes) {
+					colType = colTypes[cIdx]
+				}
+
+				if colType == ColUnknown {
+					rowCells[cIdx] = val
+					continue
+				}
+
+				anonymized := AnonymizeCell(h.Anon, colType, val, dateRange)
+				if anonymized != val && strings.TrimSpace(val) != "" {
+					dm.Put(anonymized, val)
+				}
+				rowCells[cIdx] = anonymized
+			}
+
+			cellCoord, err := excelize.CoordinatesToCellName(1, rIdx+1)
+			if err != nil {
+				return nil, fmt.Errorf("invalid coordinate at row %d: %w", rIdx+1, err)
+			}
+			if err := sw.SetRow(cellCoord, rowCells); err != nil {
+				return nil, fmt.Errorf("failed to stream row %d: %w", rIdx+1, err)
+			}
+
+			totalProcessedRows++
+			if progressFn != nil && totalProcessedRows%100 == 0 {
+				progressFn(totalProcessedRows)
+			}
+		}
+
+		if err := sw.Flush(); err != nil {
+			return nil, fmt.Errorf("failed to flush sheet %s: %w", sheetName, err)
+		}
+	}
+
+	if progressFn != nil {
+		progressFn(totalProcessedRows)
+	}
+
+	if err := outFile.Write(w); err != nil {
+		return nil, fmt.Errorf("failed to write xlsx output: %w", err)
+	}
+
+	return dm, nil
+}
+

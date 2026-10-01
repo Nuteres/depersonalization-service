@@ -82,6 +82,64 @@ func (h *XLSBHandler) Inspect(path string) ([]SheetInfo, error) {
 	return sheets, nil
 }
 
+// InspectRows returns sheet metadata and up to sampleLimit rows per sheet.
+func (h *XLSBHandler) InspectRows(path string, sampleLimit int) ([]SheetInfo, map[string][][]string, error) {
+	wb, err := xlsb.Open(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open xlsb: %w", err)
+	}
+	defer wb.Close()
+
+	if sampleLimit <= 0 {
+		sampleLimit = 40
+	}
+
+	sheetNames := wb.Sheets()
+	var sheets []SheetInfo
+	samples := make(map[string][][]string)
+
+	for i, name := range sheetNames {
+		sheet, err := wb.SheetByName(name)
+		if err != nil {
+			continue
+		}
+
+		var sample [][]string
+		rowCount := 0
+
+		for row := range sheet.Rows(false) {
+			rowCount++
+			if len(sample) < sampleLimit {
+				cols := make([]string, len(row))
+				for cIdx, cell := range row {
+					cols[cIdx] = sheet.FormatCell(cell)
+				}
+				sample = append(sample, cols)
+			}
+		}
+
+		if sheet.Err != nil {
+			return nil, nil, fmt.Errorf("error reading sheet %s: %w", name, sheet.Err)
+		}
+
+		samples[name] = sample
+		_, headers := FindHeaderRow(sample)
+		if len(headers) > 0 {
+			headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
+		}
+
+		sheets = append(sheets, SheetInfo{
+			Index:    i,
+			Name:     name,
+			Columns:  headers,
+			Headers:  headers,
+			RowCount: rowCount,
+		})
+	}
+
+	return sheets, samples, nil
+}
+
 // ProcessToXLSX reads sheets from an .xlsb workbook at path, anonymizes sensitive PII cells,
 // and streams the result into an Excel (.xlsx) file written to w, returning a populated DepMap.
 func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Writer, options map[string]interface{}) (*depmap.DepMap, error) {

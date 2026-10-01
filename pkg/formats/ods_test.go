@@ -9,6 +9,8 @@ import (
 
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/depmap"
+
+	"github.com/xuri/excelize/v2"
 )
 
 func createTestODS(t *testing.T) []byte {
@@ -515,4 +517,52 @@ func TestODSHandler_DateAttributeAndText(t *testing.T) {
 		t.Errorf("restored ODS content missing original FIO")
 	}
 }
+
+func TestODSHandler_ProcessToXLSX(t *testing.T) {
+	odsBytes := createTestODS(t)
+	r := bytes.NewReader(odsBytes)
+
+	anon := anonymizer.New("ods-to-xlsx-salt")
+	h := NewODSHandler(anon)
+
+	var xlsxBuf bytes.Buffer
+	dm, err := h.ProcessToXLSX(context.Background(), r, int64(len(odsBytes)), &xlsxBuf, nil)
+	if err != nil {
+		t.Fatalf("ProcessToXLSX failed: %v", err)
+	}
+
+	if dm == nil || dm.RecordsCount == 0 {
+		t.Errorf("expected populated depmap, got %v", dm)
+	}
+
+	// Verify generated XLSX
+	xl, err := excelize.OpenReader(&xlsxBuf)
+	if err != nil {
+		t.Fatalf("failed to open generated xlsx: %v", err)
+	}
+	defer xl.Close()
+
+	sheets := xl.GetSheetList()
+	if len(sheets) == 0 {
+		t.Fatalf("generated xlsx has no sheets")
+	}
+
+	rows, err := xl.GetRows(sheets[0])
+	if err != nil {
+		t.Fatalf("failed to get rows: %v", err)
+	}
+	if len(rows) < 2 {
+		t.Fatalf("expected at least 2 rows, got %d", len(rows))
+	}
+
+	// Check header
+	if rows[0][0] != "ФИО" {
+		t.Errorf("expected header ФИО, got %s", rows[0][0])
+	}
+	// Check anonymized FIO
+	if rows[1][0] == "Иванов Иван Иванович" || rows[1][0] == "" {
+		t.Errorf("expected anonymized FIO, got %s", rows[1][0])
+	}
+}
+
 

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"compress/zlib"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -942,6 +944,400 @@ func TestApp_MultiSheetExcel(t *testing.T) {
 		t.Errorf("expected restored Sheet 2 Phone '+7 (999) 111-22-33', got: %s", restoredPhone2)
 	}
 }
+
+func createTestODSFile(t *testing.T, path string) {
+	t.Helper()
+	buf := new(bytes.Buffer)
+	zw := zip.NewWriter(buf)
+
+	mh := &zip.FileHeader{Name: "mimetype", Method: zip.Store}
+	mw, err := zw.CreateHeader(mh)
+	if err != nil {
+		t.Fatalf("failed to create mimetype header: %v", err)
+	}
+	mw.Write([]byte("application/vnd.oasis.opendocument.spreadsheet"))
+
+	contentXML := `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+ xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+ xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+ <office:body>
+  <office:spreadsheet>
+   <table:table table:name="Clients">
+    <table:table-row>
+     <table:table-cell office:value-type="string"><text:p>ФИО</text:p></table:table-cell>
+     <table:table-cell office:value-type="string"><text:p>СНИЛС</text:p></table:table-cell>
+     <table:table-cell office:value-type="string"><text:p>Телефон</text:p></table:table-cell>
+    </table:table-row>
+    <table:table-row>
+     <table:table-cell office:value-type="string"><text:p>Иванов Иван Иванович</text:p></table:table-cell>
+     <table:table-cell office:value-type="string"><text:p>112-233-445 95</text:p></table:table-cell>
+     <table:table-cell office:value-type="string"><text:p>+7 (916) 123-45-67</text:p></table:table-cell>
+    </table:table-row>
+   </table:table>
+  </office:spreadsheet>
+ </office:body>
+</office:document-content>`
+
+	cw, err := zw.Create("content.xml")
+	if err != nil {
+		t.Fatalf("failed to create content.xml: %v", err)
+	}
+	cw.Write([]byte(contentXML))
+	zw.Close()
+
+	if err := os.WriteFile(path, buf.Bytes(), 0644); err != nil {
+		t.Fatalf("failed to write test ods: %v", err)
+	}
+}
+
+func createTestDocxFile(t *testing.T, path string, textContent string) {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	ct, _ := zw.Create("[Content_Types].xml")
+	ct.Write([]byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`))
+
+	docXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>%s</w:t></w:r></w:p>
+  </w:body>
+</w:document>`, textContent)
+
+	docW, err := zw.Create("word/document.xml")
+	if err != nil {
+		t.Fatalf("failed to create word/document.xml: %v", err)
+	}
+	docW.Write([]byte(docXML))
+	zw.Close()
+
+	if err := os.WriteFile(path, buf.Bytes(), 0644); err != nil {
+		t.Fatalf("failed to write test docx: %v", err)
+	}
+}
+
+func createTestODTFile(t *testing.T, path string, textContent string) {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	mh := &zip.FileHeader{Name: "mimetype", Method: zip.Store}
+	mw, err := zw.CreateHeader(mh)
+	if err != nil {
+		t.Fatalf("failed to create mimetype header: %v", err)
+	}
+	mw.Write([]byte("application/vnd.oasis.opendocument.text"))
+
+	contentXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+ xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+ <office:body>
+  <office:text>
+   <text:p>%s</text:p>
+  </office:text>
+ </office:body>
+</office:document-content>`, textContent)
+
+	cw, err := zw.CreateHeader(&zip.FileHeader{Name: "content.xml", Method: zip.Deflate})
+	if err != nil {
+		t.Fatalf("failed to create content.xml header: %v", err)
+	}
+	cw.Write([]byte(contentXML))
+	zw.Close()
+
+	if err := os.WriteFile(path, buf.Bytes(), 0644); err != nil {
+		t.Fatalf("failed to write test odt: %v", err)
+	}
+}
+
+func readZipFileContent(t *testing.T, archivePath string, targetFile string) string {
+	t.Helper()
+	zr, err := zip.OpenReader(archivePath)
+	if err != nil {
+		t.Fatalf("failed to open zip reader on %s: %v", archivePath, err)
+	}
+	defer zr.Close()
+
+	for _, f := range zr.File {
+		if f.Name == targetFile {
+			rc, err := f.Open()
+			if err != nil {
+				t.Fatalf("failed to open file %s in zip: %v", targetFile, err)
+			}
+			defer rc.Close()
+			data, err := io.ReadAll(rc)
+			if err != nil {
+				t.Fatalf("failed to read file %s in zip: %v", targetFile, err)
+			}
+			return string(data)
+		}
+	}
+	t.Fatalf("file %s not found in zip %s", targetFile, archivePath)
+	return ""
+}
+
+func TestApp_ExpandedFormats_ODS(t *testing.T) {
+	tmpDir := t.TempDir()
+	odsPath := filepath.Join(tmpDir, "clients.ods")
+	anonODSPath := filepath.Join(tmpDir, "clients_anon.ods")
+	restoredODSPath := filepath.Join(tmpDir, "clients_restored.ods")
+	keyPath := filepath.Join(tmpDir, "clients.depmap")
+	exportXLSXPath := filepath.Join(tmpDir, "clients_export.xlsx")
+
+	createTestODSFile(t, odsPath)
+
+	app := NewApp()
+
+	// 1. InspectFile
+	info, err := app.InspectFile(odsPath)
+	if err != nil {
+		t.Fatalf("InspectFile on ods failed: %v", err)
+	}
+	if info.Format != "ods" {
+		t.Errorf("expected Format ods, got %s", info.Format)
+	}
+	if info.FileType != "table" {
+		t.Errorf("expected FileType table, got %s", info.FileType)
+	}
+	if len(info.Sheets) != 1 {
+		t.Fatalf("expected 1 sheet, got %d", len(info.Sheets))
+	}
+	if len(info.Entities) < 3 {
+		t.Errorf("expected at least 3 detected entities, got %d", len(info.Entities))
+	}
+
+	// 2. ProcessFileTo (ODS -> ODS) with key generation
+	procRes, err := app.ProcessFileTo(odsPath, anonODSPath, "test-salt", nil, true, "pass123", keyPath)
+	if err != nil {
+		t.Fatalf("ProcessFileTo on ods failed: %v", err)
+	}
+	if !procRes.Success {
+		t.Fatalf("ProcessFileTo failed: %s", procRes.Error)
+	}
+
+	anonContent := readZipFileContent(t, anonODSPath, "content.xml")
+	if strings.Contains(anonContent, "Иванов Иван Иванович") {
+		t.Errorf("anonymized ods still contains original FIO")
+	}
+
+	// 3. RestoreFileTo (ODS -> ODS)
+	restRes, err := app.RestoreFileTo(anonODSPath, keyPath, "pass123", restoredODSPath)
+	if err != nil {
+		t.Fatalf("RestoreFileTo on ods failed: %v", err)
+	}
+	if !restRes.Success || restRes.RestoredCells < 1 {
+		t.Fatalf("RestoreFileTo failed or 0 restored cells: %+v", restRes)
+	}
+
+	restoredContent := readZipFileContent(t, restoredODSPath, "content.xml")
+	if !strings.Contains(restoredContent, "Иванов Иван Иванович") {
+		t.Errorf("restored ods missing original FIO")
+	}
+	if !strings.Contains(restoredContent, "112-233-445 95") {
+		t.Errorf("restored ods missing original SNILS")
+	}
+
+	// 4. Export ODS to XLSX
+	exportRes, err := app.ProcessFileTo(odsPath, exportXLSXPath, "test-salt", nil, false, "", "")
+	if err != nil {
+		t.Fatalf("export ODS to XLSX failed: %v", err)
+	}
+	if !exportRes.Success {
+		t.Fatalf("export ODS to XLSX failed: %s", exportRes.Error)
+	}
+
+	xl, err := excelize.OpenFile(exportXLSXPath)
+	if err != nil {
+		t.Fatalf("failed to open exported xlsx: %v", err)
+	}
+	defer xl.Close()
+
+	val, _ := xl.GetCellValue("Clients", "A2")
+	if val == "Иванов Иван Иванович" || val == "" {
+		t.Errorf("expected anonymized FIO in exported xlsx, got: %s", val)
+	}
+}
+
+func TestApp_ExpandedFormats_DOCX(t *testing.T) {
+	tmpDir := t.TempDir()
+	docxPath := filepath.Join(tmpDir, "contract.docx")
+	anonDocxPath := filepath.Join(tmpDir, "contract_anon.docx")
+	restoredDocxPath := filepath.Join(tmpDir, "contract_restored.docx")
+	keyPath := filepath.Join(tmpDir, "contract.depmap")
+
+	rawText := "Договор с гражданином РФ Иванов Иван Иванович, паспорт 4510 123890, телефон +7 (916) 123-45-67."
+	createTestDocxFile(t, docxPath, rawText)
+
+	app := NewApp()
+
+	// 1. InspectFile
+	info, err := app.InspectFile(docxPath)
+	if err != nil {
+		t.Fatalf("InspectFile on docx failed: %v", err)
+	}
+	if info.Format != "docx" {
+		t.Errorf("expected Format docx, got %s", info.Format)
+	}
+	if info.FileType != "text" {
+		t.Errorf("expected FileType text, got %s", info.FileType)
+	}
+	if info.ParagraphCount != 1 {
+		t.Errorf("expected 1 paragraph, got %d", info.ParagraphCount)
+	}
+	if len(info.Entities) < 2 {
+		t.Errorf("expected at least 2 entities detected in docx, got %d", len(info.Entities))
+	}
+
+	// 2. ProcessFileTo with key generation
+	procRes, err := app.ProcessFileTo(docxPath, anonDocxPath, "docx-salt", nil, true, "secret", keyPath)
+	if err != nil {
+		t.Fatalf("ProcessFileTo on docx failed: %v", err)
+	}
+	if !procRes.Success {
+		t.Fatalf("ProcessFileTo failed: %s", procRes.Error)
+	}
+
+	anonXML := readZipFileContent(t, anonDocxPath, "word/document.xml")
+	if strings.Contains(anonXML, "Иванов Иван Иванович") {
+		t.Errorf("anonymized docx still contains original FIO")
+	}
+	if strings.Contains(anonXML, "4510 123890") {
+		t.Errorf("anonymized docx still contains original passport")
+	}
+
+	// 3. RestoreFileTo
+	restRes, err := app.RestoreFileTo(anonDocxPath, keyPath, "secret", restoredDocxPath)
+	if err != nil {
+		t.Fatalf("RestoreFileTo on docx failed: %v", err)
+	}
+	if !restRes.Success || restRes.RestoredCells < 1 {
+		t.Fatalf("RestoreFileTo failed or 0 restored cells: %+v", restRes)
+	}
+
+	restoredXML := readZipFileContent(t, restoredDocxPath, "word/document.xml")
+	if !strings.Contains(restoredXML, "Иванов Иван Иванович") {
+		t.Errorf("restored docx missing original FIO")
+	}
+	if !strings.Contains(restoredXML, "4510 123890") {
+		t.Errorf("restored docx missing original passport")
+	}
+}
+
+func TestApp_ExpandedFormats_ODT(t *testing.T) {
+	tmpDir := t.TempDir()
+	odtPath := filepath.Join(tmpDir, "contract.odt")
+	anonOdtPath := filepath.Join(tmpDir, "contract_anon.odt")
+	restoredOdtPath := filepath.Join(tmpDir, "contract_restored.odt")
+	keyPath := filepath.Join(tmpDir, "contract.depmap")
+
+	rawText := "Договор с гражданином Сидоров Алексей Викторович, СНИЛС 112-233-445 95."
+	createTestODTFile(t, odtPath, rawText)
+
+	app := NewApp()
+
+	// 1. InspectFile
+	info, err := app.InspectFile(odtPath)
+	if err != nil {
+		t.Fatalf("InspectFile on odt failed: %v", err)
+	}
+	if info.Format != "odt" {
+		t.Errorf("expected Format odt, got %s", info.Format)
+	}
+	if info.FileType != "text" {
+		t.Errorf("expected FileType text, got %s", info.FileType)
+	}
+	if len(info.Entities) < 2 {
+		t.Errorf("expected at least 2 entities detected in odt, got %d", len(info.Entities))
+	}
+
+	// 2. ProcessFileTo with key generation
+	procRes, err := app.ProcessFileTo(odtPath, anonOdtPath, "odt-salt", nil, true, "pass", keyPath)
+	if err != nil {
+		t.Fatalf("ProcessFileTo on odt failed: %v", err)
+	}
+	if !procRes.Success {
+		t.Fatalf("ProcessFileTo failed: %s", procRes.Error)
+	}
+
+	anonXML := readZipFileContent(t, anonOdtPath, "content.xml")
+	if strings.Contains(anonXML, "Сидоров Алексей Викторович") {
+		t.Errorf("anonymized odt still contains original FIO")
+	}
+	if strings.Contains(anonXML, "112-233-445 95") {
+		t.Errorf("anonymized odt still contains original SNILS")
+	}
+
+	// 3. RestoreFileTo
+	restRes, err := app.RestoreFileTo(anonOdtPath, keyPath, "pass", restoredOdtPath)
+	if err != nil {
+		t.Fatalf("RestoreFileTo on odt failed: %v", err)
+	}
+	if !restRes.Success || restRes.RestoredCells < 1 {
+		t.Fatalf("RestoreFileTo failed or 0 restored cells: %+v", restRes)
+	}
+
+	restoredXML := readZipFileContent(t, restoredOdtPath, "content.xml")
+	if !strings.Contains(restoredXML, "Сидоров Алексей Викторович") {
+		t.Errorf("restored odt missing original FIO")
+	}
+	if !strings.Contains(restoredXML, "112-233-445 95") {
+		t.Errorf("restored odt missing original SNILS")
+	}
+}
+
+func TestApp_ExpandedFormats_TextDisabledEntities(t *testing.T) {
+	tmpDir := t.TempDir()
+	docxPath := filepath.Join(tmpDir, "contract.docx")
+	anonDocxPath := filepath.Join(tmpDir, "contract_anon.docx")
+
+	rawText := "Договор с гражданином РФ Иванов Иван Иванович, телефон +7 (916) 123-45-67."
+	createTestDocxFile(t, docxPath, rawText)
+
+	app := NewApp()
+	info, err := app.InspectFile(docxPath)
+	if err != nil {
+		t.Fatalf("InspectFile failed: %v", err)
+	}
+
+	// Find which entity is FIO
+	fioColIdx := -1
+	for _, ent := range info.Entities {
+		if ent.Type == "FIO" {
+			fioColIdx = ent.ColumnIndex
+			break
+		}
+	}
+	if fioColIdx == -1 {
+		t.Fatalf("FIO entity not found in inspected entities: %+v", info.Entities)
+	}
+
+	// Disable FIO entity
+	procRes, err := app.ProcessFileTo(docxPath, anonDocxPath, "salt", []int{fioColIdx}, false, "", "")
+	if err != nil {
+		t.Fatalf("ProcessFileTo with disabled entity failed: %v", err)
+	}
+	if !procRes.Success {
+		t.Fatalf("ProcessFileTo failed: %s", procRes.Error)
+	}
+
+	anonXML := readZipFileContent(t, anonDocxPath, "word/document.xml")
+	// FIO should be preserved because it was disabled!
+	if !strings.Contains(anonXML, "Иванов Иван Иванович") {
+		t.Errorf("expected disabled FIO 'Иванов Иван Иванович' to be preserved in docx")
+	}
+	// Phone should be anonymized
+	if strings.Contains(anonXML, "+7 (916) 123-45-67") {
+		t.Errorf("expected phone to be anonymized in docx")
+	}
+}
+
 
 
 
