@@ -13,8 +13,34 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"dep_service/internal/desktop"
+	"dep_service/internal/domain"
+	"dep_service/internal/service/inspector"
+	"dep_service/internal/service/keymanager"
+	"dep_service/internal/service/preview"
+	"dep_service/internal/service/processor"
+	"dep_service/internal/service/restorer"
 	"dep_service/pkg/depmap"
 )
+
+type (
+	FileInfo      = domain.FileInfo
+	SheetInfo     = domain.SheetInfo
+	EntityInfo    = domain.EntityInfo
+	PreviewRow    = domain.PreviewRow
+	ProcessResult = domain.ProcessResult
+	KeyFileInfo   = domain.KeyFileInfo
+	RestoreResult = domain.RestoreResult
+)
+
+func NewApp() *desktop.DesktopApp {
+	insp := inspector.New()
+	prev := preview.New()
+	km := keymanager.New()
+	proc := processor.New(km, insp)
+	rest := restorer.New(km)
+	return desktop.New(insp, prev, proc, rest, km)
+}
 
 func TestApp_InspectCSV(t *testing.T) {
 	tmpDir := t.TempDir()
