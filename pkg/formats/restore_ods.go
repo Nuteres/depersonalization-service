@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"dep_service/pkg/depmap"
 )
@@ -81,10 +82,24 @@ func RestoreODS(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 					}
 				}
 
-				if ok {
+				dateRestored := false
+				var origDateAttr string
+
+				// Check if office:date-value is on the cell tag and can be restored
+				if len(cell.tagBytes) > 0 && strings.Contains(string(cell.tagBytes), "office:date-value") {
+					curDateAttr := extractAttrValue(cell.tagBytes, "office:date-value")
+					if curDateAttr != "" {
+						if origDate, found := dm.LookupOriginal(curDateAttr); found {
+							origDateAttr = origDate
+							dateRestored = true
+						}
+					}
+				}
+
+				if ok || dateRestored {
 					restoredCount++
 
-					if len(cell.paragraphs) > 0 {
+					if ok && len(cell.paragraphs) > 0 {
 						p := cell.paragraphs[0]
 						var buf bytes.Buffer
 						xml.EscapeText(&buf, []byte(orig))
@@ -102,19 +117,46 @@ func RestoreODS(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 						}
 					}
 
-					// If cell start tag contained office:string-value, update attribute
+					// Update tag attributes if present
 					if len(cell.tagBytes) > 0 {
+						newTag := cell.tagBytes
+						tagModified := false
+
 						tagStr := string(cell.tagBytes)
-						if strings.Contains(tagStr, "office:string-value") {
+						if ok && strings.Contains(tagStr, "office:string-value") {
 							oldAttr := extractAttrValue(cell.tagBytes, "office:string-value")
 							if oldAttr != "" {
-								newTag := updateAttrInTag(cell.tagBytes, "office:string-value", oldAttr, orig)
-								replacements = append(replacements, textReplacement{
-									start:   cell.startOffset,
-									end:     cell.startOffset + len(cell.tagBytes),
-									newText: newTag,
-								})
+								newTag = updateAttrInTag(newTag, "office:string-value", oldAttr, orig)
+								tagModified = true
 							}
+						}
+
+						if strings.Contains(tagStr, "office:date-value") {
+							curDateAttr := extractAttrValue(cell.tagBytes, "office:date-value")
+							if curDateAttr != "" {
+								targetDate := origDateAttr
+								if targetDate == "" && ok {
+									// Fallback: if orig date text was restored, try parsing to ISO format
+									for _, layout := range []string{"02.01.2006", "02/01/2006", "02-01-2006", "2006-01-02"} {
+										if t, err := time.Parse(layout, orig); err == nil {
+											targetDate = t.Format("2006-01-02")
+											break
+										}
+									}
+								}
+								if targetDate != "" && targetDate != curDateAttr {
+									newTag = updateAttrInTag(newTag, "office:date-value", curDateAttr, targetDate)
+									tagModified = true
+								}
+							}
+						}
+
+						if tagModified {
+							replacements = append(replacements, textReplacement{
+								start:   cell.startOffset,
+								end:     cell.startOffset + len(cell.tagBytes),
+								newText: newTag,
+							})
 						}
 					}
 				}

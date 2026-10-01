@@ -128,7 +128,16 @@ func TestODSHandler_Lifecycle(t *testing.T) {
 	if count < 2 {
 		t.Errorf("expected at least 2 restored cells, got %d", count)
 	}
-	if !strings.Contains(restoredBuf.String(), "Иванов Иван Иванович") {
+
+	rzr, err := zip.NewReader(bytes.NewReader(restoredBuf.Bytes()), int64(restoredBuf.Len()))
+	if err != nil {
+		t.Fatalf("failed to open restored zip: %v", err)
+	}
+	restoredContent, err := readZipEntry(rzr, "content.xml")
+	if err != nil {
+		t.Fatalf("failed to read restored content.xml: %v", err)
+	}
+	if !strings.Contains(string(restoredContent), "Иванов Иван Иванович") {
 		t.Errorf("restored ODS does not contain original FIO")
 	}
 }
@@ -158,12 +167,22 @@ func TestODSHandler_DisabledColumns(t *testing.T) {
 	}
 
 	anonymizedBytes := outBuf.Bytes()
+	zr, err := zip.NewReader(bytes.NewReader(anonymizedBytes), int64(len(anonymizedBytes)))
+	if err != nil {
+		t.Fatalf("failed to open anonymized zip: %v", err)
+	}
+	content, err := readZipEntry(zr, "content.xml")
+	if err != nil {
+		t.Fatalf("failed to read content.xml: %v", err)
+	}
+	contentStr := string(content)
+
 	// FIO should remain unchanged
-	if !bytes.Contains(anonymizedBytes, []byte("Иванов Иван Иванович")) {
+	if !strings.Contains(contentStr, "Иванов Иван Иванович") {
 		t.Errorf("expected FIO to be kept intact when column is disabled")
 	}
 	// But SNILS (column 2) should be anonymized
-	if bytes.Contains(anonymizedBytes, []byte("112-233-445 95")) {
+	if strings.Contains(contentStr, "112-233-445 95") {
 		t.Errorf("expected SNILS to be anonymized")
 	}
 
@@ -287,12 +306,22 @@ func TestODSHandler_MultipleSheets(t *testing.T) {
 	}
 
 	anonBytes := outBuf.Bytes()
+	azr, err := zip.NewReader(bytes.NewReader(anonBytes), int64(len(anonBytes)))
+	if err != nil {
+		t.Fatalf("failed to open anonymized zip: %v", err)
+	}
+	anonContent, err := readZipEntry(azr, "content.xml")
+	if err != nil {
+		t.Fatalf("failed to read content.xml: %v", err)
+	}
+	anonStr := string(anonContent)
+
 	// Sheet 1 should be untouched
-	if !bytes.Contains(anonBytes, []byte("Петров Петр Петрович")) {
+	if !strings.Contains(anonStr, "Петров Петр Петрович") {
 		t.Errorf("Sheet1 was modified even though target was Sheet2")
 	}
 	// Sheet 2 should be anonymized
-	if bytes.Contains(anonBytes, []byte("Сидоров Сидор")) {
+	if strings.Contains(anonStr, "Сидоров Сидор") {
 		t.Errorf("Sheet2 client name was not anonymized")
 	}
 
@@ -305,7 +334,16 @@ func TestODSHandler_MultipleSheets(t *testing.T) {
 	if count < 1 {
 		t.Errorf("expected at least 1 restored cell, got %d", count)
 	}
-	if !strings.Contains(restoredBuf.String(), "Сидоров Сидор") {
+
+	rzr, err := zip.NewReader(bytes.NewReader(restoredBuf.Bytes()), int64(restoredBuf.Len()))
+	if err != nil {
+		t.Fatalf("failed to open restored zip: %v", err)
+	}
+	restoredContent, err := readZipEntry(rzr, "content.xml")
+	if err != nil {
+		t.Fatalf("failed to read restored content.xml: %v", err)
+	}
+	if !strings.Contains(string(restoredContent), "Сидоров Сидор") {
 		t.Errorf("restored ODS missing original client name")
 	}
 }
@@ -333,12 +371,22 @@ func TestODSHandler_ColumnOverridesAndProgress(t *testing.T) {
 	}
 
 	anonBytes := outBuf.Bytes()
+	azr, err := zip.NewReader(bytes.NewReader(anonBytes), int64(len(anonBytes)))
+	if err != nil {
+		t.Fatalf("failed to open anonymized zip: %v", err)
+	}
+	anonContent, err := readZipEntry(azr, "content.xml")
+	if err != nil {
+		t.Fatalf("failed to read content.xml: %v", err)
+	}
+	anonStr := string(anonContent)
+
 	// FIO should NOT be anonymized because column was overridden to UNKNOWN
-	if !bytes.Contains(anonBytes, []byte("Иванов Иван Иванович")) {
+	if !strings.Contains(anonStr, "Иванов Иван Иванович") {
 		t.Errorf("FIO was anonymized despite being overridden to UNKNOWN")
 	}
 	// SNILS should still be anonymized
-	if bytes.Contains(anonBytes, []byte("112-233-445 95")) {
+	if strings.Contains(anonStr, "112-233-445 95") {
 		t.Errorf("SNILS was not anonymized")
 	}
 	if dm.RecordsCount == 0 {
@@ -363,6 +411,108 @@ func TestRestoreODS_ValidationErrors(t *testing.T) {
 	}
 	if _, err := RestoreODS(context.Background(), reader, 0, buf, dm); err == nil {
 		t.Errorf("expected error for size <= 0")
+	}
+}
+
+func createDateTestODS(t *testing.T) []byte {
+	buf := new(bytes.Buffer)
+	zw := zip.NewWriter(buf)
+
+	mw, _ := zw.CreateHeader(&zip.FileHeader{Name: "mimetype", Method: zip.Store})
+	mw.Write([]byte("application/vnd.oasis.opendocument.spreadsheet"))
+
+	contentXML := `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+ xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+ xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+ <office:body>
+  <office:spreadsheet>
+   <table:table table:name="Персонал">
+    <table:table-row>
+     <table:table-cell office:value-type="string"><text:p>ФИО</text:p></table:table-cell>
+     <table:table-cell office:value-type="string"><text:p>Дата рождения</text:p></table:table-cell>
+    </table:table-row>
+    <table:table-row>
+     <table:table-cell office:value-type="string"><text:p>Иванов Иван Иванович</text:p></table:table-cell>
+     <table:table-cell office:value-type="date" office:date-value="1985-04-12"><text:p>12.04.1985</text:p></table:table-cell>
+    </table:table-row>
+   </table:table>
+  </office:spreadsheet>
+ </office:body>
+</office:document-content>`
+
+	cw, _ := zw.CreateHeader(&zip.FileHeader{Name: "content.xml", Method: zip.Deflate})
+	cw.Write([]byte(contentXML))
+	zw.Close()
+	return buf.Bytes()
+}
+
+func TestODSHandler_DateAttributeAndText(t *testing.T) {
+	raw := createDateTestODS(t)
+	anon := anonymizer.New("test-salt-date")
+	handler := NewODSHandler(anon)
+
+	reader := bytes.NewReader(raw)
+	outBuf := new(bytes.Buffer)
+	opts := map[string]interface{}{}
+
+	dm, err := handler.Process(context.Background(), reader, int64(len(raw)), outBuf, opts)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	anonBytes := outBuf.Bytes()
+	zr, err := zip.NewReader(bytes.NewReader(anonBytes), int64(len(anonBytes)))
+	if err != nil {
+		t.Fatalf("failed to open anonymized zip: %v", err)
+	}
+	anonContent, err := readZipEntry(zr, "content.xml")
+	if err != nil {
+		t.Fatalf("failed to read anonymized content.xml: %v", err)
+	}
+
+	anonStr := string(anonContent)
+	// Verify neither original text nor original attribute is present
+	if strings.Contains(anonStr, "12.04.1985") {
+		t.Errorf("anonymized ODS content still contains original date text '12.04.1985'")
+	}
+	if strings.Contains(anonStr, "1985-04-12") {
+		t.Errorf("anonymized ODS content still contains original office:date-value '1985-04-12'")
+	}
+
+	// Verify date attribute was updated
+	if !strings.Contains(anonStr, "office:date-value=") {
+		t.Errorf("anonymized ODS content missing office:date-value attribute")
+	}
+
+	// Restore
+	restoredBuf := new(bytes.Buffer)
+	count, err := RestoreODS(context.Background(), bytes.NewReader(anonBytes), int64(len(anonBytes)), restoredBuf, dm)
+	if err != nil {
+		t.Fatalf("RestoreODS failed: %v", err)
+	}
+	if count < 2 {
+		t.Errorf("expected at least 2 restored cells (FIO and Date), got %d", count)
+	}
+
+	restoredZR, err := zip.NewReader(bytes.NewReader(restoredBuf.Bytes()), int64(restoredBuf.Len()))
+	if err != nil {
+		t.Fatalf("failed to open restored zip: %v", err)
+	}
+	restoredContent, err := readZipEntry(restoredZR, "content.xml")
+	if err != nil {
+		t.Fatalf("failed to read restored content.xml: %v", err)
+	}
+	restoredStr := string(restoredContent)
+
+	if !strings.Contains(restoredStr, "12.04.1985") {
+		t.Errorf("restored ODS content missing original date text '12.04.1985'")
+	}
+	if !strings.Contains(restoredStr, "1985-04-12") {
+		t.Errorf("restored ODS content missing original office:date-value '1985-04-12'")
+	}
+	if !strings.Contains(restoredStr, "Иванов Иван Иванович") {
+		t.Errorf("restored ODS content missing original FIO")
 	}
 }
 

@@ -284,19 +284,38 @@ func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 					}
 				}
 
-				// If cell start tag contained office:string-value or office:date-value, update attribute
+				// If cell start tag contained office:string-value or office:date-value, update attributes
 				if len(cell.tagBytes) > 0 {
+					newTag := cell.tagBytes
+					tagModified := false
 					tagStr := string(cell.tagBytes)
+
 					if strings.Contains(tagStr, "office:string-value") {
 						oldAttr := extractAttrValue(cell.tagBytes, "office:string-value")
 						if oldAttr != "" {
-							newTag := updateAttrInTag(cell.tagBytes, "office:string-value", oldAttr, synthetic)
-							replacements = append(replacements, textReplacement{
-								start:   cell.startOffset,
-								end:     cell.startOffset + len(cell.tagBytes),
-								newText: newTag,
-							})
+							newTag = updateAttrInTag(newTag, "office:string-value", oldAttr, synthetic)
+							tagModified = true
 						}
+					}
+
+					if strings.Contains(tagStr, "office:date-value") {
+						oldDateAttr := extractAttrValue(cell.tagBytes, "office:date-value")
+						if oldDateAttr != "" {
+							synthDateAttr := h.Anon.PerturbDate(oldDateAttr, dateRange)
+							if synthDateAttr != oldDateAttr {
+								dm.Put(synthDateAttr, oldDateAttr)
+								newTag = updateAttrInTag(newTag, "office:date-value", oldDateAttr, synthDateAttr)
+								tagModified = true
+							}
+						}
+					}
+
+					if tagModified {
+						replacements = append(replacements, textReplacement{
+							start:   cell.startOffset,
+							end:     cell.startOffset + len(cell.tagBytes),
+							newText: newTag,
+						})
 					}
 				}
 			}
@@ -549,10 +568,10 @@ func repackODSZip(zr *zip.Reader, w io.Writer, updatedContent []byte) error {
 		return fmt.Errorf("failed to write mimetype: %w", err)
 	}
 
-	// 2. Write content.xml (zip.Store)
+	// 2. Write content.xml (zip.Deflate)
 	cw, err := zw.CreateHeader(&zip.FileHeader{
 		Name:   "content.xml",
-		Method: zip.Store,
+		Method: zip.Deflate,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create content.xml in zip: %w", err)
@@ -669,14 +688,55 @@ func extractAttrValue(tagBytes []byte, attrName string) string {
 	return rest[:endIdx]
 }
 
-func updateAttrInTag(tag []byte, attrName, oldVal, newVal string) []byte {
-	needleDbl := fmt.Sprintf("%s=%q", attrName, oldVal)
-	replacementDbl := fmt.Sprintf("%s=%q", attrName, newVal)
-	res := bytes.Replace(tag, []byte(needleDbl), []byte(replacementDbl), 1)
-	if bytes.Equal(res, tag) {
-		needleSgl := fmt.Sprintf("%s='%s'", attrName, oldVal)
-		replacementSgl := fmt.Sprintf("%s='%s'", attrName, newVal)
-		res = bytes.Replace(tag, []byte(needleSgl), []byte(replacementSgl), 1)
+func xmlEscapeAttr(s string) string {
+	var buf bytes.Buffer
+	for _, r := range s {
+		switch r {
+		case '&':
+			buf.WriteString("&amp;")
+		case '"':
+			buf.WriteString("&quot;")
+		case '\'':
+			buf.WriteString("&apos;")
+		case '<':
+			buf.WriteString("&lt;")
+		case '>':
+			buf.WriteString("&gt;")
+		default:
+			buf.WriteRune(r)
+		}
 	}
+	return buf.String()
+}
+
+func updateAttrInTag(tag []byte, attrName, oldVal, newVal string) []byte {
+	escapedOld := xmlEscapeAttr(oldVal)
+	escapedNew := xmlEscapeAttr(newVal)
+
+	// Try double quotes: attr="escapedOld" -> attr="escapedNew"
+	needleDbl := fmt.Sprintf("%s=\"%s\"", attrName, escapedOld)
+	replacementDbl := fmt.Sprintf("%s=\"%s\"", attrName, escapedNew)
+	res := bytes.Replace(tag, []byte(needleDbl), []byte(replacementDbl), 1)
+	if !bytes.Equal(res, tag) {
+		return res
+	}
+
+	// Try unescaped old in double quotes
+	needleDblRaw := fmt.Sprintf("%s=\"%s\"", attrName, oldVal)
+	res = bytes.Replace(tag, []byte(needleDblRaw), []byte(replacementDbl), 1)
+	if !bytes.Equal(res, tag) {
+		return res
+	}
+
+	// Try single quotes: attr='escapedOld' -> attr="escapedNew"
+	needleSgl := fmt.Sprintf("%s='%s'", attrName, escapedOld)
+	res = bytes.Replace(tag, []byte(needleSgl), []byte(replacementDbl), 1)
+	if !bytes.Equal(res, tag) {
+		return res
+	}
+
+	// Try unescaped old in single quotes
+	needleSglRaw := fmt.Sprintf("%s='%s'", attrName, oldVal)
+	res = bytes.Replace(tag, []byte(needleSglRaw), []byte(replacementDbl), 1)
 	return res
 }
