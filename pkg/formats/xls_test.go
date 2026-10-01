@@ -219,6 +219,10 @@ func TestXLSHandler_ProgressCallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProcessToXLSX failed: %v", err)
 	}
+
+	if progressCalls == 0 {
+		t.Errorf("expected progress_callback to be called at least once")
+	}
 }
 
 func TestXLSHandler_ContextCancellation(t *testing.T) {
@@ -249,5 +253,20 @@ func TestXLSHandler_InvalidFile(t *testing.T) {
 	_, err = h.ProcessToXLSX(context.Background(), "non_existent_file.xls", outBuf, nil)
 	if err == nil {
 		t.Fatalf("expected error processing nonexistent file")
+	}
+}
+
+func TestXLSHandler_MissingSheetError(t *testing.T) {
+	path := getTestXLSPath(t)
+	anon := anonymizer.New("test-salt")
+	h := NewXLSHandler(anon)
+
+	outBuf := new(bytes.Buffer)
+	opts := map[string]interface{}{
+		"sheet": "NonExistentSheet",
+	}
+	_, err := h.ProcessToXLSX(context.Background(), path, outBuf, opts)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected sheet not found error, got: %v", err)
 	}
 }

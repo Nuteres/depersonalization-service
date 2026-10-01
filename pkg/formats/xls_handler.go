@@ -40,15 +40,20 @@ func safeGetXLSRow(sheet *xls.WorkSheet, i int) (r *xls.Row) {
 	return sheet.Row(i)
 }
 
-func getXLSRowValues(row *xls.Row) []string {
+func getXLSRowValues(row *xls.Row) (cols []string) {
 	if row == nil {
 		return nil
 	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			cols = nil
+		}
+	}()
 	lastCol := row.LastCol()
 	if lastCol <= 0 {
 		return nil
 	}
-	cols := make([]string, lastCol)
+	cols = make([]string, lastCol)
 	for c := 0; c < lastCol; c++ {
 		cols[c] = row.Col(c)
 	}
@@ -149,24 +154,17 @@ func (h *XLSHandler) ProcessToXLSX(ctx context.Context, path string, w io.Writer
 	}
 
 	var targetSheets []*xls.WorkSheet
-	targetSheetName, hasTarget := options["sheet"].(string)
-
-	for i := 0; i < numSheets; i++ {
-		s := wb.GetSheet(i)
-		if s == nil {
-			continue
-		}
-		if hasTarget && targetSheetName != "" {
-			if s.Name == targetSheetName {
+	if targetSheetName, ok := options["sheet"].(string); ok && targetSheetName != "" {
+		for i := 0; i < numSheets; i++ {
+			if s := wb.GetSheet(i); s != nil && s.Name == targetSheetName {
 				targetSheets = []*xls.WorkSheet{s}
 				break
 			}
-		} else {
-			targetSheets = append(targetSheets, s)
 		}
-	}
-
-	if len(targetSheets) == 0 {
+		if len(targetSheets) == 0 {
+			return nil, fmt.Errorf("sheet %q not found in workbook", targetSheetName)
+		}
+	} else {
 		for i := 0; i < numSheets; i++ {
 			if s := wb.GetSheet(i); s != nil {
 				targetSheets = append(targetSheets, s)

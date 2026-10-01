@@ -435,7 +435,9 @@ func TestXLSBHandler_ColumnOverridesAndProgress(t *testing.T) {
 	if !foundSNILS {
 		t.Errorf("column override for 'Код' as SNILS was not recorded in depmap")
 	}
-	_ = progressCalled
+	if !progressCalled {
+		t.Errorf("expected progress_callback to be invoked")
+	}
 }
 
 func TestXLSBHandler_ContextCancellation(t *testing.T) {
@@ -454,5 +456,40 @@ func TestXLSBHandler_ContextCancellation(t *testing.T) {
 	_, err := h.ProcessToXLSX(ctx, path, outBuf, nil)
 	if err == nil || !strings.Contains(err.Error(), "context canceled") {
 		t.Fatalf("expected context canceled error, got: %v", err)
+	}
+}
+
+func TestXLSBHandler_InvalidFile(t *testing.T) {
+	anon := anonymizer.New("test-salt")
+	h := NewXLSBHandler(anon)
+
+	_, err := h.Inspect("non_existent_file.xlsb")
+	if err == nil {
+		t.Fatalf("expected error inspecting nonexistent file")
+	}
+
+	outBuf := new(bytes.Buffer)
+	_, err = h.ProcessToXLSX(context.Background(), "non_existent_file.xlsb", outBuf, nil)
+	if err == nil {
+		t.Fatalf("expected error processing nonexistent file")
+	}
+}
+
+func TestXLSBHandler_MissingSheetError(t *testing.T) {
+	headers := []string{"ФИО"}
+	rows := [][]string{{"Иванов Иван Иванович"}}
+	raw := createTestXLSB(t, "Лист1", headers, rows)
+	path := writeTempXLSB(t, raw)
+
+	anon := anonymizer.New("test-salt")
+	h := NewXLSBHandler(anon)
+
+	outBuf := new(bytes.Buffer)
+	opts := map[string]interface{}{
+		"sheet": "NonExistentSheet",
+	}
+	_, err := h.ProcessToXLSX(context.Background(), path, outBuf, opts)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected sheet not found error, got: %v", err)
 	}
 }

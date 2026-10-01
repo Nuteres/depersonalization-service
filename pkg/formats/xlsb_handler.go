@@ -61,6 +61,10 @@ func (h *XLSBHandler) Inspect(path string) ([]SheetInfo, error) {
 			}
 		}
 
+		if sheet.Err != nil {
+			return nil, fmt.Errorf("error reading sheet %s: %w", name, sheet.Err)
+		}
+
 		_, headers := FindHeaderRow(sample)
 		if len(headers) > 0 {
 			headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
@@ -118,9 +122,10 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 				break
 			}
 		}
-		if found {
-			sheetList = []string{targetSheet}
+		if !found {
+			return nil, fmt.Errorf("sheet %q not found in workbook", targetSheet)
 		}
+		sheetList = []string{targetSheet}
 	}
 
 	origFileName := filepath.Base(path)
@@ -264,6 +269,10 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 			}
 
 			rowNum++
+		}
+
+		if sheet.Err != nil {
+			return nil, fmt.Errorf("error reading sheet %s: %w", sheetName, sheet.Err)
 		}
 
 		if err := sw.Flush(); err != nil {
