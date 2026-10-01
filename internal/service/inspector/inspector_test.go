@@ -44,6 +44,39 @@ func TestInspect_FileNotFound(t *testing.T) {
 	}
 }
 
+func TestInspect_DirectoryPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	svc := inspector.New()
+	_, err := svc.Inspect(context.Background(), tmpDir)
+	if err == nil {
+		t.Fatal("expected error for directory path, got nil")
+	}
+	if !errors.Is(err, domain.ErrUnsupportedFormat) {
+		t.Errorf("expected ErrUnsupportedFormat, got: %v", err)
+	}
+}
+
+func TestInspectCSV_ContextCancelledDuringRead(t *testing.T) {
+	tmpDir := t.TempDir()
+	csvPath := filepath.Join(tmpDir, "large.csv")
+	var content bytes.Buffer
+	content.WriteString("ФИО,СНИЛС\n")
+	for i := 0; i < 200; i++ {
+		content.WriteString("Иванов Иван Иванович,112-233-445 95\n")
+	}
+	if err := os.WriteFile(csvPath, content.Bytes(), 0644); err != nil {
+		t.Fatalf("failed to write csv: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	svc := inspector.New()
+	_, err := svc.Inspect(ctx, csvPath)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", err)
+	}
+}
+
 func TestInspect_UnsupportedFormat(t *testing.T) {
 	tmpDir := t.TempDir()
 	txtFile := filepath.Join(tmpDir, "test.exe")

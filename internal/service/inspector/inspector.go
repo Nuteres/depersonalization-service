@@ -42,6 +42,8 @@ var (
 	reLit              = regexp.MustCompile(`\(([^)\\]*(?:\\.[^)\\]*)*)\)`)
 )
 
+const defaultPreviewSalt = "preview-salt-152fz"
+
 // Inspector provides document analysis and inspection across supported formats.
 type Inspector struct{}
 
@@ -64,28 +66,32 @@ func (i *Inspector) Inspect(ctx context.Context, path string) (*domain.FileInfo,
 		return nil, errors.New("file path cannot be empty")
 	}
 
-	if _, err := os.Stat(path); err != nil {
+	stat, err := os.Stat(path)
+	if err != nil {
 		return nil, fmt.Errorf("file not found: %w", err)
+	}
+	if stat.IsDir() {
+		return nil, fmt.Errorf("%w: path is a directory", domain.ErrUnsupportedFormat)
 	}
 
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".csv", ".tsv":
-		return inspectCSV(path)
+		return inspectCSV(ctx, path)
 	case ".xlsx", ".xlsm", ".xltx", ".xltm":
-		return inspectXLSX(path)
+		return inspectXLSX(ctx, path)
 	case ".ods":
-		return inspectODS(path)
+		return inspectODS(ctx, path)
 	case ".xlsb":
-		return inspectXLSB(path)
+		return inspectXLSB(ctx, path)
 	case ".xls":
-		return inspectXLS(path)
+		return inspectXLS(ctx, path)
 	case ".docx":
-		return inspectDOCX(path)
+		return inspectDOCX(ctx, path)
 	case ".odt":
-		return inspectODT(path)
+		return inspectODT(ctx, path)
 	case ".pdf":
-		return inspectPDF(path)
+		return inspectPDF(ctx, path)
 	default:
 		return nil, fmt.Errorf("%w: %s", domain.ErrUnsupportedFormat, ext)
 	}
@@ -115,7 +121,11 @@ func columnTypeDetails(colType formats.ColumnType) (typeName, desc, action strin
 	}
 }
 
-func inspectCSV(path string) (*domain.FileInfo, error) {
+func inspectCSV(ctx context.Context, path string) (*domain.FileInfo, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open csv file: %w", err)
@@ -153,6 +163,9 @@ func inspectCSV(path string) (*domain.FileInfo, error) {
 
 	var sample [][]string
 	for len(sample) < 40 {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		rec, err := csvReader.Read()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -191,11 +204,14 @@ func inspectCSV(path string) (*domain.FileInfo, error) {
 		}
 	}
 
-	anon := anonymizer.New("preview-salt-152fz")
+	anon := anonymizer.New(defaultPreviewSalt)
 	var previewRows []domain.PreviewRow
 	rowCount := 0
 
 	for i := headerIdx + 1; i < len(sample); i++ {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		rowCount++
 		if len(previewRows) < 10 {
 			cols := sample[i]
@@ -222,6 +238,9 @@ func inspectCSV(path string) (*domain.FileInfo, error) {
 	}
 
 	for {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		record, err := csvReader.Read()
 		if err != nil {
 			break
@@ -266,7 +285,11 @@ func inspectCSV(path string) (*domain.FileInfo, error) {
 	}, nil
 }
 
-func inspectSingleSheet(xl *excelize.File, sheetName string, sheetIndex int, anon *anonymizer.Anonymizer) (*domain.SheetInfo, error) {
+func inspectSingleSheet(ctx context.Context, xl *excelize.File, sheetName string, sheetIndex int, anon *anonymizer.Anonymizer) (*domain.SheetInfo, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	// Sample up to 40 rows to find table header row (skipping preamble metadata if present)
 	sampleIter, err := xl.Rows(sheetName)
 	if err != nil {
@@ -274,6 +297,10 @@ func inspectSingleSheet(xl *excelize.File, sheetName string, sheetIndex int, ano
 	}
 	var sample [][]string
 	for sampleIter.Next() && len(sample) < 40 {
+		if ctx != nil && ctx.Err() != nil {
+			_ = sampleIter.Close()
+			return nil, ctx.Err()
+		}
 		cols, err := sampleIter.Columns()
 		if err != nil {
 			break
@@ -322,6 +349,9 @@ func inspectSingleSheet(xl *excelize.File, sheetName string, sheetIndex int, ano
 
 	// Preview rows and row count from sample
 	for i := headerIdx + 1; i < len(sample); i++ {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		rowCount++
 		if len(previewRows) < 10 {
 			cols := sample[i]
@@ -352,6 +382,10 @@ func inspectSingleSheet(xl *excelize.File, sheetName string, sheetIndex int, ano
 	if err == nil {
 		skipped := 0
 		for remainingIter.Next() {
+			if ctx != nil && ctx.Err() != nil {
+				_ = remainingIter.Close()
+				return nil, ctx.Err()
+			}
 			skipped++
 			if skipped > len(sample) {
 				rowCount++
@@ -392,7 +426,11 @@ func inspectSingleSheet(xl *excelize.File, sheetName string, sheetIndex int, ano
 	}, nil
 }
 
-func inspectXLSX(path string) (*domain.FileInfo, error) {
+func inspectXLSX(ctx context.Context, path string) (*domain.FileInfo, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	stat, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
@@ -409,11 +447,20 @@ func inspectXLSX(path string) (*domain.FileInfo, error) {
 		return nil, errors.New("xlsx file has no sheets")
 	}
 
-	anon := anonymizer.New("preview-salt-152fz")
+	anon := anonymizer.New(defaultPreviewSalt)
 	var allSheets []domain.SheetInfo
 	for idx, sName := range sheets {
-		sInfo, err := inspectSingleSheet(xl, sName, idx, anon)
-		if err == nil && sInfo != nil {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		sInfo, err := inspectSingleSheet(ctx, xl, sName, idx, anon)
+		if err != nil {
+			if ctx != nil && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		if sInfo != nil {
 			allSheets = append(allSheets, *sInfo)
 		}
 	}
@@ -517,7 +564,11 @@ func buildSheetInfoFromRows(sheetName string, sheetIndex int, rowCount int, samp
 	}
 }
 
-func inspectODS(path string) (*domain.FileInfo, error) {
+func inspectODS(ctx context.Context, path string) (*domain.FileInfo, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open ods file: %w", err)
@@ -529,7 +580,7 @@ func inspectODS(path string) (*domain.FileInfo, error) {
 		return nil, fmt.Errorf("failed to stat ods file: %w", err)
 	}
 
-	anon := anonymizer.New("preview-salt-152fz")
+	anon := anonymizer.New(defaultPreviewSalt)
 	handler := formats.NewODSHandler(anon)
 	sheets, samples, err := handler.InspectRows(file, stat.Size(), 40)
 	if err != nil {
@@ -541,6 +592,9 @@ func inspectODS(path string) (*domain.FileInfo, error) {
 
 	var allSheets []domain.SheetInfo
 	for _, s := range sheets {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		sampleRows := samples[s.Name]
 		sInfo := buildSheetInfoFromRows(s.Name, s.Index, s.RowCount, sampleRows, anon)
 		allSheets = append(allSheets, sInfo)
@@ -565,13 +619,17 @@ func inspectODS(path string) (*domain.FileInfo, error) {
 	}, nil
 }
 
-func inspectXLSB(path string) (*domain.FileInfo, error) {
+func inspectXLSB(ctx context.Context, path string) (*domain.FileInfo, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	stat, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat xlsb file: %w", err)
 	}
 
-	anon := anonymizer.New("preview-salt-152fz")
+	anon := anonymizer.New(defaultPreviewSalt)
 	handler := formats.NewXLSBHandler(anon)
 	sheets, samples, err := handler.InspectRows(path, 40)
 	if err != nil {
@@ -583,6 +641,9 @@ func inspectXLSB(path string) (*domain.FileInfo, error) {
 
 	var allSheets []domain.SheetInfo
 	for _, s := range sheets {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		sampleRows := samples[s.Name]
 		sInfo := buildSheetInfoFromRows(s.Name, s.Index, s.RowCount, sampleRows, anon)
 		allSheets = append(allSheets, sInfo)
@@ -607,13 +668,17 @@ func inspectXLSB(path string) (*domain.FileInfo, error) {
 	}, nil
 }
 
-func inspectXLS(path string) (*domain.FileInfo, error) {
+func inspectXLS(ctx context.Context, path string) (*domain.FileInfo, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	stat, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat xls file: %w", err)
 	}
 
-	anon := anonymizer.New("preview-salt-152fz")
+	anon := anonymizer.New(defaultPreviewSalt)
 	handler := formats.NewXLSHandler(anon)
 	sheets, samples, err := handler.InspectRows(path, 40)
 	if err != nil {
@@ -625,6 +690,9 @@ func inspectXLS(path string) (*domain.FileInfo, error) {
 
 	var allSheets []domain.SheetInfo
 	for _, s := range sheets {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		sampleRows := samples[s.Name]
 		sInfo := buildSheetInfoFromRows(s.Name, s.Index, s.RowCount, sampleRows, anon)
 		allSheets = append(allSheets, sInfo)
@@ -695,7 +763,11 @@ func textEntityDetails(t string) (desc, action string) {
 	}
 }
 
-func inspectDOCX(path string) (*domain.FileInfo, error) {
+func inspectDOCX(ctx context.Context, path string) (*domain.FileInfo, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open docx file: %w", err)
@@ -707,7 +779,7 @@ func inspectDOCX(path string) (*domain.FileInfo, error) {
 		return nil, fmt.Errorf("failed to stat docx file: %w", err)
 	}
 
-	anon := anonymizer.New("preview-salt-152fz")
+	anon := anonymizer.New(defaultPreviewSalt)
 	handler := formats.NewDOCXHandler(anon)
 	paramCount, entitiesCounts, snippets, err := handler.Inspect(file, stat.Size())
 	if err != nil {
@@ -743,7 +815,11 @@ func inspectDOCX(path string) (*domain.FileInfo, error) {
 	}, nil
 }
 
-func inspectODT(path string) (*domain.FileInfo, error) {
+func inspectODT(ctx context.Context, path string) (*domain.FileInfo, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open odt file: %w", err)
@@ -755,7 +831,7 @@ func inspectODT(path string) (*domain.FileInfo, error) {
 		return nil, fmt.Errorf("failed to stat odt file: %w", err)
 	}
 
-	anon := anonymizer.New("preview-salt-152fz")
+	anon := anonymizer.New(defaultPreviewSalt)
 	handler := formats.NewODTHandler(anon)
 	paramCount, entitiesCounts, snippets, err := handler.Inspect(file, stat.Size())
 	if err != nil {
@@ -791,7 +867,11 @@ func inspectODT(path string) (*domain.FileInfo, error) {
 	}, nil
 }
 
-func inspectPDF(path string) (*domain.FileInfo, error) {
+func inspectPDF(ctx context.Context, path string) (*domain.FileInfo, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	pdfBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read pdf: %w", err)
@@ -800,13 +880,21 @@ func inspectPDF(path string) (*domain.FileInfo, error) {
 		return nil, errors.New("invalid PDF file: missing %PDF- header")
 	}
 
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	pageMatches := rePage.FindAll(pdfBytes, -1)
 	pageCount := len(pageMatches)
 	if pageCount == 0 {
 		pageCount = 1
 	}
 
-	extractedText := extractTextFromPDFBytes(pdfBytes)
+	extractedText := extractTextFromPDFBytes(ctx, pdfBytes)
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	entities, snippetBefore, snippetAfter := detectPDFEntitiesAndSnippets(extractedText)
 
 	return &domain.FileInfo{
@@ -826,11 +914,14 @@ func inspectPDF(path string) (*domain.FileInfo, error) {
 	}, nil
 }
 
-func extractTextFromPDFBytes(pdfBytes []byte) string {
+func extractTextFromPDFBytes(ctx context.Context, pdfBytes []byte) string {
 	var sb strings.Builder
 	idx := 0
 
 	for {
+		if ctx != nil && ctx.Err() != nil {
+			break
+		}
 		sPos := bytes.Index(pdfBytes[idx:], []byte("stream"))
 		if sPos == -1 {
 			break
