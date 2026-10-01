@@ -101,8 +101,8 @@
 </head>
 <body class="min-h-screen flex flex-col p-6 sm:p-10 max-w-6xl mx-auto selection:bg-amber-100">
 
-  <!-- Minimal Brand & Environment Bar -->
-  <header class="flex flex-col lg:flex-row lg:items-center justify-between pb-6 border-b border-[#E8E7E3] gap-4">
+  <!-- Minimal Brand & Environment Bar (Clean & Identical across both tabs) -->
+  <header class="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-[#E8E7E3] gap-4">
     <div class="flex items-center space-x-3.5">
       <div class="w-9 h-9 bg-[#1C1917] rounded-none flex items-center justify-center text-white font-mono text-sm font-bold shadow-sm">
         152
@@ -116,8 +116,8 @@
       </div>
     </div>
 
-    <!-- Center Mode Switcher Tabs -->
-    <div class="flex items-center bg-[#F0EFEB] p-1 text-xs font-medium border border-[#E8E7E3] self-start lg:self-center">
+    <!-- Mode Switcher Tabs (Unified Right-Aligned Global Control) -->
+    <div class="flex items-center bg-[#F0EFEB] p-1 text-xs font-medium border border-[#E8E7E3] self-start sm:self-center">
       <button id="mode-tab-depersonalize" onclick="setAppMode('depersonalize')" class="px-3.5 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition flex items-center space-x-1.5 cursor-pointer">
         <span id="dot-depersonalize" class="w-2 h-2 rounded-full bg-emerald-600"></span>
         <span>Деперсонализация ПД</span>
@@ -125,32 +125,6 @@
       <button id="mode-tab-restore" onclick="setAppMode('restore')" class="px-3.5 py-1.5 text-[#78716C] hover:text-[#1C1917] transition flex items-center space-x-1.5 cursor-pointer">
         <span id="dot-restore" class="w-2 h-2 rounded-full bg-stone-400"></span>
         <span>Восстановление данных</span>
-      </button>
-    </div>
-
-    <!-- Actions Bar (Depersonalization Mode) -->
-    <div id="header-depersonalize-actions" class="flex items-center space-x-3 self-start lg:self-auto">
-      <button onclick="handleSelectFile()" class="px-4 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold shadow-sm transition flex items-center space-x-1.5 active:scale-[0.99] cursor-pointer">
-        <span>📁 Открыть файл...</span>
-      </button>
-      <!-- Active Document Tabs -->
-      <div class="flex items-center bg-[#F0EFEB] p-1 text-xs font-medium border border-[#E8E7E3]">
-        <button id="tab-table" onclick="setDocMode('table')" class="px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition cursor-pointer">
-          Выгрузка (Excel / CSV)
-        </button>
-        <button id="tab-pdf" onclick="setDocMode('pdf')" class="px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer">
-          Документ (PDF)
-        </button>
-      </div>
-    </div>
-
-    <!-- Actions Bar (Restoration Mode) -->
-    <div id="header-restore-actions" class="hidden flex items-center space-x-3 self-start lg:self-auto">
-      <button onclick="handleSelectRestoreInput()" class="px-3.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold shadow-xs transition flex items-center space-x-1.5 active:scale-[0.99] cursor-pointer">
-        <span>📊 Выбрать данные...</span>
-      </button>
-      <button onclick="handleSelectRestoreKey()" class="px-3.5 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold shadow-sm transition flex items-center space-x-1.5 active:scale-[0.99] cursor-pointer">
-        <span>🔑 Выбрать ключ (.depmap)...</span>
       </button>
     </div>
   </header>
@@ -174,16 +148,39 @@
         </p>
       </div>
 
-      <!-- Action Button -->
-      <button id="btn-save" onclick="handleSaveProcessedFile()" class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-6 py-3 transition active:scale-[0.99] flex items-center justify-center space-x-2 shadow-sm whitespace-nowrap cursor-pointer">
-        <span>💾 Сохранить обработанный файл</span>
-        <span class="font-mono text-[11px] text-[#A8A29E]">(.xlsx)</span>
-      </button>
+      <!-- Action Toolbar in Hero (Single Home for File Controls) -->
+      <div class="flex flex-wrap items-center gap-3 self-start md:self-end">
+        <!-- Active Document Tabs -->
+        <div class="flex items-center bg-[#F0EFEB] p-1 text-xs font-medium border border-[#E8E7E3]">
+          <button id="tab-table" onclick="setDocMode('table')" class="px-3.5 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition cursor-pointer">
+            Выгрузка (Excel / CSV)
+          </button>
+          <button id="tab-pdf" onclick="setDocMode('pdf')" class="px-3.5 py-1.5 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer">
+            Документ (PDF)
+          </button>
+        </div>
+
+        <!-- Button: Open File (Shown when file is not yet chosen) -->
+        <button id="btn-open-file-hero" onclick="handleSelectFile()" class="px-4 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold shadow-sm transition flex items-center space-x-1.5 active:scale-[0.99] cursor-pointer">
+          <span>📁 Открыть файл...</span>
+        </button>
+
+        <!-- Button: Change File (Shown when file is loaded) -->
+        <button id="btn-change-file-hero" onclick="handleSelectFile()" class="hidden px-3.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold shadow-xs transition flex items-center space-x-1.5 active:scale-[0.99] cursor-pointer" title="Выбрать другой файл">
+          <span>📁 Сменить файл...</span>
+        </button>
+
+        <!-- Button: Save Processed File (Shown when file is loaded) -->
+        <button id="btn-save" onclick="handleSaveProcessedFile()" class="hidden bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-5 py-2 transition active:scale-[0.99] flex items-center justify-center space-x-2 shadow-sm whitespace-nowrap cursor-pointer">
+          <span>💾 Сохранить результат</span>
+          <span class="font-mono text-[11px] text-[#A8A29E]">(.xlsx)</span>
+        </button>
+      </div>
     </div>
 
     <!-- Entity Cards Grid -->
     <div>
-      <div class="flex items-center justify-between mb-3">
+      <div id="entity-cards-header" class="hidden items-center justify-between mb-3">
         <div class="flex items-center space-x-2">
           <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">Обнаруженные категории ПДн</span>
           <span class="text-[11px] text-[#78716C]">(нажмите на карточку или переключатель для отмены деперсонализации)</span>
@@ -191,14 +188,13 @@
         <span id="entity-count-badge" class="text-xs font-mono text-[#78716C]">0 категорий</span>
       </div>
       <div id="entity-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
-        <div class="col-span-full bg-white border border-[#E8E7E3] p-6 text-sm text-[#78716C] flex items-center justify-between">
-          <div class="flex items-center space-x-3.5">
-            <span class="text-2xl">📁</span>
-            <div>
-              <div class="font-semibold text-[#1C1917]">Файл пока не открыт</div>
-              <div class="text-xs text-[#78716C] mt-0.5">Нажмите «Открыть файл...» вверху или перетащите файл в окно программы (Excel, CSV, PDF).</div>
-            </div>
-          </div>
+        <div id="empty-state-dropzone" class="col-span-full border-2 border-dashed border-[#D6D3D1] hover:border-[#1C1917] bg-[#FAF9F5] hover:bg-white p-8 sm:p-10 text-center transition cursor-pointer flex flex-col items-center justify-center gap-2.5 shadow-2xs" onclick="handleSelectFile()">
+          <span class="text-3xl">📁</span>
+          <div class="font-bold text-sm text-[#1C1917]">Перетащите файл сюда или нажмите для выбора</div>
+          <div class="text-xs text-[#78716C] max-w-md">Поддерживаются таблицы Excel (.xlsx), CSV (.csv) и документы Adobe PDF (.pdf). Все данные обрабатываются локально без выхода в сеть.</div>
+          <button type="button" class="mt-2 px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] shadow-xs cursor-pointer">
+            Выбрать файл на диске...
+          </button>
         </div>
       </div>
     </div>
@@ -270,14 +266,22 @@
 
   <!-- PDF MODE -->
   <main id="mode-pdf-content" class="hidden flex-1 flex flex-col pt-8 gap-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
       <div>
+        <div id="pdf-meta-bar" class="flex items-center space-x-2 text-xs font-mono text-[#78716C] uppercase mb-1">
+          <span>ДОКУМЕНТ PDF</span>
+        </div>
         <h2 id="pdf-file-name-title" class="text-xl font-bold tracking-tight text-[#1C1917]">Документ PDF</h2>
         <p class="text-xs text-[#78716C] mt-0.5">Чувствительные персональные данные вырезаются физически и закрываются плашками</p>
       </div>
-      <button onclick="handleSaveProcessedFile()" class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-5 py-2.5 shadow-sm flex items-center space-x-1.5 transition cursor-pointer">
-        <span>💾</span><span>Сохранить обработанный PDF</span>
-      </button>
+      <div class="flex items-center space-x-3">
+        <button onclick="handleSelectFile()" class="px-3.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold shadow-xs transition flex items-center space-x-1.5 active:scale-[0.99] cursor-pointer">
+          <span>📁 Сменить файл...</span>
+        </button>
+        <button onclick="handleSaveProcessedFile()" class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-5 py-2 shadow-sm flex items-center space-x-1.5 transition cursor-pointer">
+          <span>💾 Сохранить обработанный PDF</span>
+        </button>
+      </div>
     </div>
 
     <!-- Clean Paper Sheet -->
@@ -318,10 +322,11 @@
         </p>
       </div>
 
-      <!-- Action Button in Hero -->
-      <button id="btn-restore-action-top" onclick="executeRestoreFile()" disabled class="bg-[#1C1917] disabled:bg-stone-300 disabled:cursor-not-allowed hover:bg-[#292524] text-white text-xs font-semibold px-6 py-3 transition active:scale-[0.99] flex items-center justify-center space-x-2 shadow-sm whitespace-nowrap cursor-pointer">
-        <span>🔓 Восстановить исходные данные...</span>
-      </button>
+      <!-- Live Step Status in Hero (No duplicate button) -->
+      <div id="restore-hero-status" class="flex items-center space-x-2 text-xs font-mono px-4 py-2.5 bg-[#FAF9F5] border border-[#E8E7E3] self-start md:self-end">
+        <span id="restore-status-dot" class="w-2 h-2 rounded-full bg-stone-400"></span>
+        <span id="restore-status-text" class="text-[#78716C]">Шаг 1 из 3: выберите файл данных</span>
+      </div>
     </div>
 
     <!-- 3-Step Selection Grid -->
@@ -351,7 +356,12 @@
               <span class="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.5" id="restore-data-ext">XLSX</span>
             </div>
             <div class="text-[11px] text-[#78716C] truncate" id="restore-data-path">/path/to/file</div>
-            <div class="text-[11px] text-[#57534E]" id="restore-data-size">0 КБ</div>
+            <div class="flex items-center justify-between pt-1">
+              <span class="text-[11px] text-[#57534E]" id="restore-data-size">0 КБ</span>
+              <button type="button" onclick="handleSelectRestoreInput()" class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer">
+                Сменить...
+              </button>
+            </div>
           </div>
         </div>
 
@@ -386,6 +396,11 @@
             <div class="text-[11px] text-[#78716C] truncate" id="restore-key-path">/path/to/key</div>
             <div class="text-[11px] text-[#57534E]" id="restore-key-meta">Записей: 0</div>
             <div id="restore-key-error" class="hidden text-[11px] text-rose-700 bg-rose-50 p-1.5 border border-rose-200"></div>
+            <div class="pt-1 text-right">
+              <button type="button" onclick="handleSelectRestoreKey()" class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer">
+                Сменить ключ...
+              </button>
+            </div>
           </div>
         </div>
 
@@ -636,8 +651,6 @@
       const tabRes = document.getElementById('mode-tab-restore');
       const dotDep = document.getElementById('dot-depersonalize');
       const dotRes = document.getElementById('dot-restore');
-      const actDep = document.getElementById('header-depersonalize-actions');
-      const actRes = document.getElementById('header-restore-actions');
 
       const activeTabCls = 'px-3.5 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition flex items-center space-x-1.5 cursor-pointer';
       const inactiveTabCls = 'px-3.5 py-1.5 text-[#78716C] hover:text-[#1C1917] transition flex items-center space-x-1.5 cursor-pointer';
@@ -649,8 +662,6 @@
         if (tabRes) tabRes.className = inactiveTabCls;
         if (dotDep) dotDep.className = 'w-2 h-2 rounded-full bg-emerald-600';
         if (dotRes) dotRes.className = 'w-2 h-2 rounded-full bg-stone-400';
-        if (actDep) actDep.classList.remove('hidden');
-        if (actRes) actRes.classList.add('hidden');
       } else {
         if (depView) depView.classList.add('hidden');
         if (resView) resView.classList.remove('hidden');
@@ -658,8 +669,6 @@
         if (tabDep) tabDep.className = inactiveTabCls;
         if (dotRes) dotRes.className = 'w-2 h-2 rounded-full bg-emerald-600';
         if (dotDep) dotDep.className = 'w-2 h-2 rounded-full bg-stone-400';
-        if (actDep) actDep.classList.add('hidden');
-        if (actRes) actRes.classList.remove('hidden');
         if (typeof updateRestoreButtonState === 'function') {
           updateRestoreButtonState();
         }
@@ -791,7 +800,32 @@
     function renderEntityCards() {
       const cardContainer = document.getElementById('entity-cards-container');
       const countBadge = document.getElementById('entity-count-badge');
-      if (!cardContainer || !currentFileInfo) return;
+      const cardsHeader = document.getElementById('entity-cards-header');
+      if (!cardContainer) return;
+
+      if (!currentFileInfo) {
+        if (cardsHeader) {
+          cardsHeader.classList.add('hidden');
+          cardsHeader.classList.remove('flex');
+        }
+        cardContainer.innerHTML = `
+          <div id="empty-state-dropzone" class="col-span-full border-2 border-dashed border-[#D6D3D1] hover:border-[#1C1917] bg-[#FAF9F5] hover:bg-white p-8 sm:p-10 text-center transition cursor-pointer flex flex-col items-center justify-center gap-2.5 shadow-2xs" onclick="handleSelectFile()">
+            <span class="text-3xl">📁</span>
+            <div class="font-bold text-sm text-[#1C1917]">Перетащите файл сюда или нажмите для выбора</div>
+            <div class="text-xs text-[#78716C] max-w-md">Поддерживаются таблицы Excel (.xlsx), CSV (.csv) и документы Adobe PDF (.pdf). Все данные обрабатываются локально без выхода в сеть.</div>
+            <button type="button" class="mt-2 px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] shadow-xs cursor-pointer">
+              Выбрать файл на диске...
+            </button>
+          </div>
+        `;
+        if (countBadge) countBadge.textContent = '0 категорий';
+        return;
+      }
+
+      if (cardsHeader) {
+        cardsHeader.classList.remove('hidden');
+        cardsHeader.classList.add('flex');
+      }
 
       if (!currentFileInfo.entities || currentFileInfo.entities.length === 0) {
         cardContainer.innerHTML = `
@@ -1251,6 +1285,14 @@
           descEl.textContent = `Обнаружено категорий ПДн: ${entityCount}. Чувствительные поля подготовлены к безопасной деперсонализации по 152-ФЗ.`;
         }
 
+        // Update action buttons in hero
+        const btnOpen = document.getElementById('btn-open-file-hero');
+        const btnChange = document.getElementById('btn-change-file-hero');
+        const btnSave = document.getElementById('btn-save');
+        if (btnOpen) btnOpen.classList.add('hidden');
+        if (btnChange) btnChange.classList.remove('hidden');
+        if (btnSave) btnSave.classList.remove('hidden');
+
         // Update button badge
         const btnBadge = document.querySelector('#btn-save .font-mono');
         if (btnBadge && info.extension) {
@@ -1681,10 +1723,33 @@
     function updateRestoreButtonState() {
       const isReady = !!(restoreInputPath && restoreKeyInfo && restoreKeyInfo.valid);
       const btnMain = document.getElementById('btn-restore-start');
-      const btnTop = document.getElementById('btn-restore-action-top');
-
       if (btnMain) btnMain.disabled = !isReady;
-      if (btnTop) btnTop.disabled = !isReady;
+
+      const statusEl = document.getElementById('restore-status-text');
+      const statusDot = document.getElementById('restore-status-dot');
+      if (statusEl && statusDot) {
+        if (isReady) {
+          statusDot.className = 'w-2 h-2 rounded-full bg-emerald-600';
+          statusEl.textContent = '✔ Готово к восстановлению данных';
+          statusEl.className = 'text-[#065F46] font-semibold';
+        } else if (!restoreInputPath && !restoreKeyPath) {
+          statusDot.className = 'w-2 h-2 rounded-full bg-stone-400';
+          statusEl.textContent = 'Шаг 1 из 3: выберите файл данных';
+          statusEl.className = 'text-[#78716C]';
+        } else if (!restoreInputPath) {
+          statusDot.className = 'w-2 h-2 rounded-full bg-amber-500';
+          statusEl.textContent = 'Шаг 1: выберите файл данных';
+          statusEl.className = 'text-[#78716C]';
+        } else if (!restoreKeyPath) {
+          statusDot.className = 'w-2 h-2 rounded-full bg-amber-500';
+          statusEl.textContent = 'Шаг 2: выберите ключ (.depmap)';
+          statusEl.className = 'text-[#78716C]';
+        } else if (restoreKeyInfo && !restoreKeyInfo.valid) {
+          statusDot.className = 'w-2 h-2 rounded-full bg-rose-500';
+          statusEl.textContent = 'Ошибка: неверный пароль ключа';
+          statusEl.className = 'text-rose-700 font-semibold';
+        }
+      }
     }
 
     async function executeRestoreFile() {
