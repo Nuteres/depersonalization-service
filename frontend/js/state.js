@@ -11,6 +11,7 @@ let currentFileInfo = null;
 let currentSalt = '152fz-secure-salt';
 let currentSavedPath = '';
 let currentView = 'after'; // 'after' (очищенные) | 'before' (исходные с ПДн)
+let currentTextViewMode = 'after'; // 'after' | 'before' для фрагментов текста
 
 // Multi-Sheet State (0-based index)
 let currentActiveSheetIndex = 0;

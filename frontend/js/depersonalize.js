@@ -195,7 +195,7 @@ function renderEntityCards() {
     card.innerHTML = `
       <div>
         <div class="flex items-center justify-between text-xs text-[#78716C] mb-2 font-mono">
-          <span>КОЛОНКА #${ent.columnIndex}</span>
+          <span>${currentFileInfo && currentFileInfo.fileType === 'text' ? 'КАТЕГОРИЯ ПДн' : 'КОЛОНКА'} #${ent.columnIndex}</span>
           <button type="button" onclick="toggleColumn(${ent.columnIndex}, event)" class="focus:outline-none flex items-center space-x-1.5 px-2 py-0.5 rounded text-[11px] font-mono font-medium transition cursor-pointer ${isDisabled ? 'bg-stone-100 text-stone-500 hover:bg-stone-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}">
             <span class="w-2 h-2 rounded-full ${isDisabled ? 'bg-stone-400' : 'bg-emerald-500'}"></span>
             <span>${isDisabled ? 'Отключено' : '● Заменено'}</span>
@@ -231,7 +231,7 @@ async function handleSelectFile() {
       // Demo browser fallback input
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.csv,.tsv,.xlsx,.xlsm,.pdf';
+      input.accept = '.csv,.tsv,.xlsx,.xlsm,.xlsb,.xls,.ods,.docx,.odt,.pdf';
       input.onchange = (e) => {
         const f = e.target.files[0];
         if (f) {
@@ -282,6 +282,8 @@ async function loadFile(path) {
       let units = '';
       if (info.fileType === 'pdf') {
         units = `${info.pageCount} стр.`;
+      } else if (info.fileType === 'text') {
+        units = `${info.paragraphCount || info.rowCount} абз.`;
       } else if (info.sheets && info.sheets.length > 1) {
         const totalR = info.sheets.reduce((acc, s) => acc + (s.rowCount || 0), 0);
         units = `${info.sheets.length} листов (${totalR.toLocaleString('ru-RU')} строк)`;
@@ -295,7 +297,9 @@ async function loadFile(path) {
     const entityCount = info.entities ? info.entities.length : 0;
     const descEl = document.getElementById('file-desc-text');
     if (descEl) {
-      if (info.sheets && info.sheets.length > 1) {
+      if (info.fileType === 'text') {
+        descEl.textContent = `Документ содержит ${info.paragraphCount || info.rowCount} абзацев. Найдено ${entityCount} категорий ПДн. Форматирование, шрифты и стили документа сохраняются без изменений.`;
+      } else if (info.sheets && info.sheets.length > 1) {
         const totalEntities = info.sheets.reduce((acc, s) => acc + (s.entities ? s.entities.length : 0), 0);
         descEl.textContent = `Книга Excel содержит ${info.sheets.length} листа. Всего найдено ${totalEntities} категорий ПДн. Переключайтесь между вкладками листов для настройки колонок каждого листа.`;
       } else {
@@ -323,12 +327,15 @@ async function loadFile(path) {
     // Render Entity Cards
     renderEntityCards();
 
-    // Render Table or PDF
+    // Render Table, Text or PDF
     if (info.fileType === 'table') {
       if (typeof renderTableHeaders === 'function') renderTableHeaders();
       if (typeof renderTableBody === 'function') renderTableBody();
       if (typeof renderModalTableBody === 'function') renderModalTableBody();
       if (typeof setDocMode === 'function') setDocMode('table');
+    } else if (info.fileType === 'text') {
+      renderTextSnippets();
+      if (typeof setDocMode === 'function') setDocMode('text');
     } else if (info.fileType === 'pdf') {
       const pdfSnippetEl = document.getElementById('pdf-snippet-view');
       if (pdfSnippetEl && info.pdfRedactedSnippet) {
@@ -339,6 +346,125 @@ async function loadFile(path) {
   } catch (err) {
     alert("Ошибка инспекции файла: " + err);
   }
+}
+
+function setTextViewMode(mode) {
+  currentTextViewMode = mode;
+  const btnAfter = document.getElementById('btn-text-show-after');
+  const btnBefore = document.getElementById('btn-text-show-before');
+
+  if (mode === 'after') {
+    if (btnAfter) btnAfter.className = 'px-3 py-1 bg-[#1C1917] text-white font-semibold transition cursor-pointer';
+    if (btnBefore) btnBefore.className = 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
+  } else {
+    if (btnBefore) btnBefore.className = 'px-3 py-1 bg-[#1C1917] text-white font-semibold transition cursor-pointer';
+    if (btnAfter) btnAfter.className = 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
+  }
+  renderTextSnippets();
+}
+
+function renderTextSnippets() {
+  const container = document.getElementById('text-snippets-container');
+  const countLabel = document.getElementById('text-snippet-count-label');
+  if (!container) return;
+
+  const snippets = (currentFileInfo && currentFileInfo.textSnippets) ? currentFileInfo.textSnippets : [];
+  if (countLabel) {
+    countLabel.textContent = `(${snippets.length} фрагментов)`;
+  }
+
+  if (snippets.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-8 text-xs text-[#78716C] font-mono">
+        В документе не обнаружено фрагментов персональных данных для замены
+      </div>
+    `;
+    return;
+  }
+
+  const typeLabels = {
+    'FIO': 'ФИО',
+    'SNILS': 'СНИЛС',
+    'PASSPORT': 'Паспорт РФ',
+    'PHONE': 'Телефон',
+    'INN': 'ИНН',
+    'BANK_CARD': 'Банковская карта',
+    'DATE': 'Дата',
+    'EMAIL': 'Email'
+  };
+
+  let html = '';
+  snippets.forEach((snip, idx) => {
+    const typeName = typeLabels[snip.type] || snip.type || 'ПДн';
+    const isAfter = currentTextViewMode === 'after';
+
+    html += `
+      <div class="pt-3.5 first:pt-0">
+        <div class="flex items-center justify-between mb-1.5 font-mono text-[11px]">
+          <div class="flex items-center space-x-2">
+            <span class="px-2 py-0.5 bg-[#FAF9F5] border border-[#E8E7E3] text-[#1C1917] font-semibold text-[10px] uppercase">
+              ${escapeHtml(typeName)}
+            </span>
+            <span class="text-[#78716C]">Фрагмент #${idx + 1}</span>
+          </div>
+          <span class="text-[10px] text-[#A8A29E]">${isAfter ? 'Обезличенный вид' : 'Исходный вид'}</span>
+        </div>
+
+        <div class="bg-white border border-[#E8E7E3] p-3 text-xs leading-relaxed text-[#1C1917] font-sans">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div class="space-y-1 flex-1">
+              <div class="text-[11px] text-[#78716C] font-mono">До деперсонализации:</div>
+              <div class="p-2 bg-rose-50/50 border border-rose-200/60 text-rose-900 rounded-none font-mono text-[11px]">
+                ${escapeHtml(snip.original)}
+              </div>
+            </div>
+            <div class="text-center text-[#78716C] font-bold text-xs shrink-0 self-center px-1">➔</div>
+            <div class="space-y-1 flex-1">
+              <div class="text-[11px] text-[#78716C] font-mono">После деперсонализации:</div>
+              <div class="p-2 bg-emerald-50/60 border border-emerald-200 text-emerald-950 rounded-none font-mono text-[11px]">
+                ${escapeHtml(snip.anonymized)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function getFormatDisplayName(fmt) {
+  switch ((fmt || '').toLowerCase()) {
+    case 'xlsx': return 'Таблица Microsoft Excel (.xlsx)';
+    case 'ods': return 'Таблица OpenDocument Spreadsheet (.ods)';
+    case 'csv': return 'Текстовая таблица CSV (.csv)';
+    case 'docx': return 'Документ Microsoft Word (.docx)';
+    case 'odt': return 'Документ OpenDocument Text (.odt)';
+    case 'pdf': return 'Документ PDF (.pdf)';
+    default: return (fmt || '').toUpperCase();
+  }
+}
+
+function updateFormatHint() {
+  const select = document.getElementById('exportFormatSelect');
+  const hint = document.getElementById('save-format-hint');
+  if (!select || !hint || !currentFileInfo) return;
+
+  const val = (select.value || '').toLowerCase();
+  const origExt = (currentFileInfo.extension || '').toLowerCase();
+
+  if (origExt === 'xls' || origExt === 'xlsb') {
+    hint.textContent = 'Бинарный формат Excel конвертируется в современный открытый стандарт .xlsx без потери данных.';
+  } else if (val === origExt) {
+    hint.textContent = 'Формат файла сохраняется. Все стили, структура и шрифты остаются исходными.';
+  } else {
+    hint.textContent = `Данные будут сохранены и преобразованы в формат .${val}.`;
+  }
+}
+
+function onExportFormatChange() {
+  updateFormatHint();
 }
 
 // ==================== SAVE OPTIONS & PROCESSING ====================
@@ -372,7 +498,24 @@ async function handleSaveProcessedFile() {
     return;
   }
 
-  // For tables, show Save Options Modal (key generation & password)
+  // Populate format selector
+  const formatSelect = document.getElementById('exportFormatSelect');
+  if (formatSelect && currentFileInfo) {
+    formatSelect.innerHTML = '';
+    const supported = (currentFileInfo.supportedExportFormats && currentFileInfo.supportedExportFormats.length > 0)
+      ? currentFileInfo.supportedExportFormats
+      : [currentFileInfo.extension || 'xlsx'];
+    supported.forEach(fmt => {
+      const opt = document.createElement('option');
+      opt.value = fmt;
+      opt.textContent = getFormatDisplayName(fmt);
+      formatSelect.appendChild(opt);
+    });
+    formatSelect.value = supported[0];
+    updateFormatHint();
+  }
+
+  // For tables and text docs, show Save Options Modal (format export, key generation & password)
   const modal = document.getElementById('save-options-modal');
   const fileNameEl = document.getElementById('save-modal-file-name');
   const fileMetaEl = document.getElementById('save-modal-file-meta');
@@ -381,8 +524,10 @@ async function handleSaveProcessedFile() {
     if (currentFileInfo.sheets && currentFileInfo.sheets.length > 1) {
       const totalR = currentFileInfo.sheets.reduce((acc, s) => acc + (s.rowCount || 0), 0);
       fileMetaEl.textContent = `${currentFileInfo.sheets.length} листов • ${totalR.toLocaleString('ru-RU')} строк`;
+    } else if (currentFileInfo.fileType === 'text') {
+      fileMetaEl.textContent = `${(currentFileInfo.paragraphCount || currentFileInfo.rowCount || 0).toLocaleString('ru-RU')} абзацев`;
     } else {
-      fileMetaEl.textContent = `${currentFileInfo.rowCount.toLocaleString('ru-RU')} строк`;
+      fileMetaEl.textContent = `${(currentFileInfo.rowCount || 0).toLocaleString('ru-RU')} строк`;
     }
   }
   if (modal) modal.classList.remove('hidden');
@@ -401,7 +546,13 @@ async function confirmAndSaveProcessedFile() {
 async function executeSaveFileDirect(createKey, keyPassword) {
   try {
     let destPath = "";
-    const ext = currentFileInfo ? currentFileInfo.extension : "xlsx";
+    const formatSelect = document.getElementById('exportFormatSelect');
+    let ext = currentFileInfo ? currentFileInfo.extension : "xlsx";
+    if (formatSelect && formatSelect.value) {
+      ext = formatSelect.value;
+    } else if (ext === "xls" || ext === "xlsb") {
+      ext = "xlsx";
+    }
     const baseName = currentFileInfo ? currentFileInfo.name.replace(/\.[^/.]+$/, "") : "data";
     const defaultName = `${baseName}_anonymized.${ext}`;
 

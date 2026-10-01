@@ -39,17 +39,37 @@ function setDocMode(mode) {
   const tabPdf = document.getElementById('tab-pdf');
   const contentTable = document.getElementById('mode-table-content');
   const contentPdf = document.getElementById('mode-pdf-content');
+  const tableBox = document.getElementById('table-inspection-box');
+  const textBox = document.getElementById('text-inspection-box');
 
   if (mode === 'table') {
     if (contentTable) contentTable.classList.remove('hidden');
     if (contentPdf) contentPdf.classList.add('hidden');
-    if (tabTable) tabTable.className = 'px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition cursor-pointer';
+    if (tableBox) tableBox.classList.remove('hidden');
+    if (textBox) textBox.classList.add('hidden');
+    if (tabTable) {
+      tabTable.className = 'px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition cursor-pointer';
+      tabTable.textContent = 'Выгрузка (Таблица)';
+    }
+    if (tabPdf) tabPdf.className = 'px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
+  } else if (mode === 'text') {
+    if (contentTable) contentTable.classList.remove('hidden');
+    if (contentPdf) contentPdf.classList.add('hidden');
+    if (tableBox) tableBox.classList.add('hidden');
+    if (textBox) textBox.classList.remove('hidden');
+    if (tabTable) {
+      tabTable.className = 'px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition cursor-pointer';
+      tabTable.textContent = 'Документ (Текст)';
+    }
     if (tabPdf) tabPdf.className = 'px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
   } else {
     if (contentTable) contentTable.classList.add('hidden');
     if (contentPdf) contentPdf.classList.remove('hidden');
     if (tabPdf) tabPdf.className = 'px-4 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition cursor-pointer';
-    if (tabTable) tabTable.className = 'px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
+    if (tabTable) {
+      tabTable.className = 'px-4 py-1.5 text-[#78716C] hover:text-[#1C1917] transition cursor-pointer';
+      tabTable.textContent = 'Таблицы / Тексты';
+    }
   }
 }
 
@@ -62,7 +82,8 @@ function handleDroppedFilePath(filePath) {
       loadRestoreKeyFile(filePath);
     }
   } else if (currentAppMode === 'restore') {
-    if (lower.endsWith('.xlsx') || lower.endsWith('.csv') || lower.endsWith('.tsv') || lower.endsWith('.xlsm')) {
+    const supportedRestore = ['.xlsx', '.xlsb', '.ods', '.xls', '.csv', '.tsv', '.docx', '.odt'];
+    if (supportedRestore.some(ext => lower.endsWith(ext))) {
       if (typeof loadRestoreDataFile === 'function') {
         loadRestoreDataFile(filePath);
       }

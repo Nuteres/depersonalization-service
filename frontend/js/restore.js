@@ -13,7 +13,7 @@ async function handleSelectRestoreInput() {
       // Demo fallback input
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.csv,.tsv,.xlsx,.xlsm';
+      input.accept = '.csv,.tsv,.xlsx,.xlsm,.xlsb,.xls,.ods,.docx,.odt';
       input.onchange = (e) => {
         const f = e.target.files[0];
         if (f) {
@@ -30,8 +30,9 @@ async function handleSelectRestoreInput() {
 async function loadRestoreDataFile(path) {
   if (!path) return;
   const ext = path.split('.').pop().toLowerCase();
-  if (ext !== 'xlsx' && ext !== 'csv' && ext !== 'tsv' && ext !== 'xlsm') {
-    alert("Пожалуйста, выберите файл таблицы (.xlsx, .csv, .tsv)");
+  const validExts = ['xlsx', 'csv', 'tsv', 'xlsm', 'xlsb', 'xls', 'ods', 'docx', 'odt'];
+  if (!validExts.includes(ext)) {
+    alert("Пожалуйста, выберите поддерживаемый файл данных (.xlsx, .ods, .csv, .docx, .odt)");
     return;
   }
 
@@ -57,7 +58,8 @@ async function loadRestoreDataFile(path) {
       if (info) {
         restoreInputInfo = info;
         const sizeKb = Math.round((info.size || 0) / 1024);
-        if (sizeEl) sizeEl.textContent = `${info.rowCount.toLocaleString('ru-RU')} строк • ${sizeKb} КБ`;
+        const countStr = info.paragraphCount ? `${info.paragraphCount.toLocaleString('ru-RU')} абз.` : `${info.rowCount.toLocaleString('ru-RU')} строк`;
+        if (sizeEl) sizeEl.textContent = `${countStr} • ${sizeKb} КБ`;
       }
     }
   } catch (e) {
