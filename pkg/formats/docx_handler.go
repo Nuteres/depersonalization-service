@@ -54,7 +54,7 @@ var (
 	docxSNILS11Digits    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{11})`)
 	docxPassport4_6      = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{4}\s+\d{6})`)
 	docxPassport2_2_6    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{2}\s+\d{2}\s+\d{6})`)
-	docxPassportPrefixed = regexp.MustCompile(`(?i)(?:паспорт(?:а| гражданина рф)?|серия|номер|№)[:\s]*([0-9\s]{10,13})`)
+	docxPassportPrefixed = regexp.MustCompile(`(?i)(?:паспорт(?:а| гражданина рф)?(?:\s*(?:серия|номер|№|серии|номеру|серия\s+и\s+номер))*|серия\s+и\s+номер\s+паспорта)[:\s]*([0-9\s]{10,13})`)
 	docxINN12            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{12})`)
 	docxINNPrefixed      = regexp.MustCompile(`(?i)(?:ИНН|INN)[:\s]*\b(\d{10,12})\b`)
 	docxPhone            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\+7|8)[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2})`)
@@ -693,17 +693,7 @@ func (h *DOCXHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w 
 				return nil, fmt.Errorf("failed to write zip entry %s: %w", f.Name, err)
 			}
 		} else {
-			fw, err := zw.CreateHeader(&f.FileHeader)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create untouched zip entry %s: %w", f.Name, err)
-			}
-			rc, err := f.Open()
-			if err != nil {
-				return nil, fmt.Errorf("failed to open untouched zip entry %s: %w", f.Name, err)
-			}
-			_, err = io.Copy(fw, rc)
-			_ = rc.Close()
-			if err != nil {
+			if err := zw.Copy(f); err != nil {
 				return nil, fmt.Errorf("failed to copy untouched zip entry %s: %w", f.Name, err)
 			}
 		}

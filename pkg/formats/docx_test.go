@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -514,3 +515,79 @@ func TestDOCX_EdgeCases(t *testing.T) {
 		t.Errorf("expected error with invalid zip in RestoreDOCX")
 	}
 }
+
+func TestDOCX_ContractNumberNotFlaggedAsPassport(t *testing.T) {
+	anon := anonymizer.New("test-salt-123")
+	h := formats.NewDOCXHandler(anon)
+
+	docXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:r><w:t>Договор № 1234567890 от 15.01.2023</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>`
+
+	data := createTestDocx(docXML)
+	r := bytes.NewReader(data)
+
+	_, entities, snippets, err := h.Inspect(r, int64(len(data)))
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	for _, e := range entities {
+		if e.Type == "PASSPORT" || e.Type == string(detector.EntityPassport) {
+			t.Errorf("contract number should NOT be detected as PASSPORT: %+v", snippets)
+		}
+	}
+}
+
+func TestDOCX_RestoreCascadePrevention(t *testing.T) {
+	// Suppose synthetic token A restores to an original string that contains synthetic token B.
+	// In a sequential replacer, token B inside original A would be replaced by original B (cascade).
+	// With single-pass replacement, token B inside original A is NOT replaced!
+	synthA := "TokenAlpha99"
+	origA := "RestoredAlpha with TokenBeta88 inside"
+	synthB := "TokenBeta88"
+	origB := "WRONG_CASCADE_REPLACED"
+
+	dm := depmap.New("cascade.docx")
+	dm.Put(synthA, origA)
+	dm.Put(synthB, origB)
+
+	docXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:r><w:t>Target text: %s</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>`, synthA)
+
+	data := createTestDocx(docXML)
+	var restoredBuf bytes.Buffer
+
+	restoredCount, err := formats.RestoreDOCX(context.Background(), bytes.NewReader(data), int64(len(data)), &restoredBuf, dm)
+	if err != nil {
+		t.Fatalf("RestoreDOCX failed: %v", err)
+	}
+
+	if restoredCount != 1 {
+		t.Errorf("expected exactly 1 restored entity (preventing cascade), got %d", restoredCount)
+	}
+
+	restoredDocXML, err := readZipFile(restoredBuf.Bytes(), "word/document.xml")
+	if err != nil {
+		t.Fatalf("failed to read restored doc: %v", err)
+	}
+
+	if strings.Contains(restoredDocXML, "WRONG_CASCADE_REPLACED") {
+		t.Errorf("cascade replacement occurred: %s", restoredDocXML)
+	}
+	if !strings.Contains(restoredDocXML, "TokenBeta88") {
+		t.Errorf("expected 'TokenBeta88' inside original text to remain intact: %s", restoredDocXML)
+	}
+}
+

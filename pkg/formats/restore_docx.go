@@ -112,25 +112,16 @@ func RestoreDOCX(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm
 
 		for _, p := range paras {
 			for _, n := range p.nodes {
-				curText := n.text
-				nodeModified := false
+				newText, count := replaceTokensSinglePass(n.text, pairs)
+				if count > 0 {
+					restoredCount += count
 
-				for _, p := range pairs {
-					if strings.Contains(curText, p.synth) {
-						c := strings.Count(curText, p.synth)
-						curText = strings.ReplaceAll(curText, p.synth, p.orig)
-						restoredCount += c
-						nodeModified = true
-					}
-				}
-
-				if nodeModified {
 					var replBytes []byte
-					if curText == "" {
+					if newText == "" {
 						replBytes = []byte("<w:t></w:t>")
 					} else {
 						var escBuf bytes.Buffer
-						_ = xml.EscapeText(&escBuf, []byte(curText))
+						_ = xml.EscapeText(&escBuf, []byte(newText))
 						replBytes = []byte(fmt.Sprintf(`<w:t xml:space="preserve">%s</w:t>`, escBuf.String()))
 					}
 
@@ -170,17 +161,7 @@ func RestoreDOCX(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm
 				return restoredCount, fmt.Errorf("failed to write zip entry %s: %w", f.Name, err)
 			}
 		} else {
-			fw, err := zw.CreateHeader(&f.FileHeader)
-			if err != nil {
-				return restoredCount, fmt.Errorf("failed to create untouched zip entry %s: %w", f.Name, err)
-			}
-			rc, err := f.Open()
-			if err != nil {
-				return restoredCount, fmt.Errorf("failed to open untouched zip entry %s: %w", f.Name, err)
-			}
-			_, err = io.Copy(fw, rc)
-			_ = rc.Close()
-			if err != nil {
+			if err := zw.Copy(f); err != nil {
 				return restoredCount, fmt.Errorf("failed to copy untouched zip entry %s: %w", f.Name, err)
 			}
 		}
@@ -192,3 +173,76 @@ func RestoreDOCX(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm
 
 	return restoredCount, nil
 }
+
+// replaceTokensSinglePass replaces synthetic tokens with original values in a single pass,
+// ensuring that restored original text is never subject to subsequent token matching (preventing cascade replacement).
+func replaceTokensSinglePass(text string, pairs []synthOrigPair) (string, int) {
+	if len(pairs) == 0 || len(text) == 0 {
+		return text, 0
+	}
+
+	type match struct {
+		start int
+		end   int
+		orig  string
+	}
+
+	var matches []match
+	for _, p := range pairs {
+		if len(p.synth) == 0 {
+			continue
+		}
+		start := 0
+		for {
+			idx := strings.Index(text[start:], p.synth)
+			if idx == -1 {
+				break
+			}
+			mStart := start + idx
+			mEnd := mStart + len(p.synth)
+			matches = append(matches, match{
+				start: mStart,
+				end:   mEnd,
+				orig:  p.orig,
+			})
+			start = mEnd
+		}
+	}
+
+	if len(matches) == 0 {
+		return text, 0
+	}
+
+	// Sort matches: earlier start first, then longer match first
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].start == matches[j].start {
+			return matches[i].end > matches[j].end
+		}
+		return matches[i].start < matches[j].start
+	})
+
+	// Filter overlapping matches
+	var deduped []match
+	lastEnd := -1
+	for _, m := range matches {
+		if m.start >= lastEnd {
+			deduped = append(deduped, m)
+			lastEnd = m.end
+		}
+	}
+
+	var b strings.Builder
+	b.Grow(len(text))
+	lastIdx := 0
+	restored := 0
+	for _, m := range deduped {
+		b.WriteString(text[lastIdx:m.start])
+		b.WriteString(m.orig)
+		lastIdx = m.end
+		restored++
+	}
+	b.WriteString(text[lastIdx:])
+
+	return b.String(), restored
+}
+
