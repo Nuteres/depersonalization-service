@@ -65,16 +65,19 @@ type DepMap struct {
 	OriginalFileName string            `json:"original_file_name"`
 	RecordsCount     int               `json:"records_count"`
 	Mapping          map[string]string `json:"mapping"` // synthetic -> original
+	Entities         map[string]string `json:"entities,omitempty"`
 }
 
 // New creates a new DepMap initialized with version 1 and current UTC timestamp.
 func New(originalFileName string) *DepMap {
+	m := make(map[string]string)
 	return &DepMap{
 		Version:          1,
 		CreatedAt:        time.Now().UTC(),
 		OriginalFileName: originalFileName,
 		RecordsCount:     0,
-		Mapping:          make(map[string]string),
+		Mapping:          m,
+		Entities:         m,
 	}
 }
 
@@ -84,6 +87,7 @@ func (dm *DepMap) Put(synthetic, original string) {
 		dm.Mapping = make(map[string]string)
 	}
 	dm.Mapping[synthetic] = original
+	dm.Entities = dm.Mapping
 	dm.RecordsCount = len(dm.Mapping)
 }
 
@@ -94,6 +98,11 @@ func (dm *DepMap) Get(synthetic string) (string, bool) {
 	}
 	val, ok := dm.Mapping[synthetic]
 	return val, ok
+}
+
+// LookupOriginal looks up the original value for a given synthetic value.
+func (dm *DepMap) LookupOriginal(synthetic string) (string, bool) {
+	return dm.Get(synthetic)
 }
 
 // SaveFile serializes the DepMap to zlib-compressed JSON, encrypts it with AES-256-GCM
@@ -239,6 +248,7 @@ func LoadFile(path string, password string) (*DepMap, error) {
 	if dm.Mapping == nil {
 		dm.Mapping = make(map[string]string)
 	}
+	dm.Entities = dm.Mapping
 
 	return &dm, nil
 }
