@@ -1,0 +1,326 @@
+package preview
+
+import (
+	"bufio"
+	"context"
+	"encoding/csv"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/xuri/excelize/v2"
+
+	"dep_service/internal/domain"
+	"dep_service/pkg/anonymizer"
+	"dep_service/pkg/formats"
+)
+
+const (
+	defaultSalt  = "152fz-secure-salt"
+	defaultLimit = 20
+	maxLimit     = 100
+)
+
+// PreviewService provides row-level preview and dynamic pagination for tabular files.
+type PreviewService struct{}
+
+// New creates a new PreviewService instance.
+func New() *PreviewService {
+	return &PreviewService{}
+}
+
+// GetTableRows fetches a window of preview rows starting at offset with limit for the default sheet.
+func (s *PreviewService) GetTableRows(ctx context.Context, path string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+	return s.GetSheetRows(ctx, path, "", offset, limit, salt, disabledCols)
+}
+
+// GetSheetRows fetches a paginated window of rows for a specific sheet in a workbook or tabular file.
+// It applies anonymization rules while respecting disabledCols (1-based column indices).
+func (s *PreviewService) GetSheetRows(ctx context.Context, path, sheetName string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	if strings.TrimSpace(path) == "" {
+		return nil, errors.New("file path cannot be empty")
+	}
+
+	stat, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("file not found: %w", err)
+	}
+	if stat.IsDir() {
+		return nil, fmt.Errorf("%w: path is a directory", domain.ErrUnsupportedFormat)
+	}
+
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+	if limit > maxLimit {
+		limit = maxLimit
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if strings.TrimSpace(salt) == "" {
+		salt = defaultSalt
+	}
+
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".csv", ".tsv":
+		return getCSVRows(ctx, path, offset, limit, salt, disabledCols)
+	case ".xlsx", ".xlsm", ".xltx", ".xltm":
+		return getXLSXRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols)
+	default:
+		return nil, fmt.Errorf("%w: динамическая подгрузка строк поддерживается только для таблиц: %s", domain.ErrUnsupportedFormat, ext)
+	}
+}
+
+func getXLSXRows(ctx context.Context, path string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+	return getXLSXRowsForSheet(ctx, path, "", offset, limit, salt, disabledCols)
+}
+
+func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	xl, err := excelize.OpenFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open xlsx file: %w", err)
+	}
+	defer xl.Close()
+
+	sheets := xl.GetSheetList()
+	if len(sheets) == 0 {
+		return nil, errors.New("xlsx file has no sheets")
+	}
+
+	sheetName := sheets[0]
+	if targetSheet != "" {
+		for _, s := range sheets {
+			if s == targetSheet {
+				sheetName = s
+				break
+			}
+		}
+	}
+
+	// Sample top rows to find header
+	sampleIter, err := xl.Rows(sheetName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read rows: %w", err)
+	}
+	var sample [][]string
+	for sampleIter.Next() && len(sample) < 40 {
+		if ctx != nil && ctx.Err() != nil {
+			_ = sampleIter.Close()
+			return nil, ctx.Err()
+		}
+		cols, err := sampleIter.Columns()
+		if err != nil {
+			break
+		}
+		sample = append(sample, cols)
+	}
+	_ = sampleIter.Close()
+
+	if len(sample) == 0 {
+		return nil, nil
+	}
+
+	headerIdx, headers := formats.FindHeaderRow(sample)
+	if len(headers) > 0 {
+		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
+	}
+	colTypes := formats.ResolveColumnTypes(headers, nil)
+
+	disabledMap := make(map[int]bool, len(disabledCols))
+	for _, col := range disabledCols {
+		disabledMap[col] = true
+	}
+
+	anon := anonymizer.New(salt)
+
+	rowsIter, err := xl.Rows(sheetName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate rows: %w", err)
+	}
+	defer rowsIter.Close()
+
+	targetSkip := headerIdx + 1 + offset
+	currentIdx := 0
+
+	var result []domain.PreviewRow
+	for rowsIter.Next() {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		currentIdx++
+		if currentIdx <= targetSkip {
+			continue
+		}
+
+		cols, err := rowsIter.Columns()
+		if err != nil {
+			break
+		}
+
+		before := make([]string, len(headers))
+		after := make([]string, len(headers))
+		for j := 0; j < len(headers); j++ {
+			val := ""
+			if j < len(cols) {
+				val = cols[j]
+			}
+			before[j] = val
+			var ct formats.ColumnType
+			col1Based := j + 1
+			if j < len(colTypes) && !disabledMap[col1Based] {
+				ct = colTypes[j]
+			}
+			after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+		}
+
+		result = append(result, domain.PreviewRow{
+			Index:  offset + len(result) + 1,
+			Before: before,
+			After:  after,
+		})
+
+		if len(result) >= limit {
+			break
+		}
+	}
+
+	return result, nil
+}
+
+func detectCSVDelimiter(r *bufio.Reader) rune {
+	comma := ','
+	peekBytes, _ := r.Peek(2048)
+	peekStr := strings.TrimPrefix(string(peekBytes), "\ufeff")
+	firstLine := peekStr
+	if idx := strings.IndexAny(peekStr, "\r\n"); idx != -1 {
+		firstLine = peekStr[:idx]
+	}
+	semiCount := strings.Count(firstLine, ";")
+	tabCount := strings.Count(firstLine, "\t")
+	commaCount := strings.Count(firstLine, ",")
+	if semiCount > commaCount && semiCount >= tabCount {
+		comma = ';'
+	} else if tabCount > commaCount && tabCount > semiCount {
+		comma = '\t'
+	}
+	return comma
+}
+
+func getCSVRows(ctx context.Context, path string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open csv file: %w", err)
+	}
+	defer file.Close()
+
+	bufReader := bufio.NewReader(file)
+	comma := detectCSVDelimiter(bufReader)
+
+	csvReader := csv.NewReader(bufReader)
+	csvReader.Comma = comma
+	csvReader.FieldsPerRecord = -1
+	csvReader.LazyQuotes = true
+
+	var sample [][]string
+	for len(sample) < 40 {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		rec, err := csvReader.Read()
+		if err != nil {
+			break
+		}
+		sample = append(sample, rec)
+	}
+
+	if len(sample) == 0 {
+		return nil, nil
+	}
+
+	headerIdx, headers := formats.FindHeaderRow(sample)
+	if len(headers) > 0 {
+		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
+	}
+	colTypes := formats.ResolveColumnTypes(headers, nil)
+
+	disabledMap := make(map[int]bool, len(disabledCols))
+	for _, col := range disabledCols {
+		disabledMap[col] = true
+	}
+
+	anon := anonymizer.New(salt)
+
+	// Seek back to start cleanly
+	_, err = file.Seek(0, io.SeekStart)
+	if err != nil {
+		return nil, fmt.Errorf("failed to seek csv file: %w", err)
+	}
+	bufReader.Reset(file)
+	csvReader = csv.NewReader(bufReader)
+	csvReader.Comma = comma
+	csvReader.FieldsPerRecord = -1
+	csvReader.LazyQuotes = true
+
+	targetSkip := headerIdx + 1 + offset
+	currentIdx := 0
+
+	var result []domain.PreviewRow
+	for {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		rec, err := csvReader.Read()
+		if err != nil {
+			break
+		}
+		currentIdx++
+		if currentIdx <= targetSkip {
+			continue
+		}
+
+		before := make([]string, len(headers))
+		after := make([]string, len(headers))
+		for j := 0; j < len(headers); j++ {
+			val := ""
+			if j < len(rec) {
+				val = rec[j]
+			}
+			before[j] = val
+			var ct formats.ColumnType
+			col1Based := j + 1
+			if j < len(colTypes) && !disabledMap[col1Based] {
+				ct = colTypes[j]
+			}
+			after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+		}
+
+		result = append(result, domain.PreviewRow{
+			Index:  offset + len(result) + 1,
+			Before: before,
+			After:  after,
+		})
+
+		if len(result) >= limit {
+			break
+		}
+	}
+
+	return result, nil
+}
