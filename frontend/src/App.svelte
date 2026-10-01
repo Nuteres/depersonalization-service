@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Header from './lib/components/layout/Header.svelte';
+  import DepersonalizeView from './lib/components/depersonalize/DepersonalizeView.svelte';
   import ProgressModal from './lib/components/common/ProgressModal.svelte';
   import SuccessModal from './lib/components/common/SuccessModal.svelte';
   import Toast from './lib/components/common/Toast.svelte';
   import { appState } from './lib/stores/appState.svelte';
   import { GetAppInfo, EventsOn } from './lib/api/wails';
+  import { loadFile } from './lib/services/fileLoader';
   import type { ProgressEventData } from './lib/types/domain';
 
   onMount(() => {
@@ -31,9 +33,20 @@
       }
     });
 
+    const unsubDrop = EventsOn('app:file-dropped', (filePath: string) => {
+      if (filePath) {
+        if (filePath.toLowerCase().endsWith('.depmap')) {
+          appState.setMode('restore');
+        } else if (appState.currentAppMode === 'depersonalize') {
+          loadFile(filePath);
+        }
+      }
+    });
+
     return () => {
       unsubProcess();
       unsubRestore();
+      unsubDrop();
     };
   });
 </script>
@@ -43,12 +56,7 @@
 
   <main class="flex-1 flex flex-col pt-8">
     {#if appState.currentAppMode === 'depersonalize'}
-      <div id="depersonalization-view" class="flex-1 flex flex-col gap-6">
-        <div class="border border-[#E8E7E3] bg-[#FAF9F5] p-8 text-center text-[#78716C]">
-          <p class="text-sm font-medium">Режим деперсонализации данных (152-ФЗ)</p>
-          <p class="text-xs text-[#A8A29E] mt-1">Вид деперсонализации будет подключен в следующем шаге.</p>
-        </div>
-      </div>
+      <DepersonalizeView />
     {:else}
       <div id="restoration-view" class="flex-1 flex flex-col gap-6">
         <div class="border border-[#E8E7E3] bg-[#FAF9F5] p-8 text-center text-[#78716C]">

@@ -45,3 +45,57 @@ body {
 .overscroll-contain {
   overscroll-behavior: contain !important;
 }
+
+.redaction-bar {
+  background-color: #18181B;
+  color: #FAFAFA;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  display: inline-block;
+  user-select: none;
+}
+
+/* Resizable Table & Columns */
+.resizable-table {
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.resizable-table th {
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.resizable-table td {
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 0;
+}
+
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 20;
+}
+
+.col-resizer:hover, .col-resizer.resizing {
+  background-color: #1C1917;
+}
+
+body.modal-open {
+  overflow: hidden !important;
+  height: 100vh !important;
+}
