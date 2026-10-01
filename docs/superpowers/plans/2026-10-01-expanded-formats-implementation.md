@@ -36,7 +36,7 @@
   - `func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, options map[string]interface{}) (*depmap.DepMap, error)`
   - `func RestoreODS(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm *depmap.DepMap) (int, error)`
 
-- [ ] **Step 1: Write failing tests for ODS inspection, anonymization, and reverse restoration**
+- [x] **Step 1: Write failing tests for ODS inspection, anonymization, and reverse restoration**
 
 Create `pkg/formats/ods_test.go`:
 ```go
@@ -152,12 +152,12 @@ func TestODSHandler_Lifecycle(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test -v ./pkg/formats -run TestODSHandler_Lifecycle`
 Expected: Compilation failure with "undefined: ODSHandler, RestoreODS"
 
-- [ ] **Step 3: Implement ODSHandler and RestoreODS**
+- [x] **Step 3: Implement ODSHandler and RestoreODS**
 
 Create `pkg/formats/ods_handler.go`:
 - Implement `ODSHandler` extracting `content.xml`, parsing `<table:table>`, `<table:table-row>`, `<table:table-cell>` using `encoding/xml`.
@@ -167,12 +167,12 @@ Create `pkg/formats/ods_handler.go`:
 Create `pkg/formats/restore_ods.go`:
 - Implement `RestoreODS` reading `content.xml`, checking cell texts against `dm.LookupOriginal`, replacing with originals, and writing restored `.ods`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test -v ./pkg/formats -run TestODSHandler`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pkg/formats/ods_handler.go pkg/formats/restore_ods.go pkg/formats/ods_test.go
@@ -200,7 +200,7 @@ git commit -m "feat(ods): implement OpenDocument Spreadsheet anonymizer and rest
   - `func (h *XLSHandler) Inspect(path string) ([]SheetInfo, error)`
   - `func (h *XLSHandler) ProcessToXLSX(ctx context.Context, path string, w io.Writer, options map[string]interface{}) (*depmap.DepMap, error)`
 
-- [ ] **Step 1: Add dependencies and update vendor**
+- [x] **Step 1: Add dependencies and update vendor**
 
 Run:
 ```bash
@@ -208,21 +208,21 @@ go get github.com/TsubasaBE/go-xlsb github.com/extrame/xls
 go mod vendor
 ```
 
-- [ ] **Step 2: Write tests for XLS and XLSB handlers**
+- [x] **Step 2: Write tests for XLS and XLSB handlers**
 
 Create `pkg/formats/xls_test.go` and `pkg/formats/xlsb_test.go` verifying row reading, PII column detection, anonymization, and writing valid `.xlsx` files that can be reopened with `excelize`.
 
-- [ ] **Step 3: Implement XLSBHandler and XLSHandler**
+- [x] **Step 3: Implement XLSBHandler and XLSHandler**
 
 - In `pkg/formats/xlsb_handler.go`: open workbook with `xlsb.Open(path)`, iterate sheets and rows, detect headers, anonymize cells, stream into `excelize.NewFile()`, save to writer.
 - In `pkg/formats/xls_handler.go`: open workbook with `xls.Open(path, "utf-8")`, iterate sheets and rows, anonymize, stream into `excelize.NewFile()`, save to writer.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `go test -v ./pkg/formats -run 'TestXLS|TestXLSB'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pkg/formats/xlsb_handler.go pkg/formats/xls_handler.go pkg/formats/xls_test.go pkg/formats/xlsb_test.go go.mod go.sum vendor/
@@ -247,7 +247,7 @@ git commit -m "feat(excel): add pure Go handlers for binary Excel (.xls and .xls
   - `func (h *DOCXHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, options map[string]interface{}) (*depmap.DepMap, error)`
   - `func RestoreDOCX(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm *depmap.DepMap) (int, error)`
 
-- [ ] **Step 1: Write failing tests for DOCX**
+- [x] **Step 1: Write failing tests for DOCX**
 
 Create `pkg/formats/docx_test.go` with synthetic Word document containing:
 - Paragraph with full name: `<w:p><w:r><w:t>Договор подписал Иванов Иван Иванович</w:t></w:r></w:p>`
@@ -255,12 +255,12 @@ Create `pkg/formats/docx_test.go` with synthetic Word document containing:
 - Table cell with phone: `<w:tbl>...<w:tc><w:p><w:r><w:t>+7 916 123-45-67</w:t></w:r></w:p></w:tc></w:tbl>`
 Verify that inspecting detects the entities, processing replaces them with synthetic values while keeping Word XML valid, and `RestoreDOCX` restores original values verbatim.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test -v ./pkg/formats -run TestDOCX`
 Expected: FAIL
 
-- [ ] **Step 3: Implement DOCXHandler and RestoreDOCX**
+- [x] **Step 3: Implement DOCXHandler and RestoreDOCX**
 
 - In `pkg/formats/docx_handler.go`:
   - Open zip with `zip.NewReader`.
@@ -270,12 +270,12 @@ Expected: FAIL
 - In `pkg/formats/restore_docx.go`:
   - Open zip, scan text nodes in XML documents, substitute reverse map tokens, repack.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test -v ./pkg/formats -run TestDOCX`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pkg/formats/docx_handler.go pkg/formats/restore_docx.go pkg/formats/docx_test.go
@@ -299,26 +299,26 @@ git commit -m "feat(docx): implement Microsoft Word OpenXML anonymizer and resto
   - `func (h *ODTHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, options map[string]interface{}) (*depmap.DepMap, error)`
   - `func RestoreODT(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm *depmap.DepMap) (int, error)`
 
-- [ ] **Step 1: Write failing tests for ODT**
+- [x] **Step 1: Write failing tests for ODT**
 
 Create `pkg/formats/odt_test.go` creating a valid `.odt` ZIP with `mimetype` and `content.xml` containing `<text:p>` and `<text:span>` with Russian PII (ФИО, СНИЛС, паспорт). Verify inspect, process, and restore.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test -v ./pkg/formats -run TestODT`
 Expected: FAIL
 
-- [ ] **Step 3: Implement ODTHandler and RestoreODT**
+- [x] **Step 3: Implement ODTHandler and RestoreODT**
 
 - In `pkg/formats/odt_handler.go`: parse `content.xml`, walk `<text:p>`, replace detected PII with deterministic synthetic values, record pairs in `depmap.DepMap`, write valid ODT zip.
 - In `pkg/formats/restore_odt.go`: substitute synthetic values back from `.depmap`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test -v ./pkg/formats -run TestODT`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pkg/formats/odt_handler.go pkg/formats/restore_odt.go pkg/formats/odt_test.go
@@ -340,7 +340,7 @@ git commit -m "feat(odt): implement OpenDocument Text anonymizer and restorer"
   - `ProcessFileTo(inputPath, salt, destPath, options)`: handles format conversion (e.g. `.ods` -> `.xlsx`, `.xlsb` -> `.xlsx`), disabled entity categories, and `.depmap` generation.
   - `RestoreFileTo(inputPath, keyPath, password, destPath)`: handles `.xlsx`, `.csv`, `.ods`, `.docx`, `.odt`.
 
-- [ ] **Step 1: Write failing integration tests for all new formats**
+- [x] **Step 1: Write failing integration tests for all new formats**
 
 In `cmd/app/wails_app_test.go`:
 - Test inspecting and processing `.ods`.
@@ -348,23 +348,23 @@ In `cmd/app/wails_app_test.go`:
 - Test inspecting and processing `.odt`.
 - Test reverse restoration of `.ods` and `.docx` using `.depmap`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `go test -v ./cmd/app -run 'TestApp_ExpandedFormats'`
 Expected: FAIL
 
-- [ ] **Step 3: Implement routing and handlers in wails_app.go**
+- [x] **Step 3: Implement routing and handlers in wails_app.go**
 
 - Expand `InspectFile` to detect extension and invoke `inspectODS`, `inspectXLSB`, `inspectXLS`, `inspectDOCX`, `inspectODT`.
 - Expand `ProcessFileTo` to handle format conversion and invoke the right processor.
 - Expand `RestoreFileTo` to route `.ods`, `.docx`, `.odt` to their respective restorers.
 
-- [ ] **Step 4: Run all app tests to verify they pass**
+- [x] **Step 4: Run all app tests to verify they pass**
 
 Run: `go test -v ./cmd/app`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/app/wails_app.go cmd/app/wails_app_test.go
@@ -382,19 +382,19 @@ git commit -m "feat(app): integrate expanded formats into Wails IPC backend"
 - Modify: `frontend/js/depersonalize.js`
 - Modify: `frontend/js/restore.js`
 
-- [ ] **Step 1: Update file dialog filters and state**
+- [x] **Step 1: Update file dialog filters and state**
 
 In `frontend/js/state.js` and `frontend/js/ui_common.js`:
 - Add support for `.ods`, `.xlsb`, `.xls`, `.docx`, `.odt` in file dialog filters and drag-and-drop detectors.
 
-- [ ] **Step 2: Add text document adaptive view in depersonalize.js**
+- [x] **Step 2: Add text document adaptive view in depersonalize.js**
 
 - If `fileInfo.fileType === 'text'`:
   - Hide sheet tabs and column table.
   - Display entity category toggles with counters (`ФИО: 3`, `Паспорт: 1`, `Телефон: 2`, etc.).
   - Display side-by-side or stacked snippet cards showing original vs anonymized context phrases.
 
-- [ ] **Step 3: Add format export selector in save modal**
+- [x] **Step 3: Add format export selector in save modal**
 
 - In save modal (`frontend/js/depersonalize.js` and `frontend/index.html`):
   - Populate `<select id="exportFormatSelect">` dynamically based on `fileInfo.supportedExportFormats`.
@@ -403,12 +403,12 @@ In `frontend/js/state.js` and `frontend/js/ui_common.js`:
   - For `.docx`: options `.docx`, `.odt`.
   - For `.odt`: options `.odt`, `.docx`.
 
-- [ ] **Step 4: Validate JavaScript syntax**
+- [x] **Step 4: Validate JavaScript syntax**
 
 Run: `node --check frontend/js/*.js`
 Expected: All files check clean without errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/
@@ -423,12 +423,12 @@ git commit -m "feat(ui): add adaptive text document preview and format export se
 - Verify: all unit tests across `pkg/anonymizer`, `pkg/detector`, `pkg/depmap`, `pkg/formats`, `cmd/app`
 - Verify: binary compilation for macOS, Windows, and Alt Linux
 
-- [ ] **Step 1: Run complete test suite**
+- [x] **Step 1: Run complete test suite**
 
 Run: `go test -v ./...`
 Expected: 100% tests pass.
 
-- [ ] **Step 2: Build desktop binaries**
+- [x] **Step 2: Build desktop binaries**
 
 Run:
 ```bash
@@ -437,11 +437,11 @@ make build-windows
 ```
 Expected: `bin/depersonalizer` (macOS Universal) and `bin/depersonalizer-windows-amd64.exe` built successfully.
 
-- [ ] **Step 3: Update documentation**
+- [x] **Step 3: Update documentation**
 
 Update `README.md` with the full list of supported formats (`.xlsx`, `.xlsb`, `.ods`, `.xls`, `.csv`, `.docx`, `.odt`, `.pdf`) and reversible restoration.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md bin/
