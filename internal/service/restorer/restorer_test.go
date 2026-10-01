@@ -525,6 +525,38 @@ func TestRestorer_Restore_DefaultOutputPath(t *testing.T) {
 	}
 }
 
+func TestRestore_SameInputAndOutputPath(t *testing.T) {
+	km := keymanager.New()
+	rest := restorer.New(km)
+	tmpDir := t.TempDir()
+
+	samePath := filepath.Join(tmpDir, "file.csv")
+	keyPath := filepath.Join(tmpDir, "file.depmap")
+
+	_ = os.WriteFile(samePath, []byte("col\nval\n"), 0644)
+	_ = km.CreateContainer(keyPath, "pass", "file.csv", map[string]string{"val": "orig"})
+
+	_, err := rest.Restore(context.Background(), domain.RestoreOptions{
+		InputPath:  samePath,
+		KeyPath:    keyPath,
+		Password:   "pass",
+		OutputPath: samePath,
+	}, nil)
+
+	if err == nil {
+		t.Fatalf("expected error when InputPath == OutputPath, got nil")
+	}
+	if !strings.Contains(err.Error(), "output path cannot be the same as input path") {
+		t.Errorf("expected error message to mention 'output path cannot be the same as input path', got %v", err)
+	}
+
+	// Verify input file was not truncated or modified
+	content, _ := os.ReadFile(samePath)
+	if string(content) != "col\nval\n" {
+		t.Errorf("expected input file content to be preserved, got %q", string(content))
+	}
+}
+
 func createTestZipArchive(files map[string]string) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

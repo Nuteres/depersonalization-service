@@ -71,6 +71,10 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 		destPath = filepath.Join(dir, base+"_restored"+ext)
 	}
 
+	if filepath.Clean(inputPath) == filepath.Clean(destPath) {
+		return nil, errors.New("output path cannot be the same as input path")
+	}
+
 	if ctx != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -110,6 +114,7 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 
 		restoredCount, err = formats.RestoreCSV(ctx, inFile, outFile, dm)
 		if err != nil {
+			_ = outFile.Close()
 			_ = os.Remove(destPath)
 			if errors.Is(err, context.Canceled) || (ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled)) {
 				return nil, ctx.Err()
@@ -153,6 +158,7 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 
 		restoredCount, err = formats.RestoreODS(ctx, inFile, inStat.Size(), outFile, dm)
 		if err != nil {
+			_ = outFile.Close()
 			_ = os.Remove(destPath)
 			if errors.Is(err, context.Canceled) || (ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled)) {
 				return nil, ctx.Err()
@@ -180,6 +186,7 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 
 		restoredCount, err = formats.RestoreDOCX(ctx, inFile, inStat.Size(), outFile, dm)
 		if err != nil {
+			_ = outFile.Close()
 			_ = os.Remove(destPath)
 			if errors.Is(err, context.Canceled) || (ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled)) {
 				return nil, ctx.Err()
@@ -207,6 +214,7 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 
 		restoredCount, err = formats.RestoreODT(ctx, inFile, inStat.Size(), outFile, dm)
 		if err != nil {
+			_ = outFile.Close()
 			_ = os.Remove(destPath)
 			if errors.Is(err, context.Canceled) || (ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled)) {
 				return nil, ctx.Err()
