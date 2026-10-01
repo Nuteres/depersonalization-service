@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -40,8 +41,15 @@ func createSampleXLSX(t *testing.T, dir, filename string, sheets map[string]int)
 	filePath := filepath.Join(dir, filename)
 
 	xl := excelize.NewFile()
+	names := make([]string, 0, len(sheets))
+	for name := range sheets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
 	first := true
-	for sheetName, numRows := range sheets {
+	for _, sheetName := range names {
+		numRows := sheets[sheetName]
 		if first {
 			xl.SetSheetName("Sheet1", sheetName)
 			first = false

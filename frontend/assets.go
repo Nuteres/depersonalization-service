@@ -4,5 +4,5 @@ import "embed"
 
 // Assets contains embedded frontend assets for Wails.
 //
-//go:embed index.html tailwind.min.js css js
+//go:embed all:dist
 var Assets embed.FS
