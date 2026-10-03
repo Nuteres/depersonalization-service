@@ -112,7 +112,7 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 		_ = sampleIter.Close()
 
 		headerRowIndex, headers := FindHeaderRow(sample)
-		colTypes := ResolveColumnTypes(headers, options)
+		colTypes := ResolveColumnTypesWithSamples(headers, sample[headerRowIndex+1:], options)
 
 		// Build map of disabled columns (1-based index)
 		disabledMap := make(map[int]bool)

@@ -92,17 +92,15 @@
 
   async function handleDrop(e: DragEvent) {
     e.preventDefault();
-    e.stopPropagation();
     isDraggingOver = false;
 
     if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      if (file) {
-        // In Wails / Chromium, file.path contains full local file system path
-        const filePath = (file as unknown as { path?: string }).path || file.name;
-        if (filePath) {
-          await loadFile(filePath);
-        }
+      const filePath = (file as unknown as { path?: string })?.path;
+      // Only load directly if filePath is an absolute path (e.g. on macOS / Electron)
+      // Otherwise, Wails OnFileDrop will receive the full OS path from the native drop handler.
+      if (filePath && (filePath.includes('/') || filePath.includes('\\'))) {
+        await loadFile(filePath);
       }
     }
   }
@@ -195,10 +193,10 @@
 
       <h2
         id="file-name-title"
-        class="text-2xl font-bold tracking-tight text-[#1C1917] flex items-center space-x-2 truncate"
+        class="text-xl sm:text-2xl font-bold tracking-tight text-[#1C1917] flex items-start gap-2 break-words"
       >
-        <span class="text-xl shrink-0">📄</span>
-        <span class="truncate" title={appState.currentFileInfo.name}>{appState.currentFileInfo.name}</span>
+        <span class="text-xl shrink-0 mt-0.5 select-none">📄</span>
+        <span class="break-words" title={appState.currentFileInfo.name}>{appState.currentFileInfo.name}</span>
       </h2>
 
       <p id="file-desc-text" class="text-sm text-[#78716C] mt-1 max-w-2xl leading-relaxed">

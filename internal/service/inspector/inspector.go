@@ -12,8 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/xuri/excelize/v2"
 
@@ -35,8 +37,10 @@ var (
 	rePhone            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\+7|8)[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2})`)
 	rePhonePrefixed    = regexp.MustCompile(`(?i)(?:тел(?:ефон)?|моб\.?|сот\.?)[:\s]*((?:\+7|8)?[0-9\s\-\(\)]{10,18})`)
 	reCard16           = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\d{4}[\s\-]?){4})`)
-	reFIOPatronymic    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична))`)
-	reFIOPrefixed      = regexp.MustCompile(`(?i)(?:сотрудник|клиент|пациент|фио|работник|физлицо)[:\s]*([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})`)
+	reFIOPatronymic    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:овича|евича|ича|овны|евны|ичны|овичу|евичу|ичу|овне|евне|ичне|овичем|евичем|ичем|овной|евной|ичной|овиче|евиче|иче|ович|евич|ич|овна|евна|ична|оглы|кызы|уулу|инична))`)
+	reFIOPrefixed      = regexp.MustCompile(`(?i:(?:сотрудник|клиент|пациент|фио|работник|физлицо|подписал|сдал|принял|директор|гендиректор|руководитель|представитель)[:\s]+)([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})`)
+	reFIOInitials1     = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ]\.\s*[А-ЯЁ]\.|\s+[А-ЯЁ]\.))`)
+	reFIOInitials2     = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:[А-ЯЁ]\.\s*[А-ЯЁ]\.|\s*[А-ЯЁ]\.)\s+[А-ЯЁ][а-яё]+)`)
 	rePage             = regexp.MustCompile(`/Type\s*/Page\b`)
 	reLen              = regexp.MustCompile(`/Length\s+(\d+)`)
 	reLit              = regexp.MustCompile(`\(([^)\\]*(?:\\.[^)\\]*)*)\)`)
@@ -102,6 +106,12 @@ func columnTypeDetails(colType formats.ColumnType) (typeName, desc, action strin
 	switch colType {
 	case formats.ColFIO:
 		return "FIO", "Русские фамилии, имена и отчества", "Синтетический профиль"
+	case formats.ColLastName:
+		return "LAST_NAME", "Русские фамилии", "Синтетическая фамилия"
+	case formats.ColFirstName:
+		return "FIRST_NAME", "Русские имена", "Синтетическое имя"
+	case formats.ColPatronymic:
+		return "PATRONYMIC", "Русские отчества", "Синтетическое отчество"
 	case formats.ColSNILS:
 		return "SNILS", "Страховые номера РФ", "Валидный модуль 101"
 	case formats.ColINN:
@@ -116,6 +126,12 @@ func columnTypeDetails(colType formats.ColumnType) (typeName, desc, action strin
 		return "DATE", "Даты и периоды", "Смещение ±30 дней"
 	case formats.ColEmail:
 		return "EMAIL", "Корпоративная и личная почта", "Псевдонимный адрес"
+	case formats.ColAddress:
+		return "ADDRESS", "Адреса проживания и регистрации", "Синтетический адрес"
+	case formats.ColGrade:
+		return "GRADE", "Грейды и квалификационные разряды", "Синтетический грейд"
+	case formats.ColEmployeeID:
+		return "EMPLOYEE_ID", "Табельные номера сотрудников", "Псевдонимный номер"
 	default:
 		return "UNKNOWN", "Обычное поле", "Без изменений"
 	}
@@ -185,7 +201,7 @@ func inspectCSV(ctx context.Context, path string) (*domain.FileInfo, error) {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
 
-	colTypes := formats.ResolveColumnTypes(headers, nil)
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sample[headerIdx+1:], nil)
 	var entities []domain.EntityInfo
 	for i, ct := range colTypes {
 		if ct != formats.ColUnknown {
@@ -325,7 +341,7 @@ func inspectSingleSheet(ctx context.Context, xl *excelize.File, sheetName string
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
 
-	colTypes := formats.ResolveColumnTypes(headers, nil)
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sample[headerIdx+1:], nil)
 	var entities []domain.EntityInfo
 	for i, ct := range colTypes {
 		if ct != formats.ColUnknown {
@@ -506,7 +522,7 @@ func buildSheetInfoFromRows(sheetName string, sheetIndex int, rowCount int, samp
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
 
-	colTypes := formats.ResolveColumnTypes(headers, nil)
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sampleRows[headerIdx+1:], nil)
 	var entities []domain.EntityInfo
 	for i, ct := range colTypes {
 		if ct != formats.ColUnknown {
@@ -721,6 +737,12 @@ func textEntityTypeName(t string) string {
 	switch t {
 	case "FIO":
 		return "ФИО"
+	case "LAST_NAME":
+		return "Фамилия"
+	case "FIRST_NAME":
+		return "Имя"
+	case "PATRONYMIC":
+		return "Отчество"
 	case "SNILS":
 		return "СНИЛС"
 	case "PASSPORT":
@@ -735,6 +757,12 @@ func textEntityTypeName(t string) string {
 		return "Дата"
 	case "EMAIL":
 		return "Email"
+	case "ADDRESS":
+		return "Адрес"
+	case "GRADE":
+		return "Грейд"
+	case "EMPLOYEE_ID":
+		return "Табельный номер"
 	default:
 		return t
 	}
@@ -744,6 +772,12 @@ func textEntityDetails(t string) (desc, action string) {
 	switch t {
 	case "FIO":
 		return "Русские фамилии, имена и отчества", "Синтетический профиль"
+	case "LAST_NAME":
+		return "Русские фамилии", "Синтетическая фамилия"
+	case "FIRST_NAME":
+		return "Русские имена", "Синтетическое имя"
+	case "PATRONYMIC":
+		return "Русские отчества", "Синтетическое отчество"
 	case "SNILS":
 		return "Страховые номера РФ (модуль 101)", "Валидный СНИЛС"
 	case "PASSPORT":
@@ -758,6 +792,12 @@ func textEntityDetails(t string) (desc, action string) {
 		return "Даты и периоды", "Смещение ±30 дней"
 	case "EMAIL":
 		return "Корпоративная и личная почта", "Псевдонимный адрес"
+	case "ADDRESS":
+		return "Адреса проживания и регистрации", "Синтетический адрес"
+	case "GRADE":
+		return "Грейды и квалификационные разряды", "Синтетический грейд"
+	case "EMPLOYEE_ID":
+		return "Табельные номера сотрудников", "Псевдонимный номер"
 	default:
 		return "Персональные данные", "Обезличивание"
 	}
@@ -781,7 +821,7 @@ func inspectDOCX(ctx context.Context, path string) (*domain.FileInfo, error) {
 
 	anon := anonymizer.New(defaultPreviewSalt)
 	handler := formats.NewDOCXHandler(anon)
-	paramCount, entitiesCounts, snippets, err := handler.Inspect(file, stat.Size())
+	paramCount, entitiesCounts, snippets, paragraphPreviews, err := handler.Inspect(file, stat.Size())
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect docx file: %w", err)
 	}
@@ -812,6 +852,7 @@ func inspectDOCX(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Entities:               entities,
 		Headers:                []string{"Тип сущности", "Количество", "Действие"},
 		TextSnippets:           snippets,
+		ParagraphPreviews:      paragraphPreviews,
 	}, nil
 }
 
@@ -833,7 +874,7 @@ func inspectODT(ctx context.Context, path string) (*domain.FileInfo, error) {
 
 	anon := anonymizer.New(defaultPreviewSalt)
 	handler := formats.NewODTHandler(anon)
-	paramCount, entitiesCounts, snippets, err := handler.Inspect(file, stat.Size())
+	paramCount, entitiesCounts, snippets, paragraphPreviews, err := handler.Inspect(file, stat.Size())
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect odt file: %w", err)
 	}
@@ -864,6 +905,7 @@ func inspectODT(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Entities:               entities,
 		Headers:                []string{"Тип сущности", "Количество", "Действие"},
 		TextSnippets:           snippets,
+		ParagraphPreviews:      paragraphPreviews,
 	}, nil
 }
 
@@ -890,12 +932,7 @@ func inspectPDF(ctx context.Context, path string) (*domain.FileInfo, error) {
 		pageCount = 1
 	}
 
-	extractedText := extractTextFromPDFBytes(ctx, pdfBytes)
-	if ctx != nil && ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	entities, snippetBefore, snippetAfter := detectPDFEntitiesAndSnippets(extractedText)
+	paragraphPreviews, snippets, entities, fullBefore, fullAfter := extractPDFParagraphs(ctx, pdfBytes)
 
 	return &domain.FileInfo{
 		Path:                   path,
@@ -905,17 +942,201 @@ func inspectPDF(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Format:                 "pdf",
 		SupportedExportFormats: []string{"pdf"},
 		Size:                   int64(len(pdfBytes)),
-		RowCount:               pageCount,
+		RowCount:               len(paragraphPreviews),
+		ParagraphCount:         len(paragraphPreviews),
 		PageCount:              pageCount,
 		Entities:               entities,
-		Headers:                []string{"Сущность", "Категория", "Режим защиты"},
-		PDFTextSnippet:         snippetBefore,
-		PDFRedactedSnippet:     snippetAfter,
+		Headers:                []string{"Тип сущности", "Количество", "Действие"},
+		TextSnippets:           snippets,
+		ParagraphPreviews:      paragraphPreviews,
+		PDFTextSnippet:         fullBefore,
+		PDFRedactedSnippet:     fullAfter,
 	}, nil
 }
 
-func extractTextFromPDFBytes(ctx context.Context, pdfBytes []byte) string {
-	var sb strings.Builder
+type pdfEntityMatch struct {
+	start      int
+	end        int
+	value      string
+	entityType string
+}
+
+func findPDFSensitiveMatches(text string) []pdfEntityMatch {
+	var matches []pdfEntityMatch
+
+	addRegexMatches := func(re *regexp.Regexp, submatchIdx int, entityType string, validateFunc func(string) bool) {
+		indexes := re.FindAllStringSubmatchIndex(text, -1)
+		for _, loc := range indexes {
+			var start, end int
+			if submatchIdx*2+1 < len(loc) && loc[submatchIdx*2] >= 0 {
+				start = loc[submatchIdx*2]
+				end = loc[submatchIdx*2+1]
+			} else {
+				start = loc[0]
+				end = loc[1]
+			}
+
+			val := text[start:end]
+			trimmed := strings.TrimSpace(val)
+			if trimmed == "" {
+				continue
+			}
+			leadTrim := strings.Index(val, trimmed)
+			if leadTrim > 0 {
+				start += leadTrim
+				val = trimmed
+				end = start + len(val)
+			}
+
+			if validateFunc == nil || validateFunc(val) {
+				matches = append(matches, pdfEntityMatch{
+					start:      start,
+					end:        end,
+					value:      val,
+					entityType: entityType,
+				})
+			}
+		}
+	}
+
+	// 1. SNILS
+	addRegexMatches(reSNILSFormatted, 1, string(detector.EntitySNILS), nil)
+	addRegexMatches(reSNILS11Digits, 1, string(detector.EntitySNILS), func(s string) bool {
+		return detector.ValidateSNILS(s)
+	})
+
+	// 2. Passport
+	addRegexMatches(rePassport4_6, 1, string(detector.EntityPassport), nil)
+	addRegexMatches(rePassport2_2_6, 1, string(detector.EntityPassport), nil)
+	addRegexMatches(rePassportPrefixed, 1, string(detector.EntityPassport), nil)
+
+	// 3. INN
+	addRegexMatches(reINN12, 1, string(detector.EntityINN), func(s string) bool {
+		return detector.ValidateINN12(s)
+	})
+	addRegexMatches(reINNPrefixed, 1, string(detector.EntityINN), nil)
+
+	// 4. Phone
+	addRegexMatches(rePhone, 1, string(detector.EntityPhone), nil)
+	addRegexMatches(rePhonePrefixed, 1, string(detector.EntityPhone), nil)
+
+	// 5. Bank Card
+	addRegexMatches(reCard16, 1, string(detector.EntityCard), nil)
+
+	// 6. FIO
+	addRegexMatches(reFIOPatronymic, 1, string(detector.EntityFIO), isFIOValid)
+	addRegexMatches(reFIOPrefixed, 1, string(detector.EntityFIO), isFIOValid)
+	addRegexMatches(reFIOInitials1, 1, string(detector.EntityFIO), nil)
+	addRegexMatches(reFIOInitials2, 1, string(detector.EntityFIO), nil)
+
+	if len(matches) <= 1 {
+		return matches
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].start == matches[j].start {
+			return matches[i].end > matches[j].end
+		}
+		return matches[i].start < matches[j].start
+	})
+
+	var deduped []pdfEntityMatch
+	lastEnd := -1
+	for _, m := range matches {
+		if m.start >= lastEnd {
+			deduped = append(deduped, m)
+			lastEnd = m.end
+		}
+	}
+	return deduped
+}
+
+func isFIOValid(s string) bool {
+	parts := strings.Fields(s)
+	if len(parts) < 2 || len(parts) > 3 {
+		return false
+	}
+	stopWords := map[string]bool{
+		"дает": true, "обязуется": true, "обязан": true, "вправе": true, "имеет": true,
+		"согласен": true, "поручает": true, "принимает": true, "согласие": true,
+		"обработку": true, "компании": true, "договора": true, "настоящий": true,
+		"трудовой": true, "договор": true, "общество": true, "ответственностью": true,
+		"стороны": true, "сторона": true, "работодатель": true, "работник": true,
+		"предмет": true, "оплата": true, "режим": true, "срок": true, "действие": true,
+		"защита": true, "персональных": true, "данных": true, "конфиденциальность": true,
+		"адреса": true, "реквизиты": true, "подписи": true, "отметка": true, "получении": true,
+		"экземпляра": true, "генеральный": true, "директор": true, "руководитель": true,
+		"ведущего": true, "разработчика": true, "программного": true, "обеспечения": true,
+		"условия": true, "рабочего": true, "времени": true, "отдыха": true, "гарантии": true,
+	}
+	for _, p := range parts {
+		if stopWords[strings.ToLower(p)] {
+			return false
+		}
+		subparts := strings.Split(p, "-")
+		for _, sp := range subparts {
+			runes := []rune(sp)
+			if len(runes) < 2 {
+				return false
+			}
+			if !unicode.IsUpper(runes[0]) {
+				return false
+			}
+			for _, r := range runes[1:] {
+				if !unicode.IsLower(r) {
+					return false
+				}
+			}
+			if stopWords[strings.ToLower(sp)] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func buildPDFParagraphSegments(text string, matches []pdfEntityMatch) []formats.TextParagraphSegment {
+	if len(matches) == 0 {
+		return []formats.TextParagraphSegment{
+			{Text: text, IsEntity: false},
+		}
+	}
+
+	var segments []formats.TextParagraphSegment
+	lastPos := 0
+
+	for _, m := range matches {
+		if m.start > lastPos {
+			prefix := text[lastPos:m.start]
+			segments = append(segments, formats.TextParagraphSegment{
+				Text:     prefix,
+				IsEntity: false,
+			})
+		}
+
+		segments = append(segments, formats.TextParagraphSegment{
+			Text:       formats.BlackoutMarker,
+			IsEntity:   true,
+			Type:       m.entityType,
+			Original:   m.value,
+			Anonymized: formats.BlackoutMarker,
+		})
+
+		lastPos = m.end
+	}
+
+	if lastPos < len(text) {
+		segments = append(segments, formats.TextParagraphSegment{
+			Text:     text[lastPos:],
+			IsEntity: false,
+		})
+	}
+
+	return segments
+}
+
+func extractPDFParagraphs(ctx context.Context, pdfBytes []byte) ([]formats.TextParagraphPreview, []formats.DocxTextSnippet, []domain.EntityInfo, string, string) {
+	var rawLines []string
 	idx := 0
 
 	for {
@@ -940,7 +1161,6 @@ func extractTextFromPDFBytes(ctx context.Context, pdfBytes []byte) string {
 		}
 		streamEnd := streamStart + ePos
 
-		// Check dict header for /FlateDecode and /Length
 		dictStart := idx + sPos - 250
 		if dictStart < 0 {
 			dictStart = 0
@@ -977,149 +1197,146 @@ func extractTextFromPDFBytes(ctx context.Context, pdfBytes []byte) string {
 			}
 		}
 
-		// Extract literal string contents ( ... )
-		litMatches := reLit.FindAllSubmatch(streamData, -1)
-		for _, m := range litMatches {
-			if len(m) > 1 {
-				s := string(m[1])
-				s = strings.ReplaceAll(s, `\n`, "\n")
-				s = strings.ReplaceAll(s, `\r`, "")
-				s = strings.ReplaceAll(s, `\t`, " ")
-				s = strings.ReplaceAll(s, `\(`, "(")
-				s = strings.ReplaceAll(s, `\)`, ")")
-				s = strings.ReplaceAll(s, `\\`, "\\")
-				sb.WriteString(s)
-				sb.WriteString(" ")
+		var curLine strings.Builder
+		streamStr := string(streamData)
+		lines := strings.Split(streamStr, "\n")
+		for _, rl := range lines {
+			rl = strings.TrimSpace(rl)
+			if strings.HasPrefix(rl, "%") {
+				continue
 			}
+			litMatches := reLit.FindAllStringSubmatch(rl, -1)
+			if len(litMatches) > 0 {
+				for _, m := range litMatches {
+					if len(m) > 1 {
+						s := m[1]
+						s = strings.ReplaceAll(s, `\n`, "\n")
+						s = strings.ReplaceAll(s, `\r`, "")
+						s = strings.ReplaceAll(s, `\t`, " ")
+						s = strings.ReplaceAll(s, `\(`, "(")
+						s = strings.ReplaceAll(s, `\)`, ")")
+						s = strings.ReplaceAll(s, `\\`, "\\")
+						s = strings.TrimSpace(s)
+						if s != "" {
+							if curLine.Len() > 0 {
+								curLine.WriteString(" ")
+							}
+							curLine.WriteString(s)
+						}
+					}
+				}
+			}
+			if strings.Contains(rl, "T*") || strings.Contains(rl, "ET") || strings.Contains(rl, "Td") || strings.Contains(rl, "TD") {
+				if curLine.Len() > 0 {
+					rawLines = append(rawLines, curLine.String())
+					curLine.Reset()
+				}
+			}
+		}
+		if curLine.Len() > 0 {
+			rawLines = append(rawLines, curLine.String())
+			curLine.Reset()
 		}
 
 		idx = streamEnd + len("endstream")
 	}
 
-	res := strings.TrimSpace(sb.String())
-	if res == "" {
-		res = string(pdfBytes)
+	if len(rawLines) == 0 {
+		rawLines = []string{string(pdfBytes)}
 	}
-	return res
-}
 
-func detectPDFEntitiesAndSnippets(text string) ([]domain.EntityInfo, string, string) {
-	hasFIO := reFIOPatronymic.MatchString(text) || reFIOPrefixed.MatchString(text)
-	hasSNILS := false
-	if reSNILSFormatted.MatchString(text) {
-		hasSNILS = true
-	} else {
-		for _, m := range reSNILS11Digits.FindAllStringSubmatch(text, -1) {
-			if len(m) > 1 && detector.ValidateSNILS(m[1]) {
-				hasSNILS = true
-				break
+	var paragraphPreviews []formats.TextParagraphPreview
+	var snippets []formats.DocxTextSnippet
+	entityTypeCounts := make(map[string]int)
+	var fullTextBefore strings.Builder
+	var fullTextAfter strings.Builder
+
+	globalSnippetIdx := 1
+	for pIdx, lineText := range rawLines {
+		matches := findPDFSensitiveMatches(lineText)
+		segments := buildPDFParagraphSegments(lineText, matches)
+
+		for _, m := range matches {
+			entityTypeCounts[m.entityType]++
+
+			ctxStart := m.start - 25
+			if ctxStart < 0 {
+				ctxStart = 0
+			}
+			ctxEnd := m.end + 25
+			if ctxEnd > len(lineText) {
+				ctxEnd = len(lineText)
+			}
+
+			snippets = append(snippets, formats.DocxTextSnippet{
+				Original:   m.value,
+				Anonymized: formats.BlackoutMarker,
+				Type:       m.entityType,
+			})
+			globalSnippetIdx++
+		}
+
+		paragraphPreviews = append(paragraphPreviews, formats.TextParagraphPreview{
+			Index:    pIdx + 1,
+			Segments: segments,
+		})
+
+		if pIdx > 0 {
+			fullTextBefore.WriteString("\n\n")
+			fullTextAfter.WriteString("\n\n")
+		}
+		fullTextBefore.WriteString(lineText)
+
+		var redPara strings.Builder
+		for _, seg := range segments {
+			if seg.IsEntity {
+				redPara.WriteString(formats.BlackoutMarker)
+			} else {
+				redPara.WriteString(seg.Text)
 			}
 		}
+		fullTextAfter.WriteString(redPara.String())
 	}
 
-	hasPassport := rePassport4_6.MatchString(text) || rePassport2_2_6.MatchString(text) || rePassportPrefixed.MatchString(text)
-	hasPhone := rePhone.MatchString(text) || rePhonePrefixed.MatchString(text)
-	hasINN := false
-	if reINNPrefixed.MatchString(text) {
-		hasINN = true
-	} else {
-		for _, m := range reINN12.FindAllStringSubmatch(text, -1) {
-			if len(m) > 1 && detector.ValidateINN12(m[1]) {
-				hasINN = true
-				break
-			}
-		}
-	}
-	hasCard := reCard16.MatchString(text)
-
+	entityOrder := []string{"FIO", "SNILS", "PASSPORT", "PHONE", "INN", "BANK_CARD", "CARD", "EMAIL", "ADDRESS", "DATE"}
 	var entities []domain.EntityInfo
 	cardIdx := 1
-	if hasFIO {
-		entities = append(entities, domain.EntityInfo{
-			ColumnIndex: cardIdx,
-			ColumnName:  "ФИО (PDF)",
-			Type:        "FIO",
-			Description: "Русские фамилии, имена и отчества",
-			Action:      "Черная векторная плашка",
-		})
-		cardIdx++
-	}
-	if hasSNILS {
-		entities = append(entities, domain.EntityInfo{
-			ColumnIndex: cardIdx,
-			ColumnName:  "СНИЛС (PDF)",
-			Type:        "SNILS",
-			Description: "Страховые номера РФ (модуль 101)",
-			Action:      "Черная векторная плашка",
-		})
-		cardIdx++
-	}
-	if hasPassport {
-		entities = append(entities, domain.EntityInfo{
-			ColumnIndex: cardIdx,
-			ColumnName:  "Паспорт РФ (PDF)",
-			Type:        "PASSPORT",
-			Description: "Серия и номер гражданина РФ",
-			Action:      "Черная векторная плашка",
-		})
-		cardIdx++
-	}
-	if hasPhone {
-		entities = append(entities, domain.EntityInfo{
-			ColumnIndex: cardIdx,
-			ColumnName:  "Телефон (PDF)",
-			Type:        "PHONE",
-			Description: "Мобильные номера РФ",
-			Action:      "Черная векторная плашка",
-		})
-		cardIdx++
-	}
-	if hasINN {
-		entities = append(entities, domain.EntityInfo{
-			ColumnIndex: cardIdx,
-			ColumnName:  "ИНН (PDF)",
-			Type:        "INN",
-			Description: "ИНН физического лица (алгоритм ФНС)",
-			Action:      "Черная векторная плашка",
-		})
-		cardIdx++
-	}
-	if hasCard {
-		entities = append(entities, domain.EntityInfo{
-			ColumnIndex: cardIdx,
-			ColumnName:  "Банковская карта (PDF)",
-			Type:        "BANK_CARD",
-			Description: "Номера банковских карт",
-			Action:      "Черная векторная плашка",
-		})
+
+	for _, et := range entityOrder {
+		count, ok := entityTypeCounts[et]
+		if ok && count > 0 {
+			desc, _ := textEntityDetails(et)
+			entities = append(entities, domain.EntityInfo{
+				ColumnIndex: cardIdx,
+				ColumnName:  fmt.Sprintf("%s (%d)", textEntityTypeName(et), count),
+				Type:        et,
+				Description: desc,
+				Action:      "Черная векторная плашка",
+			})
+			cardIdx++
+		}
 	}
 
-	snippetBefore := text
-	if len([]rune(snippetBefore)) > 600 {
-		snippetBefore = string([]rune(snippetBefore)[:600]) + "..."
-	}
-
-	snippetAfter := snippetBefore
-	redactWithRe := func(re *regexp.Regexp) {
-		snippetAfter = re.ReplaceAllStringFunc(snippetAfter, func(s string) string {
-			matches := re.FindStringSubmatch(s)
-			if len(matches) > 1 && len(matches[1]) > 0 {
-				return strings.Replace(s, matches[1], formats.BlackoutMarker, 1)
+	for et, count := range entityTypeCounts {
+		found := false
+		for _, ordered := range entityOrder {
+			if ordered == et {
+				found = true
+				break
 			}
-			return formats.BlackoutMarker
-		})
+		}
+		if !found && count > 0 {
+			desc, _ := textEntityDetails(et)
+			entities = append(entities, domain.EntityInfo{
+				ColumnIndex: cardIdx,
+				ColumnName:  fmt.Sprintf("%s (%d)", textEntityTypeName(et), count),
+				Type:        et,
+				Description: desc,
+				Action:      "Черная векторная плашка",
+			})
+			cardIdx++
+		}
 	}
 
-	redactWithRe(reSNILSFormatted)
-	redactWithRe(rePassport4_6)
-	redactWithRe(rePassport2_2_6)
-	redactWithRe(rePassportPrefixed)
-	redactWithRe(rePhone)
-	redactWithRe(rePhonePrefixed)
-	redactWithRe(reFIOPatronymic)
-	redactWithRe(reFIOPrefixed)
-	redactWithRe(reINNPrefixed)
-	redactWithRe(reCard16)
-
-	return entities, snippetBefore, snippetAfter
+	return paragraphPreviews, snippets, entities, fullTextBefore.String(), fullTextAfter.String()
 }

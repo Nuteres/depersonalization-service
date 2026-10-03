@@ -8,7 +8,7 @@
   import Toast from './lib/components/common/Toast.svelte';
   import { appState } from './lib/stores/appState.svelte';
   import { restoreState } from './lib/stores/restoreState.svelte';
-  import { GetAppInfo, EventsOn } from './lib/api/wails';
+  import { GetAppInfo, EventsOn, OnFileDrop } from './lib/api/wails';
   import { loadFile } from './lib/services/fileLoader';
   import type { ProgressEventData } from './lib/types/domain';
 
@@ -35,16 +35,41 @@
       }
     });
 
+    const handleDroppedFilePath = (filePath: string, x?: number, y?: number) => {
+      if (!filePath) return;
+
+      let isKeyZone = false;
+      let isDataZone = false;
+
+      if (typeof x === 'number' && typeof y === 'number') {
+        const elem = document.elementFromPoint(x, y);
+        isKeyZone = !!(elem?.closest('#restore-key-dropzone') || elem?.closest('#restore-key-info'));
+        isDataZone = !!(elem?.closest('#restore-data-dropzone') || elem?.closest('#restore-data-info'));
+      }
+
+      if (filePath.toLowerCase().endsWith('.depmap') || isKeyZone) {
+        appState.setMode('restore');
+        restoreState.loadKeyFile(filePath);
+      } else if (isDataZone || appState.currentAppMode === 'restore') {
+        restoreState.loadDataFile(filePath);
+      } else {
+        if (appState.currentAppMode !== 'depersonalize') {
+          appState.setMode('depersonalize');
+        }
+        loadFile(filePath);
+      }
+    };
+
+    // Wails v2 native file drop handler (provides full absolute OS filesystem paths on Windows & macOS)
+    const unsubNativeDrop = OnFileDrop((x: number, y: number, paths: string[]) => {
+      if (paths && paths.length > 0 && paths[0]) {
+        handleDroppedFilePath(paths[0], x, y);
+      }
+    });
+
     const unsubDrop = EventsOn('app:file-dropped', (filePath: string) => {
       if (filePath) {
-        if (filePath.toLowerCase().endsWith('.depmap')) {
-          appState.setMode('restore');
-          restoreState.loadKeyFile(filePath);
-        } else if (appState.currentAppMode === 'depersonalize') {
-          loadFile(filePath);
-        } else if (appState.currentAppMode === 'restore') {
-          restoreState.loadDataFile(filePath);
-        }
+        handleDroppedFilePath(filePath);
       }
     });
 
@@ -59,6 +84,7 @@
       unsubProcess();
       unsubRestore();
       unsubDrop();
+      unsubNativeDrop();
       window.removeEventListener('dragover', preventDefaults);
       window.removeEventListener('drop', preventDefaults);
     };

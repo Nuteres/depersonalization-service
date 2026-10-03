@@ -15,6 +15,7 @@ import (
 	"dep_service/internal/service/preview"
 	"dep_service/internal/service/processor"
 	"dep_service/internal/service/restorer"
+	"dep_service/internal/version"
 )
 
 func newTestApp() *desktop.DesktopApp {
@@ -29,8 +30,9 @@ func newTestApp() *desktop.DesktopApp {
 func TestDesktopAppInitialization(t *testing.T) {
 	app := newTestApp()
 	info := app.GetAppInfo()
-	if info["version"] != "v1.1.0" {
-		t.Errorf("expected v1.1.0, got %s", info["version"])
+	expectedVersion := "v" + version.Version
+	if info["version"] != expectedVersion {
+		t.Errorf("expected %s, got %s", expectedVersion, info["version"])
 	}
 	if info["os"] == "" {
 		t.Errorf("expected non-empty os, got empty")

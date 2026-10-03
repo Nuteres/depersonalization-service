@@ -1,9 +1,22 @@
 package formats
 
 import (
+	"regexp"
 	"strings"
+	"unicode"
 
 	"dep_service/pkg/anonymizer"
+	"dep_service/pkg/detector"
+)
+
+var (
+	reEmailPattern    = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	rePhonePattern    = regexp.MustCompile(`^(?:\+7|8)?[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}$`)
+	reDatePattern     = regexp.MustCompile(`^\d{2}[./-]\d{2}[./-]\d{4}$|^\d{4}[./-]\d{2}[./-]\d{2}$`)
+	reSNILSPattern    = regexp.MustCompile(`^\d{3}[-\s]\d{3}[-\s]\d{3}[-\s]\d{2}$|^\d{11}$`)
+	rePassportPattern = regexp.MustCompile(`^\d{4}\s+\d{6}$|^\d{10}$`)
+	rePostalPattern   = regexp.MustCompile(`\b\d{6}\b`)
+	reFIOPattern      = regexp.MustCompile(`^[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична|оглы|кызы)$`)
 )
 
 // ColumnType defines the detected or specified PII type for a column.
@@ -19,10 +32,33 @@ const (
 	ColCard
 	ColDate
 	ColEmail
+	ColLastName
+	ColFirstName
+	ColPatronymic
+	ColAddress
+	ColGrade
+	ColEmployeeID
 )
 
+func isNonPerson(h string) bool {
+	nonPersonKeywords := []string{
+		"штатн", "подразделен", "организац", "позици", "должност",
+		"функци", "блок", "филиал", "департамент", "управлен",
+		"отдел", "сектор", "группа", "проект", "продукт",
+		"систем", "объект", "тип", "вид", "категор", "статус",
+		"код", "номер", "id", "файла", "документ", "сервер",
+		"папк", "учетн", "обособлен", "узел", "маркер",
+		"семейств", "уровен",
+	}
+	for _, kw := range nonPersonKeywords {
+		if strings.Contains(h, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 // DetectColumnType analyzes a column header string and returns the identified PII type.
-// Russian column keywords: фио, снилс, инн, паспорт, телефон, карта, дата/срок/период.
 func DetectColumnType(header string) ColumnType {
 	h := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(header, "\ufeff")))
 	if h == "" {
@@ -67,33 +103,83 @@ func DetectColumnType(header string) ColumnType {
 		return ColPhone
 	}
 
-	// 7. Email / Corporate or Personal (checked before FIO to avoid 'email сотрудника' matching FIO)
+	// 7. Email / Corporate or Personal (or Login)
 	if strings.Contains(h, "почт") || strings.Contains(h, "email") ||
-		strings.Contains(h, "e-mail") || strings.Contains(h, "mail") {
+		strings.Contains(h, "e-mail") || strings.Contains(h, "mail") ||
+		strings.Contains(h, "логин") || strings.Contains(h, "login") {
 		return ColEmail
 	}
 
-	// 8. FIO / Person
-	// Direct name indicators
-	if strings.Contains(h, "фио") || strings.Contains(h, "ф.и.о") || strings.Contains(h, "fio") ||
-		strings.Contains(h, "фамили") || strings.Contains(h, "отчеств") ||
-		h == "имя" || strings.Contains(h, "имя ") || strings.Contains(h, "имя_") {
+	// 8. Employee ID / Personnel Number (Табельный номер)
+	if strings.Contains(h, "табельн") || strings.Contains(h, "таб.") ||
+		strings.Contains(h, "таб №") || strings.Contains(h, "таб no") ||
+		strings.Contains(h, "таб_номер") || strings.Contains(h, "employee id") ||
+		strings.Contains(h, "employee_id") || strings.Contains(h, "emp id") ||
+		strings.Contains(h, "персональный номер") || strings.Contains(h, "личный номер") {
+		return ColEmployeeID
+	}
+
+	// 9. Grade / Qualification level
+	if (strings.Contains(h, "грейд") || strings.Contains(h, "grade") ||
+		strings.Contains(h, "квалификационный разряд") || strings.Contains(h, "квалификационный уровень") ||
+		h == "разряд" || strings.HasPrefix(h, "разряд ") || strings.HasSuffix(h, " разряд")) &&
+		!strings.Contains(h, "должност") && !strings.Contains(h, "професси") {
+		return ColGrade
+	}
+
+	// 10. Address / Location (registration, living address, city, street, region)
+	if strings.Contains(h, "адрес") || strings.Contains(h, "address") ||
+		strings.Contains(h, "место жительства") || strings.Contains(h, "место регистрации") ||
+		strings.Contains(h, "место проживания") || strings.Contains(h, "фактический адрес") ||
+		strings.Contains(h, "юридический адрес") || strings.Contains(h, "прописк") ||
+		strings.Contains(h, "город") || strings.Contains(h, "населенный пункт") ||
+		strings.Contains(h, "улица") || strings.Contains(h, "регион") ||
+		(strings.Contains(h, "субъект") && strings.Contains(h, "рф") && !strings.Contains(h, "код")) {
+		if !strings.Contains(h, "телефон") && !strings.Contains(h, "тел") &&
+			!strings.Contains(h, "email") && !strings.Contains(h, "почт") &&
+			!strings.Contains(h, "ip") && !strings.Contains(h, "mac") {
+			return ColAddress
+		}
+	}
+
+	// 11. Specific Name Components (checked before full FIO and roles)
+	// Last Name / Surname
+	if (strings.Contains(h, "фамили") || strings.Contains(h, "surname") ||
+		strings.Contains(h, "last name") || strings.Contains(h, "lastname")) && !isNonPerson(h) {
+		return ColLastName
+	}
+
+	// Patronymic
+	if strings.Contains(h, "отчеств") || strings.Contains(h, "patronymic") ||
+		strings.Contains(h, "middle name") {
+		return ColPatronymic
+	}
+
+	// Full FIO (checked before First Name so "полное имя" or "full name" is classified as ColFIO)
+	if strings.Contains(h, "фио") || strings.Contains(h, "ф.и.о") || strings.Contains(h, "fio") {
 		return ColFIO
+	}
+	if (strings.Contains(h, "полное имя") || strings.Contains(h, "full name")) && !isNonPerson(h) {
+		return ColFIO
+	}
+
+	// First Name
+	if (h == "имя" || strings.HasPrefix(h, "имя ") || strings.HasPrefix(h, "имя_") ||
+		strings.HasSuffix(h, " имя") || strings.Contains(h, "first name") ||
+		strings.Contains(h, "firstname") || strings.Contains(h, "forename")) &&
+		!strings.Contains(h, "полное") && !isNonPerson(h) {
+		return ColFirstName
 	}
 
 	// Role/Person nouns: check they are not job titles, statuses, departments, IDs, or categories
 	if strings.Contains(h, "клиент") || strings.Contains(h, "сотрудник") ||
 		strings.Contains(h, "пациент") || strings.Contains(h, "работник") ||
 		strings.Contains(h, "физлицо") || strings.Contains(h, "физ. лицо") ||
-		strings.Contains(h, "учащ") || strings.Contains(h, "пользовател") {
-		isNonName := strings.Contains(h, "должност") || strings.Contains(h, "состояни") ||
-			strings.Contains(h, "статус") || strings.Contains(h, "категори") ||
-			strings.Contains(h, "номер") || strings.Contains(h, "табельн") ||
-			strings.Contains(h, "код") || strings.Contains(h, "отдел") ||
-			strings.Contains(h, "подразделени") || strings.Contains(h, "групп") ||
-			strings.Contains(h, "результат") || strings.Contains(h, "роль") ||
-			strings.Contains(h, "тип")
-		if !isNonName {
+		strings.Contains(h, "учащ") || strings.Contains(h, "пользовател") ||
+		strings.Contains(h, "автор") || strings.Contains(h, "создател") ||
+		strings.Contains(h, "куратор") || strings.Contains(h, "инициатор") ||
+		strings.Contains(h, "владелец") {
+		if !isNonPerson(h) || strings.Contains(h, "автор") || strings.Contains(h, "создател") || strings.Contains(h, "куратор") || strings.Contains(h, "инициатор") || strings.Contains(h, "владелец") {
 			return ColFIO
 		}
 	}
@@ -106,6 +192,12 @@ func ParseColumnType(s string) ColumnType {
 	switch strings.ToUpper(strings.TrimSpace(s)) {
 	case "FIO", "NAME":
 		return ColFIO
+	case "LAST_NAME", "SURNAME":
+		return ColLastName
+	case "FIRST_NAME":
+		return ColFirstName
+	case "PATRONYMIC":
+		return ColPatronymic
 	case "SNILS":
 		return ColSNILS
 	case "INN":
@@ -120,15 +212,187 @@ func ParseColumnType(s string) ColumnType {
 		return ColDate
 	case "EMAIL", "MAIL":
 		return ColEmail
+	case "ADDRESS", "ADDR":
+		return ColAddress
+	case "GRADE":
+		return ColGrade
+	case "EMPLOYEE_ID", "TABEL", "TAB_NUM":
+		return ColEmployeeID
 	default:
 		return ColUnknown
 	}
 }
 
+func isSampleObviouslyNotPersonName(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return false
+	}
+	// Check for path or hierarchy characters
+	if strings.ContainsAny(trimmed, `\/|>{}[]`) {
+		return true
+	}
+	lower := strings.ToLower(trimmed)
+	orgMarkers := []string{
+		"пао", "ооо", "зао", "ао", "филиал", "отдел", "департамент", "управление",
+		"группа", "бюро", "служба", "участок", "цех", "дирекция", "сегмент",
+		"блок", "сектор", "направление", "проект", "подразделение", "структурн",
+		"штатн", "должност", "руководитель", "специалист", "инженер", "менеджер", "директор",
+	}
+	for _, m := range orgMarkers {
+		if strings.Contains(lower, m) {
+			return true
+		}
+	}
+	// Check for system IDs with numbers and dots (e.g. "143777.1", "01302.0342")
+	if strings.Contains(trimmed, ".") {
+		for _, r := range trimmed {
+			if unicode.IsDigit(r) {
+				return true
+			}
+		}
+	}
+	// Check length - Russian first name is rarely > 30 chars; FIO rarely > 60 chars
+	if len([]rune(trimmed)) > 60 {
+		return true
+	}
+	return false
+}
+
+func isAddressSample(v string) bool {
+	lower := strings.ToLower(v)
+	markers := []string{"ул.", "улица", "пр-кт", "проспект", "пер.", "переулок", "д.", "дом ", "кв.", "квартира", "корп.", "стр.", "шоссе", "б-р"}
+	found := 0
+	for _, m := range markers {
+		if strings.Contains(lower, m) {
+			found++
+		}
+	}
+	if found >= 2 {
+		return true
+	}
+	if found >= 1 && (strings.Contains(lower, "обл") || strings.Contains(lower, "г.") || strings.Contains(lower, "город")) {
+		return true
+	}
+	// If 6-digit postal code, require at least one marker or city/region or federation keyword
+	if rePostalPattern.MatchString(v) && (found >= 1 || strings.Contains(lower, "обл") || strings.Contains(lower, "г.") || strings.Contains(lower, "город") || strings.Contains(lower, "россия") || strings.Contains(lower, "федерация")) {
+		return true
+	}
+	return false
+}
+
+// DetectColumnTypeWithSamples checks sample cell values (data-first) and header string to classify the column.
+func DetectColumnTypeWithSamples(header string, samples []string) ColumnType {
+	// 1. Data-First Analysis: inspect data samples for high-confidence structured PII patterns
+	// (Email, Phone, SNILS, INN-12, Passport, Address, Date, Russian Full FIO).
+	// When strong patterns match the sample data, data takes priority over arbitrary header names
+	// (supporting SQL query aliases, DWH columns, custom ERP/CRM headers, etc.).
+	if len(samples) > 0 {
+		emailCount := 0
+		phoneCount := 0
+		dateCount := 0
+		snilsCount := 0
+		passportCount := 0
+		innCount := 0
+		fioCount := 0
+		addressCount := 0
+		nonEmpty := 0
+
+		for _, s := range samples {
+			v := strings.TrimSpace(s)
+			if v == "" {
+				continue
+			}
+			nonEmpty++
+			if reEmailPattern.MatchString(v) {
+				emailCount++
+			}
+			if rePhonePattern.MatchString(v) {
+				phoneCount++
+			}
+			if reDatePattern.MatchString(v) {
+				dateCount++
+			}
+			if reSNILSPattern.MatchString(v) || detector.ValidateSNILS(v) {
+				snilsCount++
+			}
+			if rePassportPattern.MatchString(v) {
+				passportCount++
+			}
+			if detector.ValidateINN12(v) {
+				innCount++
+			}
+			if reFIOPattern.MatchString(v) {
+				fioCount++
+			}
+			if isAddressSample(v) {
+				addressCount++
+			}
+		}
+
+		if nonEmpty > 0 {
+			if emailCount > 0 && (emailCount*2 >= nonEmpty || emailCount >= 3) {
+				return ColEmail
+			}
+			if phoneCount > 0 && (phoneCount*2 >= nonEmpty || phoneCount >= 3) {
+				return ColPhone
+			}
+			if snilsCount > 0 && (snilsCount*2 >= nonEmpty || snilsCount >= 3) {
+				return ColSNILS
+			}
+			if innCount > 0 && (innCount*2 >= nonEmpty || innCount >= 3) {
+				return ColINN
+			}
+			if passportCount > 0 && (passportCount*2 >= nonEmpty || passportCount >= 3) {
+				return ColPassport
+			}
+			if fioCount > 0 && (fioCount*2 >= nonEmpty || fioCount >= 3) {
+				return ColFIO
+			}
+			if addressCount > 0 && (addressCount*2 >= nonEmpty || addressCount >= 3) {
+				return ColAddress
+			}
+			if dateCount > 0 && (dateCount*2 >= nonEmpty || dateCount >= 3) {
+				return ColDate
+			}
+		}
+	}
+
+	// 2. Header-Based Analysis: If data samples didn't match structured patterns (e.g. single-word names,
+	// employee IDs, grades, or empty samples), analyze the column header.
+	ct := DetectColumnType(header)
+
+	// If header heuristic identified a person name (First/Last/Patronymic/FIO), validate against samples.
+	// Columns like "Имя штатной единицы" or "Имя структурного подразделения" contain digits or org words.
+	if ct == ColFirstName || ct == ColLastName || ct == ColPatronymic || ct == ColFIO {
+		invalidCount := 0
+		nonEmpty := 0
+		for _, s := range samples {
+			v := strings.TrimSpace(s)
+			if v == "" {
+				continue
+			}
+			nonEmpty++
+			if isSampleObviouslyNotPersonName(v) {
+				invalidCount++
+			}
+		}
+		if nonEmpty > 0 && invalidCount > 0 {
+			ct = ColUnknown
+		}
+	}
+
+	return ct
+}
+
 // ResolveColumnTypes determines the ColumnType for each column header,
 // taking into account any manual overrides passed in options["columns"].
-// Strips UTF-8 BOM if present so lookups in options["columns"] match cleanly.
 func ResolveColumnTypes(headers []string, options map[string]interface{}) []ColumnType {
+	return ResolveColumnTypesWithSamples(headers, nil, options)
+}
+
+// ResolveColumnTypesWithSamples determines ColumnTypes considering headers, sample rows, and options overrides.
+func ResolveColumnTypesWithSamples(headers []string, sampleRows [][]string, options map[string]interface{}) []ColumnType {
 	colTypes := make([]ColumnType, len(headers))
 
 	var colMapByName map[string]string
@@ -162,7 +426,17 @@ func ResolveColumnTypes(headers []string, options map[string]interface{}) []Colu
 				continue
 			}
 		}
-		colTypes[i] = DetectColumnType(h)
+
+		var samples []string
+		if len(sampleRows) > 0 {
+			for _, row := range sampleRows {
+				if i < len(row) && strings.TrimSpace(row[i]) != "" {
+					samples = append(samples, strings.TrimSpace(row[i]))
+				}
+			}
+		}
+
+		colTypes[i] = DetectColumnTypeWithSamples(h, samples)
 	}
 
 	return colTypes
@@ -177,6 +451,12 @@ func AnonymizeCell(anon *anonymizer.Anonymizer, colType ColumnType, val string, 
 	switch colType {
 	case ColFIO:
 		return anon.GenerateFIO(val)
+	case ColLastName:
+		return anon.GenerateLastName(val)
+	case ColFirstName:
+		return anon.GenerateFirstName(val)
+	case ColPatronymic:
+		return anon.GeneratePatronymic(val)
 	case ColSNILS:
 		return anon.GenerateSNILS(val)
 	case ColINN:
@@ -191,6 +471,12 @@ func AnonymizeCell(anon *anonymizer.Anonymizer, colType ColumnType, val string, 
 		return anon.PerturbDate(val, dateRange)
 	case ColEmail:
 		return anon.GenerateEmail(val)
+	case ColAddress:
+		return anon.GenerateAddress(val)
+	case ColGrade:
+		return anon.GenerateGrade(val)
+	case ColEmployeeID:
+		return anon.GenerateEmployeeID(val)
 	default:
 		return val
 	}

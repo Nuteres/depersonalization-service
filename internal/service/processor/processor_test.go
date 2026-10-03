@@ -121,10 +121,10 @@ func TestProcessor_Process_CSV_ProgressReporting(t *testing.T) {
 	inPath := filepath.Join(tmpDir, "sample.csv")
 	outPath := filepath.Join(tmpDir, "sample_anonymized.csv")
 
-	csvContent := `ФИО,СНИЛС,ИНН,Телефон,Город
-Иванов Иван Иванович,112-233-445 95,500100732259,+7 999 123-45-67,Москва
-Петрова Анна Сергеевна,112-233-445 95,500100732259,+7 916 234-56-78,Санкт-Петербург
-Сидоров Сидор Сидорович,112-233-445 95,500100732259,+7 925 345-67-89,Казань
+	csvContent := `ФИО,СНИЛС,ИНН,Телефон,Статус
+Иванов Иван Иванович,112-233-445 95,500100732259,+7 999 123-45-67,Активен
+Петрова Анна Сергеевна,112-233-445 95,500100732259,+7 916 234-56-78,Активен
+Сидоров Сидор Сидорович,112-233-445 95,500100732259,+7 925 345-67-89,Активен
 `
 	if err := os.WriteFile(inPath, []byte(csvContent), 0644); err != nil {
 		t.Fatalf("failed to write input csv: %v", err)
@@ -196,7 +196,7 @@ func TestProcessor_Process_CSV_ProgressReporting(t *testing.T) {
 	}
 
 	// Check header unchanged
-	if rows[0][0] != "ФИО" || rows[0][4] != "Город" {
+	if rows[0][0] != "ФИО" || rows[0][4] != "Статус" {
 		t.Errorf("header altered: %v", rows[0])
 	}
 	// Check row 1 anonymized
@@ -204,8 +204,8 @@ func TestProcessor_Process_CSV_ProgressReporting(t *testing.T) {
 		t.Errorf("expected FIO to be anonymized, but was unchanged: %s", rows[1][0])
 	}
 	// Check unanonymized column
-	if rows[1][4] != "Москва" {
-		t.Errorf("expected City to be unchanged 'Москва', got: %s", rows[1][4])
+	if rows[1][4] != "Активен" {
+		t.Errorf("expected Status to be unchanged 'Активен', got: %s", rows[1][4])
 	}
 }
 

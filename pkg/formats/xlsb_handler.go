@@ -256,7 +256,7 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 		if len(headers) > 0 {
 			headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 		}
-		colTypes := ResolveColumnTypes(headers, options)
+		colTypes := ResolveColumnTypesWithSamples(headers, sample[headerRowIndex+1:], options)
 
 		// Build map of disabled columns (1-based index)
 		disabledMap := BuildDisabledMap(sheetName, options)

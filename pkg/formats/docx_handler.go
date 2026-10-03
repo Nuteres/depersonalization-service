@@ -33,6 +33,21 @@ type DocxTextSnippet struct {
 	Type       string `json:"type"`
 }
 
+// TextParagraphSegment represents a piece of text inside a paragraph, indicating if it was anonymized.
+type TextParagraphSegment struct {
+	Text       string `json:"text"`
+	IsEntity   bool   `json:"isEntity"`
+	Type       string `json:"type,omitempty"`
+	Original   string `json:"original,omitempty"`
+	Anonymized string `json:"anonymized,omitempty"`
+}
+
+// TextParagraphPreview holds the segmented text of a paragraph for inline Word-like document preview.
+type TextParagraphPreview struct {
+	Index    int                    `json:"index"`
+	Segments []TextParagraphSegment `json:"segments"`
+}
+
 // DOCXHandler handles inspection and anonymization of Microsoft Word (.docx) documents.
 type DOCXHandler struct {
 	Anon *anonymizer.Anonymizer
@@ -52,19 +67,35 @@ func (h *DOCXHandler) SupportedExtensions() []string {
 var (
 	docxSNILSFormatted   = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{3}[-\s]\d{3}[-\s]\d{3}[-\s]\d{2})`)
 	docxSNILS11Digits    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{11})`)
-	docxPassport4_6      = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{4}\s+\d{6})`)
-	docxPassport2_2_6    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{2}\s+\d{2}\s+\d{6})`)
-	docxPassportPrefixed = regexp.MustCompile(`(?i)(?:паспорт(?:а| гражданина рф)?(?:\s*(?:серия|номер|№|серии|номеру|серия\s+и\s+номер))*|серия\s+и\s+номер\s+паспорта)[:\s]*([0-9\s]{10,13})`)
+	docxSNILSPrefixed    = regexp.MustCompile(`(?i)(?:СНИЛС|SNILS)[:\s№]*(\d{3}[-\s]\d{3}[-\s]\d{3}[-\s]\d{2}|\d{11})`)
+
+	docxPassport4_6      = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{4}[\s\-]+(?:№|N|no\.)?\s*\d{6})`)
+	docxPassport2_2_6    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{2}\s+\d{2}\s*(?:№|N|no\.)?\s*\d{6})`)
+	docxPassportPrefixed = regexp.MustCompile(`(?i)(?:паспорт(?:а| гражданина рф)?(?:\s*(?:серия|номер|№|N|серии|номеру|серия\s+и\s+номер))*|серия\s+и\s+номер\s+паспорта)[:\s]*([0-9\s№Nno\.\-]{9,24})`)
+	docxPassportDeptCode = regexp.MustCompile(`(?i)(?:код\s+подразделения|код\s+подр\.?|код\s+подр)[:\s№]*(\d{3}[\s\-]\d{3})`)
+
 	docxINN12            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{12})`)
-	docxINNPrefixed      = regexp.MustCompile(`(?i)(?:ИНН|INN)[:\s]*\b(\d{10,12})\b`)
+	docxINNPrefixed      = regexp.MustCompile(`(?i)(?:ИНН|INN)[:\s№]*\b(\d{10,12})\b`)
+
 	docxPhone            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\+7|8)[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2})`)
-	docxPhonePrefixed    = regexp.MustCompile(`(?i)(?:тел(?:ефон)?|моб\.?|сот\.?)[:\s]*((?:\+7|8)?[0-9\s\-\(\)]{10,18})`)
+	docxPhonePrefixed    = regexp.MustCompile(`(?i)(?:тел(?:ефон)?|моб\.?|сот\.?|доп\.?\s*тел\.?)[:\s]*((?:\+7|8)?[0-9\s\-\(\)]{10,18})`)
+
 	docxCard16           = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\d{4}[\s\-]?){4})`)
+	docxBankAccount      = regexp.MustCompile(`(?i)(?:р/с|р/сч|расчетный\s+счет|расчётный\s+счёт|номер\s+счета|лицевой\s+счет|л/с|к/с|к/сч|корр(?:еспондентский)?\.?\s+счет|счет|счёт)[:\s№]*([0-9]{20})`)
+	docxAccountStandalone= regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:40[5-8]|30[1-2]|42[3-6])\d{17})`)
+
 	docxEmail            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})`)
-	docxFIOPatronymic    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична))`)
-	docxFIOPrefixed      = regexp.MustCompile(`(?i)(?:сотрудник|клиент|пациент|фио|работник|физлицо|подписал)[:\s]+([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})`)
+
+	docxFIOPatronymic    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична|оглы|кызы|уулу|инична))`)
+	docxFIOPrefixed      = regexp.MustCompile(`(?i:(?:сотрудник|клиент|пациент|фио|работник|физлицо|подписал|сдал|принял|ип|арендодатель|арендатор|(?:гражданин|гражданка)(?:\s+(?:российской\s+федерации|рф))?|предприниматель|директор|гендиректор|руководитель|представитель)[:\s]+)([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})`)
+	docxFIOInitials1     = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ]\.\s*[А-ЯЁ]\.|\s+[А-ЯЁ]\.))`)
+	docxFIOInitials2     = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:[А-ЯЁ]\.\s*[А-ЯЁ]\.|\s*[А-ЯЁ]\.)\s+[А-ЯЁ][а-яё]+)`)
+
 	docxDateDMY          = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{2}\.\d{2}\.\d{4})`)
 	docxDateYMD          = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{4}-\d{2}-\d{2})`)
+
+	docxAddressPrefixed  = regexp.MustCompile(`(?i:(?:зарегистрирован(?:ный|ная|о|ы)?(?:\s+по\s+адресу)?|проживающ(?:ий|ая|ее|ие)?(?:\s+по\s+адресу)?|адрес\s+(?:регистрации|проживания|прописки|местонахождения|объекта|помещения|рег\.?|прож\.?)|фактический\s+адрес|юридический\s+адрес|место\s+(?:жительства|нахождения|регистрации)|по\s+адресу|адрес)[:\s]+)([^\n\r\t;]{12,180})`)
+	docxAddressPostal    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{6},\s*(?:г\.|гор\.|город|обл\.|область|край|респ\.|республика)[^\n\r\t;]{10,180})`)
 )
 
 type docxMatch struct {
@@ -90,6 +121,39 @@ func cleanDigits(s string) string {
 		}
 	}
 	return b.String()
+}
+
+func trimDocxAddress(s string) string {
+	s = strings.TrimSpace(s)
+	stopMarkers := []string{
+		", ИНН", ", инн", ", ОГРН", ", огрн", ", СНИЛС", ", снилс",
+		", тел", ", Тел", ", email", ", Email", ", E-mail", ", e-mail",
+		", паспорт", ", Паспорт", ", дата", ", Дата", ", код", ", Код",
+		", именуем", ", Именуем", ", р/с", ", Р/с", ", счет", ", Счет",
+		", проживающ", ", Проживающ", ", зарегистрирован", ", Зарегистрирован",
+		", адрес", ", Адрес", ", место", ", Место",
+	}
+	for _, marker := range stopMarkers {
+		if idx := strings.Index(s, marker); idx != -1 {
+			s = strings.TrimSpace(s[:idx])
+		}
+	}
+	return strings.TrimRight(s, " ,.-—\t")
+}
+
+func isDocxAddressValid(s string) bool {
+	s = trimDocxAddress(s)
+	if len(s) < 10 {
+		return false
+	}
+	lower := strings.ToLower(s)
+	markers := []string{"ул.", "улица", "пр-кт", "проспект", "пер.", "переулок", "д.", "дом", "кв.", "квартира", "корп.", "стр.", "шоссе", "б-р", "офис", "наб.", "набережная", "помещение"}
+	for _, m := range markers {
+		if strings.Contains(lower, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // findDocxSensitiveMatches locates sensitive entities in paragraph text.
@@ -118,6 +182,11 @@ func findDocxSensitiveMatches(text string) []docxMatch {
 			end = start + len(trimmed)
 			val = trimmed
 
+			if entityType == string(detector.EntityAddress) {
+				val = trimDocxAddress(val)
+				end = start + len(val)
+			}
+
 			if !isDocxBoundaryAfter(text, end) {
 				continue
 			}
@@ -132,9 +201,15 @@ func findDocxSensitiveMatches(text string) []docxMatch {
 		}
 	}
 
-	// 1. Bank card (16 digits)
+	// 1. Bank card & 20-digit Account (Priority 1)
 	addRegexMatches(docxCard16, 1, string(detector.EntityCard), func(s string) bool {
 		return len(cleanDigits(s)) == 16
+	})
+	addRegexMatches(docxBankAccount, 1, string(detector.EntityCard), func(s string) bool {
+		return len(cleanDigits(s)) == 20
+	})
+	addRegexMatches(docxAccountStandalone, 1, string(detector.EntityCard), func(s string) bool {
+		return len(cleanDigits(s)) == 20
 	})
 
 	// 2. SNILS
@@ -143,6 +218,9 @@ func findDocxSensitiveMatches(text string) []docxMatch {
 	})
 	addRegexMatches(docxSNILS11Digits, 1, string(detector.EntitySNILS), func(s string) bool {
 		return detector.ValidateSNILS(s)
+	})
+	addRegexMatches(docxSNILSPrefixed, 1, string(detector.EntitySNILS), func(s string) bool {
+		return len(cleanDigits(s)) == 11
 	})
 
 	// 3. Email
@@ -162,9 +240,12 @@ func findDocxSensitiveMatches(text string) []docxMatch {
 	addRegexMatches(docxINN12, 1, string(detector.EntityINN), func(s string) bool {
 		return detector.ValidateINN12(s)
 	})
-	addRegexMatches(docxINNPrefixed, 1, string(detector.EntityINN), nil)
+	addRegexMatches(docxINNPrefixed, 1, string(detector.EntityINN), func(s string) bool {
+		d := cleanDigits(s)
+		return len(d) == 10 || len(d) == 12
+	})
 
-	// 6. Passport
+	// 6. Passport & Dept Code
 	addRegexMatches(docxPassport4_6, 1, string(detector.EntityPassport), func(s string) bool {
 		return len(cleanDigits(s)) == 10
 	})
@@ -174,15 +255,24 @@ func findDocxSensitiveMatches(text string) []docxMatch {
 	addRegexMatches(docxPassportPrefixed, 1, string(detector.EntityPassport), func(s string) bool {
 		return len(cleanDigits(s)) == 10
 	})
+	addRegexMatches(docxPassportDeptCode, 1, string(detector.EntityPassport), func(s string) bool {
+		return len(cleanDigits(s)) == 6
+	})
 
-	// 7. FIO
+	// 7. Address
+	addRegexMatches(docxAddressPostal, 1, string(detector.EntityAddress), isDocxAddressValid)
+	addRegexMatches(docxAddressPrefixed, 1, string(detector.EntityAddress), isDocxAddressValid)
+
+	// 8. FIO (Full names, prefixes, initials)
 	addRegexMatches(docxFIOPatronymic, 1, string(detector.EntityFIO), nil)
 	addRegexMatches(docxFIOPrefixed, 1, string(detector.EntityFIO), func(s string) bool {
 		parts := strings.Fields(s)
 		return len(parts) >= 2
 	})
+	addRegexMatches(docxFIOInitials1, 1, string(detector.EntityFIO), nil)
+	addRegexMatches(docxFIOInitials2, 1, string(detector.EntityFIO), nil)
 
-	// 8. Dates
+	// 9. Dates
 	addRegexMatches(docxDateDMY, 1, string(detector.EntityBirthday), func(s string) bool {
 		_, err := time.Parse("02.01.2006", s)
 		return err == nil
@@ -221,9 +311,12 @@ func generateSynthetic(anon *anonymizer.Anonymizer, entityType string, original 
 		return fmt.Sprintf("[%s]", entityType)
 	}
 	switch entityType {
-	case string(detector.EntityFIO), "NAME":
+	case string(detector.EntityFIO), "NAME", string(detector.EntityLastName), string(detector.EntityFirstName), string(detector.EntityPatronymic):
 		return anon.GenerateFIO(original)
 	case string(detector.EntityPassport):
+		if len(cleanDigits(original)) == 6 && strings.Contains(original, "-") {
+			return anon.GeneratePassportDeptCode(original)
+		}
 		return anon.GeneratePassport(original)
 	case string(detector.EntityPhone):
 		return anon.GeneratePhone(original)
@@ -232,11 +325,16 @@ func generateSynthetic(anon *anonymizer.Anonymizer, entityType string, original 
 	case string(detector.EntityINN):
 		return anon.GenerateINN12(original)
 	case string(detector.EntityCard), "CARD":
+		if len(cleanDigits(original)) == 20 {
+			return anon.GenerateBankAccount(original)
+		}
 		return anon.GenerateCardMIR(original)
 	case string(detector.EntityEmail):
 		return anon.GenerateEmail(original)
 	case string(detector.EntityBirthday), "DATE":
 		return anon.PerturbDate(original, 30)
+	case string(detector.EntityAddress):
+		return anon.GenerateAddress(original)
 	default:
 		return anon.GenerateFIO(original)
 	}
@@ -303,6 +401,18 @@ func parseDocxXML(xmlData []byte) ([]docxParagraph, error) {
 				inT = true
 				tStartOffset = offsetBefore
 				curTText.Reset()
+			} else if pDepth > 0 && (isWordElement(t.Name, "br") || isWordElement(t.Name, "cr")) {
+				curNodes = append(curNodes, docxTextNode{
+					startOffset: offsetBefore,
+					endOffset:   offsetAfter,
+					text:        "\n",
+				})
+			} else if pDepth > 0 && isWordElement(t.Name, "tab") {
+				curNodes = append(curNodes, docxTextNode{
+					startOffset: offsetBefore,
+					endOffset:   offsetAfter,
+					text:        "\t",
+				})
 			}
 		case xml.CharData:
 			if inT {
@@ -384,23 +494,24 @@ func getDisabledEntityTypes(options map[string]interface{}) map[string]bool {
 	return disabled
 }
 
-// Inspect examines paragraphs in the DOCX archive and reports paragraph count, detected entities and snippets.
-func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []DocxTextSnippet, error) {
+// Inspect examines paragraphs in the DOCX archive and reports paragraph count, detected entities, snippets, and structured paragraph previews.
+func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []DocxTextSnippet, []TextParagraphPreview, error) {
 	if r == nil {
-		return 0, nil, nil, errors.New("reader cannot be nil")
+		return 0, nil, nil, nil, errors.New("reader cannot be nil")
 	}
 	if size <= 0 {
-		return 0, nil, nil, errors.New("invalid file size")
+		return 0, nil, nil, nil, errors.New("invalid file size")
 	}
 
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("failed to open docx zip: %w", err)
+		return 0, nil, nil, nil, fmt.Errorf("failed to open docx zip: %w", err)
 	}
 
 	paragraphCount := 0
 	counts := make(map[string]int)
 	var snippets []DocxTextSnippet
+	var paragraphPreviews []TextParagraphPreview
 
 	for _, f := range zr.File {
 		if !isDocumentXML(f.Name) {
@@ -409,17 +520,17 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 
 		rc, err := f.Open()
 		if err != nil {
-			return 0, nil, nil, fmt.Errorf("failed to open %s: %w", f.Name, err)
+			return 0, nil, nil, nil, fmt.Errorf("failed to open %s: %w", f.Name, err)
 		}
 		data, err := io.ReadAll(rc)
 		_ = rc.Close()
 		if err != nil {
-			return 0, nil, nil, fmt.Errorf("failed to read %s: %w", f.Name, err)
+			return 0, nil, nil, nil, fmt.Errorf("failed to read %s: %w", f.Name, err)
 		}
 
 		paras, err := parseDocxXML(data)
 		if err != nil {
-			return 0, nil, nil, fmt.Errorf("failed to parse %s: %w", f.Name, err)
+			return 0, nil, nil, nil, fmt.Errorf("failed to parse %s: %w", f.Name, err)
 		}
 
 		paragraphCount += len(paras)
@@ -433,8 +544,13 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 			for _, n := range p.nodes {
 				paraText.WriteString(n.text)
 			}
+			pStr := paraText.String()
+			trimmedP := strings.TrimSpace(pStr)
+			if trimmedP == "" {
+				continue
+			}
 
-			matches := findDocxSensitiveMatches(paraText.String())
+			matches := findDocxSensitiveMatches(pStr)
 			for _, m := range matches {
 				counts[m.entityType]++
 				synth := generateSynthetic(h.Anon, m.entityType, m.value)
@@ -444,6 +560,44 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 					Type:       m.entityType,
 				})
 			}
+
+			var segments []TextParagraphSegment
+			if len(matches) == 0 {
+				segments = append(segments, TextParagraphSegment{
+					Text:     pStr,
+					IsEntity: false,
+				})
+			} else {
+				lastIdx := 0
+				for _, m := range matches {
+					if m.start > lastIdx && m.start <= len(pStr) {
+						segments = append(segments, TextParagraphSegment{
+							Text:     pStr[lastIdx:m.start],
+							IsEntity: false,
+						})
+					}
+					synth := generateSynthetic(h.Anon, m.entityType, m.value)
+					segments = append(segments, TextParagraphSegment{
+						Text:       synth,
+						IsEntity:   true,
+						Type:       m.entityType,
+						Original:   m.value,
+						Anonymized: synth,
+					})
+					lastIdx = m.end
+				}
+				if lastIdx < len(pStr) {
+					segments = append(segments, TextParagraphSegment{
+						Text:     pStr[lastIdx:],
+						IsEntity: false,
+					})
+				}
+			}
+
+			paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
+				Index:    len(paragraphPreviews) + 1,
+				Segments: segments,
+			})
 		}
 	}
 
@@ -476,7 +630,7 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 		entities = append(entities, EntityCount{Type: k, Count: counts[k]})
 	}
 
-	return paragraphCount, entities, snippets, nil
+	return paragraphCount, entities, snippets, paragraphPreviews, nil
 }
 
 // Process reads a DOCX document from r, anonymizes detected entities across paragraphs and runs,

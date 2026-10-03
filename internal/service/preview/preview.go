@@ -75,6 +75,12 @@ func (s *PreviewService) GetSheetRows(ctx context.Context, path, sheetName strin
 		return getCSVRows(ctx, path, offset, limit, salt, disabledCols)
 	case ".xlsx", ".xlsm", ".xltx", ".xltm":
 		return getXLSXRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols)
+	case ".xls":
+		return getXLSRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols)
+	case ".xlsb":
+		return getXLSBRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols)
+	case ".ods":
+		return getODSRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols)
 	default:
 		return nil, fmt.Errorf("%w: динамическая подгрузка строк поддерживается только для таблиц: %s", domain.ErrUnsupportedFormat, ext)
 	}
@@ -137,7 +143,7 @@ func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, o
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
-	colTypes := formats.ResolveColumnTypes(headers, nil)
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sample[headerIdx+1:], nil)
 
 	disabledMap := make(map[int]bool, len(disabledCols))
 	for _, col := range disabledCols {
@@ -258,7 +264,7 @@ func getCSVRows(ctx context.Context, path string, offset, limit int, salt string
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
-	colTypes := formats.ResolveColumnTypes(headers, nil)
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sample[headerIdx+1:], nil)
 
 	disabledMap := make(map[int]bool, len(disabledCols))
 	for _, col := range disabledCols {
@@ -320,6 +326,149 @@ func getCSVRows(ctx context.Context, path string, offset, limit int, salt string
 		if len(result) >= limit {
 			break
 		}
+	}
+
+	return result, nil
+}
+
+func getXLSRowsForSheet(ctx context.Context, path, targetSheet string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	handler := formats.NewXLSHandler(nil)
+	fetchLimit := offset + limit + 100
+	sheets, samples, err := handler.InspectRows(path, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect xls: %w", err)
+	}
+	if len(sheets) == 0 {
+		return nil, errors.New("xls file has no sheets")
+	}
+
+	sheetName := sheets[0].Name
+	if targetSheet != "" {
+		for _, s := range sheets {
+			if s.Name == targetSheet {
+				sheetName = s.Name
+				break
+			}
+		}
+	}
+
+	return paginateSampleRows(samples[sheetName], offset, limit, salt, disabledCols)
+}
+
+func getXLSBRowsForSheet(ctx context.Context, path, targetSheet string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	handler := formats.NewXLSBHandler(nil)
+	fetchLimit := offset + limit + 100
+	sheets, samples, err := handler.InspectRows(path, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect xlsb: %w", err)
+	}
+	if len(sheets) == 0 {
+		return nil, errors.New("xlsb file has no sheets")
+	}
+
+	sheetName := sheets[0].Name
+	if targetSheet != "" {
+		for _, s := range sheets {
+			if s.Name == targetSheet {
+				sheetName = s.Name
+				break
+			}
+		}
+	}
+
+	return paginateSampleRows(samples[sheetName], offset, limit, salt, disabledCols)
+}
+
+func getODSRowsForSheet(ctx context.Context, path, targetSheet string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open ods file: %w", err)
+	}
+	defer f.Close()
+
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat ods file: %w", err)
+	}
+
+	handler := formats.NewODSHandler(nil)
+	fetchLimit := offset + limit + 100
+	sheets, samples, err := handler.InspectRows(f, stat.Size(), fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect ods: %w", err)
+	}
+	if len(sheets) == 0 {
+		return nil, errors.New("ods file has no sheets")
+	}
+
+	sheetName := sheets[0].Name
+	if targetSheet != "" {
+		for _, s := range sheets {
+			if s.Name == targetSheet {
+				sheetName = s.Name
+				break
+			}
+		}
+	}
+
+	return paginateSampleRows(samples[sheetName], offset, limit, salt, disabledCols)
+}
+
+func paginateSampleRows(sampleRows [][]string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+	if len(sampleRows) == 0 {
+		return nil, nil
+	}
+
+	headerIdx, headers := formats.FindHeaderRow(sampleRows)
+	if len(headers) > 0 {
+		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
+	}
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sampleRows[headerIdx+1:], nil)
+
+	disabledMap := make(map[int]bool, len(disabledCols))
+	for _, col := range disabledCols {
+		disabledMap[col] = true
+	}
+
+	anon := anonymizer.New(salt)
+	startRow := headerIdx + 1 + offset
+
+	var result []domain.PreviewRow
+	for r := startRow; r < len(sampleRows) && len(result) < limit; r++ {
+		cols := sampleRows[r]
+		before := make([]string, len(headers))
+		after := make([]string, len(headers))
+		for j := 0; j < len(headers); j++ {
+			val := ""
+			if j < len(cols) {
+				val = cols[j]
+			}
+			before[j] = val
+			var ct formats.ColumnType
+			col1Based := j + 1
+			if j < len(colTypes) && !disabledMap[col1Based] {
+				ct = colTypes[j]
+			}
+			after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+		}
+
+		result = append(result, domain.PreviewRow{
+			Index:  offset + len(result) + 1,
+			Before: before,
+			After:  after,
+		})
 	}
 
 	return result, nil

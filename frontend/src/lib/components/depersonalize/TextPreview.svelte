@@ -1,11 +1,32 @@
 <script lang="ts">
   import { appState } from '../../stores/appState.svelte';
-  import type { DocxTextSnippet } from '../../types/domain';
+  import { tableState } from '../../stores/tableState.svelte';
+  import type { DocxTextSnippet, TextParagraphPreview, TextParagraphSegment } from '../../types/domain';
 
-  let isBefore = $state(false);
+  // View modes
+  let viewMode = $state<'doc' | 'snippets'>('doc');
+  let isBefore = $state(false); // false = Anonymized, true = Original
+  let selectedEntityType = $state<string>('ALL');
+  let currentActiveChangeIdx = $state<number>(1);
+  let hoveredEntity = $state<{
+    type: string;
+    original: string;
+    anonymized: string;
+    isDisabled: boolean;
+    x: number;
+    y: number;
+  } | null>(null);
 
+  const fileInfo = $derived(appState.currentFileInfo);
+  const paragraphPreviews = $derived<TextParagraphPreview[]>(
+    fileInfo?.paragraphPreviews || []
+  );
   const snippets = $derived<DocxTextSnippet[]>(
-    appState.currentFileInfo?.textSnippets || []
+    fileInfo?.textSnippets || []
+  );
+
+  const disabledCols = $derived<number[]>(
+    tableState.disabledColumnsBySheet[''] || []
   );
 
   const typeLabels: Record<string, string> = {
@@ -14,120 +35,631 @@
     PASSPORT: 'Паспорт РФ',
     PHONE: 'Телефон',
     INN: 'ИНН',
-    BANK_CARD: 'Банковская карта',
+    BANK_CARD: 'Банк / Счёт',
+    CARD: 'Банковская карта',
     DATE: 'Дата',
-    EMAIL: 'Email'
+    EMAIL: 'Email',
+    ADDRESS: 'Адрес',
+    GRADE: 'Грейд',
+    EMPLOYEE_ID: 'Табельный номер'
+  };
+
+  const typeActionLabels: Record<string, string> = {
+    FIO: 'Синтетический профиль с сохранением пола',
+    SNILS: 'Валидный СНИЛС (модуль 101)',
+    PASSPORT: 'Случайная серия/номер РФ',
+    PHONE: 'Псевдонимный номер РФ',
+    INN: 'Контрольная сумма ФНС (12 цифр)',
+    BANK_CARD: 'Карта МИР / Валидный 20-значный счёт',
+    CARD: 'Карта МИР (алгоритм Луна)',
+    DATE: 'Смещение даты ±30 дней',
+    EMAIL: 'Псевдонимный email',
+    ADDRESS: 'Синтетический адрес РФ',
+    GRADE: 'Синтетический грейд',
+    EMPLOYEE_ID: 'Псевдонимный номер сотрудника'
   };
 
   function getEntityTypeName(type: string): string {
     return typeLabels[type] || type || 'ПДн';
   }
+
+  function getEntityAction(type: string): string {
+    return typeActionLabels[type] || 'Деперсонализация';
+  }
+
+  function getEntityInfoForType(type: string) {
+    return fileInfo?.entities?.find((e) => e.type === type);
+  }
+
+  function isEntityTypeDisabled(type: string): boolean {
+    const ent = getEntityInfoForType(type);
+    if (!ent) return false;
+    return disabledCols.includes(ent.columnIndex);
+  }
+
+  function toggleEntityType(type: string) {
+    const ent = getEntityInfoForType(type);
+    if (ent) {
+      tableState.toggleColumn('', ent.columnIndex);
+      if (hoveredEntity && hoveredEntity.type === type) {
+        hoveredEntity = {
+          ...hoveredEntity,
+          isDisabled: !hoveredEntity.isDisabled
+        };
+      }
+    }
+  }
+
+  // Count total entity segments across all paragraphs
+  interface FlatEntityMark {
+    globalIndex: number;
+    paraIndex: number;
+    segIndex: number;
+    type: string;
+    original: string;
+    anonymized: string;
+    elementId: string;
+  }
+
+  // Pre-calculate entity marks for linear navigation
+  const allEntityMarks = $derived.by<FlatEntityMark[]>(() => {
+    const list: FlatEntityMark[] = [];
+    let gIdx = 0;
+    paragraphPreviews.forEach((para, pIdx) => {
+      para.segments.forEach((seg, sIdx) => {
+        if (seg.isEntity) {
+          gIdx++;
+          list.push({
+            globalIndex: gIdx,
+            paraIndex: pIdx,
+            segIndex: sIdx,
+            type: seg.type || 'FIO',
+            original: seg.original || seg.text,
+            anonymized: seg.anonymized || seg.text,
+            elementId: `doc-entity-mark-${gIdx}`
+          });
+        }
+      });
+    });
+    return list;
+  });
+
+  // Calculate global index lookup map for fast rendering: `${paraIndex}_${segIndex}` -> globalIndex
+  const entityIndexMap = $derived.by<Record<string, number>>(() => {
+    const map: Record<string, number> = {};
+    for (const m of allEntityMarks) {
+      map[`${m.paraIndex}_${m.segIndex}`] = m.globalIndex;
+    }
+    return map;
+  });
+
+  const filteredEntityMarks = $derived.by<FlatEntityMark[]>(() => {
+    if (selectedEntityType === 'ALL') {
+      return allEntityMarks;
+    }
+    return allEntityMarks.filter((m) => m.type === selectedEntityType);
+  });
+
+  // Entity types available in document
+  const availableEntityTypes = $derived.by(() => {
+    const map = new Map<string, number>();
+    for (const m of allEntityMarks) {
+      map.set(m.type, (map.get(m.type) || 0) + 1);
+    }
+    return Array.from(map.entries()).map(([type, count]) => ({
+      type,
+      name: getEntityTypeName(type),
+      count,
+      disabled: isEntityTypeDisabled(type)
+    }));
+  });
+
+  function scrollToEntity(globalIdx: number) {
+    if (globalIdx < 1 || globalIdx > allEntityMarks.length) return;
+    currentActiveChangeIdx = globalIdx;
+    const elem = document.getElementById(`doc-entity-mark-${globalIdx}`);
+    if (elem) {
+      elem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      elem.classList.add('ring-4', 'ring-indigo-500/70', 'ring-offset-2');
+      setTimeout(() => {
+        elem.classList.remove('ring-4', 'ring-indigo-500/70', 'ring-offset-2');
+      }, 1800);
+    }
+  }
+
+  function nextChange() {
+    if (filteredEntityMarks.length === 0) return;
+    const currentPos = filteredEntityMarks.findIndex(
+      (m) => m.globalIndex === currentActiveChangeIdx
+    );
+    if (currentPos === -1 || currentPos >= filteredEntityMarks.length - 1) {
+      const first = filteredEntityMarks[0];
+      if (first) {
+        scrollToEntity(first.globalIndex);
+      }
+    } else {
+      const next = filteredEntityMarks[currentPos + 1];
+      if (next) {
+        scrollToEntity(next.globalIndex);
+      }
+    }
+  }
+
+  function prevChange() {
+    if (filteredEntityMarks.length === 0) return;
+    const currentPos = filteredEntityMarks.findIndex(
+      (m) => m.globalIndex === currentActiveChangeIdx
+    );
+    if (currentPos <= 0) {
+      const last = filteredEntityMarks[filteredEntityMarks.length - 1];
+      if (last) {
+        scrollToEntity(last.globalIndex);
+      }
+    } else {
+      const prev = filteredEntityMarks[currentPos - 1];
+      if (prev) {
+        scrollToEntity(prev.globalIndex);
+      }
+    }
+  }
+
+  function handleMarkHover(
+    event: MouseEvent,
+    seg: TextParagraphSegment
+  ) {
+    const target = event.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    const type = seg.type || 'FIO';
+    hoveredEntity = {
+      type,
+      original: seg.original || seg.text,
+      anonymized: seg.anonymized || seg.text,
+      isDisabled: isEntityTypeDisabled(type),
+      x: rect.left + rect.width / 2,
+      y: rect.top - 8
+    };
+  }
+
+  function handleMarkLeave() {
+    hoveredEntity = null;
+  }
 </script>
 
-{#if appState.currentFileInfo && (appState.currentFileInfo.fileType === 'text' || appState.currentFileInfo.fileType === 'docx' || appState.currentFileInfo.fileType === 'odt')}
-  <div id="text-inspection-box" class="bg-white border border-[#E8E7E3] shadow-sm flex flex-col">
-    <!-- Header Toolbar -->
+{#if fileInfo && (fileInfo.fileType === 'text' || fileInfo.format === 'docx' || fileInfo.format === 'odt')}
+  <div
+    id="text-inspection-box"
+    class="bg-white border border-[#E8E7E3] shadow-sm flex flex-col select-text"
+  >
+    <!-- Top Main Header Toolbar -->
     <div
-      class="p-4 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]"
+      class="px-5 py-3.5 border-b border-[#E8E7E3] flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 bg-[#FAF9F5]"
     >
-      <div class="flex items-center space-x-2">
-        <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">
-          Предпросмотр фрагментов текста
+      <!-- Title & Document Stats -->
+      <div class="flex items-center flex-wrap gap-2.5">
+        <div class="flex items-center space-x-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span
+            class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
+          >
+            Предпросмотр документа ({fileInfo.format.toUpperCase()})
+          </span>
+        </div>
+        <span class="text-xs text-[#78716C] font-mono">
+          · {allEntityMarks.length > 0 ? allEntityMarks.length : snippets.length} фрагментов ПДн
         </span>
-        <span id="text-snippet-count-label" class="text-xs text-[#78716C] font-mono">
-          ({snippets.length} фрагментов)
-        </span>
+        {#if fileInfo.paragraphCount}
+          <span class="text-xs text-[#A8A29E] font-mono">
+            · {fileInfo.paragraphCount} абзацев
+          </span>
+        {/if}
       </div>
 
-      <div class="flex items-center space-x-3">
-        <!-- Toggle: Before vs After -->
+      <!-- Controls Right: Mode Switcher & Before/After Toggle -->
+      <div class="flex items-center flex-wrap gap-3">
+        <!-- View Mode: Word Sheet vs Snippet Cards -->
+        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
+          <button
+            type="button"
+            onclick={() => (viewMode = 'doc')}
+            class="flex items-center space-x-1.5 px-3 py-1.5 {viewMode === 'doc'
+              ? 'bg-[#1C1917] text-white font-semibold shadow-xs'
+              : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Вид документа (Word)</span>
+          </button>
+          <button
+            type="button"
+            onclick={() => (viewMode = 'snippets')}
+            class="flex items-center space-x-1.5 px-3 py-1.5 {viewMode === 'snippets'
+              ? 'bg-[#1C1917] text-white font-semibold shadow-xs'
+              : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+            <span>Список замен</span>
+          </button>
+        </div>
+
+        <!-- Toggle: Cleaned vs Original -->
         <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
           <button
             type="button"
             onclick={() => (isBefore = false)}
-            class="px-3 py-1 {!isBefore
-              ? 'bg-[#1C1917] text-white font-semibold'
+            class="flex items-center space-x-1 px-3 py-1.5 {!isBefore
+              ? 'bg-emerald-700 text-white font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            Очищенный текст
+            <span class="w-1.5 h-1.5 rounded-full {!isBefore ? 'bg-emerald-300' : 'bg-emerald-500'}"></span>
+            <span>Обезличенный вид</span>
           </button>
           <button
             type="button"
             onclick={() => (isBefore = true)}
-            class="px-3 py-1 {isBefore
-              ? 'bg-[#1C1917] text-white font-semibold'
+            class="flex items-center space-x-1 px-3 py-1.5 {isBefore
+              ? 'bg-amber-700 text-white font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            Исходный с ПДн
+            <span class="w-1.5 h-1.5 rounded-full {isBefore ? 'bg-amber-300' : 'bg-amber-500'}"></span>
+            <span>Исходный вид с ПДн</span>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- Snippet cards container -->
-    <div
-      id="text-snippets-container"
-      class="p-5 space-y-3.5 max-h-[500px] overflow-y-auto custom-scrollbar bg-[#FAF9F5]/40 divide-y divide-[#F0EFEB]"
-    >
-      {#if snippets.length === 0}
-        <div class="text-center py-8 text-xs text-[#78716C] font-mono">
-          В документе не обнаружено фрагментов персональных данных для замены
+    {#if viewMode === 'doc'}
+      <!-- Secondary Sub-toolbar: Entity Filter Pills & Change Navigator -->
+      <div
+        class="px-5 py-2.5 border-b border-[#E8E7E3] bg-[#F5F4F0] flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+      >
+        <!-- Category Filter Pills with status -->
+        <div class="flex items-center flex-wrap gap-1.5">
+          <span class="text-[11px] font-mono text-[#78716C] mr-1 uppercase font-medium">
+            Фильтр:
+          </span>
+          <button
+            type="button"
+            onclick={() => {
+              selectedEntityType = 'ALL';
+              currentActiveChangeIdx = 1;
+            }}
+            class="px-2.5 py-1 text-[11px] font-mono transition cursor-pointer rounded-none border {selectedEntityType ===
+            'ALL'
+              ? 'bg-[#1C1917] text-white border-[#1C1917] font-semibold'
+              : 'bg-white text-[#78716C] border-[#E8E7E3] hover:text-[#1C1917] hover:border-[#1C1917]'}"
+          >
+            Все ({allEntityMarks.length})
+          </button>
+
+          {#each availableEntityTypes as et}
+            <button
+              type="button"
+              onclick={() => {
+                selectedEntityType = et.type;
+                const first = allEntityMarks.find((m) => m.type === et.type);
+                if (first) scrollToEntity(first.globalIndex);
+              }}
+              title={et.disabled ? 'Деперсонализация отключена' : 'Деперсонализация активна'}
+              class="flex items-center space-x-1.5 px-2.5 py-1 text-[11px] font-mono transition cursor-pointer rounded-none border {selectedEntityType ===
+              et.type
+                ? 'bg-[#1C1917] text-white border-[#1C1917] font-semibold'
+                : 'bg-white text-[#78716C] border-[#E8E7E3] hover:text-[#1C1917] hover:border-[#1C1917]'} {et.disabled ? 'opacity-70' : ''}"
+            >
+              <span
+                class="w-1.5 h-1.5 rounded-full {et.disabled ? 'bg-stone-400' : 'bg-emerald-500'}"
+              ></span>
+              <span class={et.disabled ? 'line-through' : ''}>{et.name} ({et.count})</span>
+            </button>
+          {/each}
         </div>
-      {:else}
-        {#each snippets as snip, idx}
-          {@const typeName = getEntityTypeName(snip.type)}
-          <div class="pt-3.5 first:pt-0">
-            <div class="flex items-center justify-between mb-1.5 font-mono text-[11px]">
-              <div class="flex items-center space-x-2">
-                <span
-                  class="px-2 py-0.5 bg-[#FAF9F5] border border-[#E8E7E3] text-[#1C1917] font-semibold text-[10px] uppercase"
-                >
-                  {typeName}
-                </span>
-                <span class="text-[#78716C]">Фрагмент #{idx + 1}</span>
+
+        <!-- Jump to Next/Prev Change Buttons -->
+        {#if filteredEntityMarks.length > 0}
+          <div class="flex items-center space-x-2 shrink-0 self-end md:self-center">
+            <span class="text-[11px] text-[#78716C] font-mono hidden lg:inline mr-1">
+              (клик на текст переключает замену)
+            </span>
+            <button
+              type="button"
+              onclick={prevChange}
+              title="Предыдущая замена"
+              class="px-2.5 py-1 bg-white border border-[#E8E7E3] hover:bg-[#FAF9F5] hover:border-[#1C1917] text-[#1C1917] font-mono text-[11px] flex items-center space-x-1 transition cursor-pointer"
+            >
+              <span>◀</span>
+              <span>Назад</span>
+            </button>
+
+            <span class="font-mono text-[11px] text-[#78716C] px-1 font-medium">
+              {currentActiveChangeIdx} / {allEntityMarks.length}
+            </span>
+
+            <button
+              type="button"
+              onclick={nextChange}
+              title="Следующая замена"
+              class="px-2.5 py-1 bg-white border border-[#E8E7E3] hover:bg-[#FAF9F5] hover:border-[#1C1917] text-[#1C1917] font-mono text-[11px] flex items-center space-x-1 transition cursor-pointer"
+            >
+              <span>Вперёд</span>
+              <span>▶</span>
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Word-like Document Canvas (Block-based scrolling container, no height collapse) -->
+      <div
+        id="word-sheet-viewport"
+        class="p-4 sm:p-8 md:p-10 bg-[#EDEBE6] overflow-y-auto max-h-[720px] custom-scrollbar relative"
+      >
+        <!-- Word Page Sheet (Full Height Block, grows with content) -->
+        <div
+          id="word-sheet-paper"
+          class="mx-auto w-full max-w-3xl bg-white shadow-lg border border-[#D5D3CC] p-8 sm:p-14 md:p-16 text-[#1C1917] font-sans text-[14px] sm:text-[15px] leading-[1.8] min-h-[500px] h-auto"
+        >
+          <!-- Document Header Simulation -->
+          <div class="border-b border-[#E8E7E3] pb-3 mb-6 flex items-center justify-between text-[11px] text-[#A8A29E] font-mono">
+            <span class="truncate max-w-sm">{fileInfo.name}</span>
+            <span class="uppercase tracking-widest">{fileInfo.format} DOCUMENT</span>
+          </div>
+
+          {#if paragraphPreviews.length === 0}
+            <!-- Fallback if no paragraph previews were generated -->
+            {#if snippets.length === 0}
+              <div class="text-center py-16 text-xs text-[#78716C] font-mono">
+                В документе не обнаружено фрагментов персональных данных для замены
               </div>
-              <span class="text-[10px] text-[#A8A29E]">
-                {isBefore ? 'Исходный вид' : 'Обезличенный вид'}
+            {:else}
+              <div>
+                {#each snippets as snip, sIdx}
+                  {@const isTypeDisabled = isEntityTypeDisabled(snip.type)}
+                  <p class="mb-4 last:mb-0 whitespace-pre-wrap leading-relaxed">
+                    <span class="text-[#78716C] font-mono text-xs mr-2">[{sIdx + 1}]</span>
+                    {#if isTypeDisabled}
+                      <button
+                        type="button"
+                        onclick={() => toggleEntityType(snip.type)}
+                        class="bg-stone-100 text-stone-600 font-medium px-1.5 py-0.5 rounded-[3px] border border-dashed border-stone-400 transition hover:bg-stone-200 cursor-pointer font-mono text-[13px] line-through"
+                        title="Деперсонализация отключена. Нажмите, чтобы включить."
+                      >
+                        {snip.original}
+                      </button>
+                    {:else if !isBefore}
+                      <button
+                        type="button"
+                        onclick={() => toggleEntityType(snip.type)}
+                        class="bg-emerald-100/90 text-emerald-950 font-medium px-1.5 py-0.5 rounded-[3px] border border-emerald-300 transition hover:bg-emerald-200 cursor-pointer font-mono text-[13px]"
+                        title="Деперсонализация активна. Нажмите, чтобы отключить замену."
+                      >
+                        {snip.anonymized}
+                      </button>
+                    {:else}
+                      <button
+                        type="button"
+                        onclick={() => toggleEntityType(snip.type)}
+                        class="bg-amber-100/90 text-amber-950 font-medium px-1.5 py-0.5 rounded-[3px] border border-amber-300 transition hover:bg-amber-200 cursor-pointer font-mono text-[13px]"
+                        title="Исходный вид. Нажмите, чтобы переключить."
+                      >
+                        {snip.original}
+                      </button>
+                    {/if}
+                  </p>
+                {/each}
+              </div>
+            {/if}
+          {:else}
+            <!-- Full Document Paragraphs Rendered with Highlighted Spans -->
+            <div>
+              {#each paragraphPreviews as para, pIdx}
+                <p class="mb-4 last:mb-0 whitespace-pre-wrap leading-relaxed text-justify break-words">
+                  {#each para.segments as seg, sIdx}
+                    {#if !seg.isEntity}
+                      <span>{seg.text}</span>
+                    {:else}
+                      {@const gIdx = entityIndexMap[`${pIdx}_${sIdx}`] || 0}
+                      {@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}
+                      {@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}
+                      {@const markClass = isTypeDisabled
+                        ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
+                        : !isBefore
+                        ? 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
+                        : 'bg-amber-100/95 text-amber-950 border-amber-400 hover:bg-amber-200'}
+                      
+                      <button
+                        type="button"
+                        id="doc-entity-mark-{gIdx}"
+                        onmouseenter={(e) => handleMarkHover(e, seg)}
+                        onmouseleave={handleMarkLeave}
+                        onclick={() => {
+                          currentActiveChangeIdx = gIdx;
+                          toggleEntityType(seg.type || '');
+                        }}
+                        class="inline px-1.5 py-0.5 mx-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
+                        title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : 'Заменено'}. Нажмите для переключения."
+                      >
+                        {#if isTypeDisabled}
+                          <!-- When disabled, always show original text -->
+                          <span class="line-through decoration-stone-400">{seg.original || seg.text}</span>
+                        {:else if !isBefore}
+                          {seg.anonymized || seg.text}
+                        {:else}
+                          {seg.original || seg.text}
+                        {/if}
+                      </button>
+                    {/if}
+                  {/each}
+                </p>
+              {/each}
+            </div>
+          {/if}
+
+          <!-- Document Footer Simulation -->
+          <div class="border-t border-[#E8E7E3] pt-4 mt-8 flex items-center justify-between text-[11px] text-[#A8A29E] font-mono">
+            <span>Страница 1 из 1</span>
+            <span>Конфиденциально · 152-ФЗ РФ</span>
+          </div>
+        </div>
+
+        <!-- Floating Popover / Tooltip on Hover -->
+        {#if hoveredEntity}
+          <div
+            class="fixed z-50 pointer-events-none transform -translate-x-1/2 -translate-y-full mb-2 bg-[#1C1917] text-white p-3.5 shadow-2xl border border-stone-700 rounded-none max-w-sm font-sans animate-fade-in"
+            style="left: {hoveredEntity.x}px; top: {hoveredEntity.y}px;"
+          >
+            <div class="flex items-center justify-between gap-2 border-b border-stone-700 pb-2 mb-2 font-mono text-[10px]">
+              <div class="flex items-center space-x-1.5">
+                <span
+                  class="px-1.5 py-0.5 {hoveredEntity.isDisabled
+                    ? 'bg-stone-800 border border-stone-600 text-stone-400'
+                    : 'bg-emerald-950 border border-emerald-600 text-emerald-300'} font-bold uppercase"
+                >
+                  {getEntityTypeName(hoveredEntity.type)}
+                </span>
+                <span
+                  class="px-1.5 py-0.5 {hoveredEntity.isDisabled
+                    ? 'bg-amber-950 border border-amber-600 text-amber-300'
+                    : 'bg-emerald-950 border border-emerald-600 text-emerald-300'} text-[9px] font-bold"
+                >
+                  {hoveredEntity.isDisabled ? '○ ОТКЛЮЧЕНО' : '● ЗАМЕНЯЕТСЯ'}
+                </span>
+              </div>
+              <span class="text-stone-400 text-[10px]">
+                {getEntityAction(hoveredEntity.type)}
               </span>
             </div>
 
-            <div class="bg-white border border-[#E8E7E3] p-3 text-xs leading-relaxed text-[#1C1917] font-sans">
-              {#if !isBefore}
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div class="space-y-1 flex-1 min-w-0">
-                    <div class="text-[11px] text-[#78716C] font-mono">До деперсонализации:</div>
+            <div class="space-y-1.5 text-xs">
+              <div class="flex items-start justify-between gap-2">
+                <span class="text-stone-400 font-mono text-[11px] shrink-0">До:</span>
+                <span class="font-mono text-rose-300 text-[11px] break-all text-right font-medium">
+                  {hoveredEntity.original}
+                </span>
+              </div>
+              <div class="flex items-start justify-between gap-2">
+                <span class="text-stone-400 font-mono text-[11px] shrink-0">После:</span>
+                <span class="font-mono {hoveredEntity.isDisabled ? 'text-stone-400 line-through' : 'text-emerald-300'} text-[11px] break-all text-right font-medium">
+                  {hoveredEntity.isDisabled ? hoveredEntity.original : hoveredEntity.anonymized}
+                </span>
+              </div>
+            </div>
+
+            <div class="mt-2.5 pt-2 border-t border-stone-800 text-[10px] text-stone-400 font-mono flex items-center justify-between">
+              <span>💡 Кликните для {hoveredEntity.isDisabled ? 'включения' : 'отключения'} замены</span>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+    {:else}
+      <!-- Snippet Cards View -->
+      <div
+        id="text-snippets-container"
+        class="p-5 space-y-3.5 max-h-[560px] overflow-y-auto custom-scrollbar bg-[#FAF9F5]/40 divide-y divide-[#F0EFEB]"
+      >
+        {#if snippets.length === 0}
+          <div class="text-center py-8 text-xs text-[#78716C] font-mono">
+            В документе не обнаружено фрагментов персональных данных для замены
+          </div>
+        {:else}
+          {#each snippets as snip, idx}
+            {@const typeName = getEntityTypeName(snip.type)}
+            {@const isTypeDisabled = isEntityTypeDisabled(snip.type)}
+            <div class="pt-3.5 first:pt-0">
+              <div
+                class="flex items-center justify-between mb-1.5 font-mono text-[11px]"
+              >
+                <div class="flex items-center space-x-2">
+                  <span
+                    class="px-2 py-0.5 bg-[#FAF9F5] border border-[#E8E7E3] text-[#1C1917] font-semibold text-[10px] uppercase"
+                  >
+                    {typeName}
+                  </span>
+                  <span class="text-[#78716C]">Фрагмент #{idx + 1}</span>
+                  <button
+                    type="button"
+                    onclick={() => toggleEntityType(snip.type)}
+                    class="px-2 py-0.5 text-[10px] font-mono cursor-pointer transition rounded {isTypeDisabled
+                      ? 'bg-stone-100 text-stone-500 border border-stone-300'
+                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}"
+                  >
+                    {isTypeDisabled ? '○ Отключено' : '● Активно'}
+                  </button>
+                </div>
+                <span class="text-[10px] text-[#A8A29E]">
+                  {isBefore ? 'Исходный вид' : 'Обезличенный вид'}
+                </span>
+              </div>
+
+              <div
+                class="bg-white border border-[#E8E7E3] p-3 text-xs leading-relaxed text-[#1C1917] font-sans"
+              >
+                {#if isTypeDisabled}
+                  <div class="space-y-1">
+                    <div class="text-[11px] text-[#78716C] font-mono flex items-center justify-between">
+                      <span>Деперсонализация отключена (сохраняется исходное значение):</span>
+                      <button
+                        type="button"
+                        onclick={() => toggleEntityType(snip.type)}
+                        class="text-indigo-600 hover:underline cursor-pointer"
+                      >
+                        Включить замену
+                      </button>
+                    </div>
+                    <div
+                      class="p-2 bg-stone-50 border border-stone-200 text-stone-700 rounded-none font-mono text-[11px] break-words"
+                    >
+                      {snip.original}
+                    </div>
+                  </div>
+                {:else if !isBefore}
+                  <div
+                    class="flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                  >
+                    <div class="space-y-1 flex-1 min-w-0">
+                      <div class="text-[11px] text-[#78716C] font-mono">
+                        До деперсонализации:
+                      </div>
+                      <div
+                        class="p-2 bg-rose-50/50 border border-rose-200/60 text-rose-900 rounded-none font-mono text-[11px] break-words"
+                      >
+                        {snip.original}
+                      </div>
+                    </div>
+                    <div
+                      class="text-center text-[#78716C] font-bold text-xs shrink-0 self-center px-1"
+                    >
+                      ➔
+                    </div>
+                    <div class="space-y-1 flex-1 min-w-0">
+                      <div class="text-[11px] text-[#78716C] font-mono">
+                        После деперсонализации:
+                      </div>
+                      <div
+                        class="p-2 bg-emerald-50/60 border border-emerald-200 text-emerald-950 rounded-none font-mono text-[11px] break-words"
+                      >
+                        {snip.anonymized}
+                      </div>
+                    </div>
+                  </div>
+                {:else}
+                  <div class="space-y-1">
+                    <div class="text-[11px] text-[#78716C] font-mono">
+                      Исходный фрагмент:
+                    </div>
                     <div
                       class="p-2 bg-rose-50/50 border border-rose-200/60 text-rose-900 rounded-none font-mono text-[11px] break-words"
                     >
                       {snip.original}
                     </div>
                   </div>
-                  <div class="text-center text-[#78716C] font-bold text-xs shrink-0 self-center px-1">
-                    ➔
-                  </div>
-                  <div class="space-y-1 flex-1 min-w-0">
-                    <div class="text-[11px] text-[#78716C] font-mono">После деперсонализации:</div>
-                    <div
-                      class="p-2 bg-emerald-50/60 border border-emerald-200 text-emerald-950 rounded-none font-mono text-[11px] break-words"
-                    >
-                      {snip.anonymized}
-                    </div>
-                  </div>
-                </div>
-              {:else}
-                <div class="space-y-1">
-                  <div class="text-[11px] text-[#78716C] font-mono">Исходный фрагмент:</div>
-                  <div
-                    class="p-2 bg-rose-50/50 border border-rose-200/60 text-rose-900 rounded-none font-mono text-[11px] break-words"
-                  >
-                    {snip.original}
-                  </div>
-                </div>
-              {/if}
+                {/if}
+              </div>
             </div>
-          </div>
-        {/each}
-      {/if}
-    </div>
+          {/each}
+        {/if}
+      </div>
+    {/if}
   </div>
 {/if}

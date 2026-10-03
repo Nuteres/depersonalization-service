@@ -179,8 +179,10 @@
               e.preventDefault();
               const files = e.dataTransfer?.files;
               if (files && files.length > 0 && files[0]) {
-                const path = (files[0] as any).path || files[0].name;
-                restoreState.loadDataFile(path);
+                const path = (files[0] as any)?.path;
+                if (path && (path.includes('/') || path.includes('\\'))) {
+                  restoreState.loadDataFile(path);
+                }
               }
             }}
           >
@@ -249,8 +251,10 @@
               e.preventDefault();
               const files = e.dataTransfer?.files;
               if (files && files.length > 0 && files[0]) {
-                const path = (files[0] as any).path || files[0].name;
-                restoreState.loadKeyFile(path);
+                const path = (files[0] as any)?.path;
+                if (path && (path.includes('/') || path.includes('\\'))) {
+                  restoreState.loadKeyFile(path);
+                }
               }
             }}
           >

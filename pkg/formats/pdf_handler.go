@@ -72,8 +72,10 @@ var (
 	rePhone            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\+7|8)[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2})`)
 	rePhonePrefixed    = regexp.MustCompile(`(?i)(?:тел(?:ефон)?|моб\.?|сот\.?)[:\s]*((?:\+7|8)?[0-9\s\-\(\)]{10,18})`)
 	reCard16           = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\d{4}[\s\-]?){4})`)
-	reFIOPatronymic    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична))`)
-	reFIOPrefixed      = regexp.MustCompile(`(?i)(?:сотрудник|клиент|пациент|фио|работник|физлицо)[:\s]*([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})`)
+	reFIOPatronymic    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:овича|евича|ича|овны|евны|ичны|овичу|евичу|ичу|овне|евне|ичне|овичем|евичем|ичем|овной|евной|ичной|овиче|евиче|иче|ович|евич|ич|овна|евна|ична|оглы|кызы|уулу|инична))`)
+	reFIOPrefixed      = regexp.MustCompile(`(?i:(?:сотрудник|клиент|пациент|фио|работник|физлицо|подписал|сдал|принял|директор|гендиректор|руководитель|представитель)[:\s]+)([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})`)
+	reFIOInitials1     = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ]\.\s*[А-ЯЁ]\.|\s+[А-ЯЁ]\.))`)
+	reFIOInitials2     = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:[А-ЯЁ]\.\s*[А-ЯЁ]\.|\s*[А-ЯЁ]\.)\s+[А-ЯЁ][а-яё]+)`)
 )
 
 // Process reads a PDF from r, scrubs sensitive text entities, draws solid black
@@ -100,6 +102,7 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 	}
 
 	customTerms := extractCustomTerms(options)
+	disabledEntities := extractDisabledEntities(options)
 
 	// Parse objects from the PDF
 	objects, rootRef, err := parsePDF(pdfBytes)
@@ -146,7 +149,7 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		}
 
 		// Redact content stream
-		redactedStream, modified := redactContentStream(decompressed, customTerms)
+		redactedStream, modified := redactContentStream(decompressed, customTerms, disabledEntities)
 		if modified {
 			if obj.Compressed {
 				var buf bytes.Buffer
@@ -165,6 +168,25 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 
 	// Rebuild and write output PDF
 	return writePDF(w, objects, rootRef)
+}
+
+func extractDisabledEntities(options map[string]interface{}) map[string]bool {
+	if options == nil {
+		return nil
+	}
+	res := make(map[string]bool)
+	if list, ok := options["disabled_entities"].([]string); ok {
+		for _, e := range list {
+			res[strings.ToUpper(strings.TrimSpace(e))] = true
+		}
+	} else if rawList, ok := options["disabled_entities"].([]interface{}); ok {
+		for _, item := range rawList {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				res[strings.ToUpper(strings.TrimSpace(s))] = true
+			}
+		}
+	}
+	return res
 }
 
 func extractCustomTerms(options map[string]interface{}) []string {
@@ -188,7 +210,7 @@ func extractCustomTerms(options map[string]interface{}) []string {
 
 // redactContentStream scans a PDF content stream, scrubs sensitive text,
 // replaces it with BlackoutMarker, and appends blackout rectangle operators.
-func redactContentStream(data []byte, customTerms []string) ([]byte, bool) {
+func redactContentStream(data []byte, customTerms []string, disabledEntities map[string]bool) ([]byte, bool) {
 	// Skip streams that contain no text operators and no custom search terms
 	hasTextOps := bytes.Contains(data, []byte("BT")) || bytes.Contains(data, []byte("Tj")) || bytes.Contains(data, []byte("TJ"))
 	if !hasTextOps && len(customTerms) == 0 {
@@ -226,7 +248,7 @@ func redactContentStream(data []byte, customTerms []string) ([]byte, bool) {
 					currentY = lineStartY
 				}
 
-				newRaw, boxes, didRedact := processTextString(decoded, currentFontSize, currentX, currentY, customTerms)
+				newRaw, boxes, didRedact := processTextString(decoded, currentFontSize, currentX, currentY, customTerms, disabledEntities)
 				if didRedact {
 					modified = true
 					out.Write(newRaw)
@@ -249,7 +271,7 @@ func redactContentStream(data []byte, customTerms []string) ([]byte, bool) {
 
 			op, _ := peekNextOperator(data, i)
 			if op == "Tj" || op == "'" || op == "\"" {
-				newRaw, boxes, didRedact := processTextString(decoded, currentFontSize, currentX, currentY, customTerms)
+				newRaw, boxes, didRedact := processTextString(decoded, currentFontSize, currentX, currentY, customTerms, disabledEntities)
 				if didRedact {
 					modified = true
 					out.Write(newRaw)
@@ -272,7 +294,7 @@ func redactContentStream(data []byte, customTerms []string) ([]byte, bool) {
 
 			op, _ := peekNextOperator(data, i)
 			if op == "TJ" {
-				newArr, boxes, didRedact := processTJArray(rawArr, currentFontSize, currentX, currentY, customTerms)
+				newArr, boxes, didRedact := processTJArray(rawArr, currentFontSize, currentX, currentY, customTerms, disabledEntities)
 				if didRedact {
 					modified = true
 					out.Write(newArr)
@@ -388,7 +410,7 @@ func redactContentStream(data []byte, customTerms []string) ([]byte, bool) {
 	res := out.Bytes()
 
 	// Defense-in-depth: scrub any remaining raw occurrences of sensitive strings
-	scrubbedRes, extraModified := scrubRemainingSensitiveText(res, customTerms)
+	scrubbedRes, extraModified := scrubRemainingSensitiveText(res, customTerms, disabledEntities)
 	if extraModified {
 		modified = true
 		res = scrubbedRes
@@ -405,9 +427,9 @@ type textMatch struct {
 
 // processTextString searches for sensitive personal data in a text string,
 // calculates bounding boxes, and replaces matched text with BlackoutMarker.
-func processTextString(decoded []byte, fontSize, curX, curY float64, customTerms []string) ([]byte, []BoundingBox, bool) {
+func processTextString(decoded []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool) ([]byte, []BoundingBox, bool) {
 	text := decodeText(decoded)
-	matches := findSensitiveMatches(text, customTerms)
+	matches := findSensitiveMatches(text, customTerms, disabledEntities)
 	if len(matches) == 0 {
 		return nil, nil, false
 	}
@@ -460,7 +482,7 @@ func processTextString(decoded []byte, fontSize, curX, curY float64, customTerms
 }
 
 // processTJArray processes an array operand of a TJ operator.
-func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []string) ([]byte, []BoundingBox, bool) {
+func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool) ([]byte, []BoundingBox, bool) {
 	// Parse array elements: either strings or numbers
 	var elements [][]byte
 	i := 1 // skip '['
@@ -499,7 +521,7 @@ func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []s
 	for _, elem := range elements {
 		if len(elem) > 0 && elem[0] == '(' {
 			_, decoded, _ := parseLiteralString(elem, 0)
-			newRaw, boxes, didRedact := processTextString(decoded, fontSize, arrX, curY, customTerms)
+			newRaw, boxes, didRedact := processTextString(decoded, fontSize, arrX, curY, customTerms, disabledEntities)
 			if didRedact {
 				modified = true
 				newElements = append(newElements, newRaw)
@@ -510,7 +532,7 @@ func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []s
 			arrX += float64(len([]rune(string(decoded)))) * charWidth
 		} else if len(elem) > 0 && elem[0] == '<' {
 			_, decoded, _ := parseHexString(elem, 0)
-			newRaw, boxes, didRedact := processTextString(decoded, fontSize, arrX, curY, customTerms)
+			newRaw, boxes, didRedact := processTextString(decoded, fontSize, arrX, curY, customTerms, disabledEntities)
 			if didRedact {
 				modified = true
 				newElements = append(newElements, newRaw)
@@ -554,7 +576,7 @@ func isBoundaryAfter(text string, end int) bool {
 }
 
 // findSensitiveMatches locates all PII entities and custom terms in text.
-func findSensitiveMatches(text string, customTerms []string) []textMatch {
+func findSensitiveMatches(text string, customTerms []string, disabledEntities map[string]bool) []textMatch {
 	var matches []textMatch
 
 	addRegexMatches := func(re *regexp.Regexp, submatchIdx int, validateFunc func(string) bool) {
@@ -579,32 +601,46 @@ func findSensitiveMatches(text string, customTerms []string) []textMatch {
 	}
 
 	// 1. SNILS
-	addRegexMatches(reSNILSFormatted, 1, nil)
-	addRegexMatches(reSNILS11Digits, 1, func(s string) bool {
-		return detector.ValidateSNILS(s)
-	})
+	if !disabledEntities["SNILS"] {
+		addRegexMatches(reSNILSFormatted, 1, nil)
+		addRegexMatches(reSNILS11Digits, 1, func(s string) bool {
+			return detector.ValidateSNILS(s)
+		})
+	}
 
 	// 2. Passport RF
-	addRegexMatches(rePassport4_6, 1, nil)
-	addRegexMatches(rePassport2_2_6, 1, nil)
-	addRegexMatches(rePassportPrefixed, 1, nil)
+	if !disabledEntities["PASSPORT"] {
+		addRegexMatches(rePassport4_6, 1, nil)
+		addRegexMatches(rePassport2_2_6, 1, nil)
+		addRegexMatches(rePassportPrefixed, 1, nil)
+	}
 
 	// 3. INN
-	addRegexMatches(reINN12, 1, func(s string) bool {
-		return detector.ValidateINN12(s)
-	})
-	addRegexMatches(reINNPrefixed, 1, nil)
+	if !disabledEntities["INN"] {
+		addRegexMatches(reINN12, 1, func(s string) bool {
+			return detector.ValidateINN12(s)
+		})
+		addRegexMatches(reINNPrefixed, 1, nil)
+	}
 
 	// 4. Phone
-	addRegexMatches(rePhone, 1, nil)
-	addRegexMatches(rePhonePrefixed, 1, nil)
+	if !disabledEntities["PHONE"] {
+		addRegexMatches(rePhone, 1, nil)
+		addRegexMatches(rePhonePrefixed, 1, nil)
+	}
 
 	// 5. Card MIR / Luhn
-	addRegexMatches(reCard16, 1, nil)
+	if !disabledEntities["BANK_CARD"] && !disabledEntities["CARD"] {
+		addRegexMatches(reCard16, 1, nil)
+	}
 
 	// 6. FIO
-	addRegexMatches(reFIOPatronymic, 1, nil)
-	addRegexMatches(reFIOPrefixed, 1, nil)
+	if !disabledEntities["FIO"] {
+		addRegexMatches(reFIOPatronymic, 1, isFIOValid)
+		addRegexMatches(reFIOPrefixed, 1, isFIOValid)
+		addRegexMatches(reFIOInitials1, 1, nil)
+		addRegexMatches(reFIOInitials2, 1, nil)
+	}
 
 	// 7. Custom terms
 	for _, term := range customTerms {
@@ -648,11 +684,55 @@ func findSensitiveMatches(text string, customTerms []string) []textMatch {
 	return deduped
 }
 
+func isFIOValid(s string) bool {
+	parts := strings.Fields(s)
+	if len(parts) < 2 || len(parts) > 3 {
+		return false
+	}
+	stopWords := map[string]bool{
+		"дает": true, "обязуется": true, "обязан": true, "вправе": true, "имеет": true,
+		"согласен": true, "поручает": true, "принимает": true, "согласие": true,
+		"обработку": true, "компании": true, "договора": true, "настоящий": true,
+		"трудовой": true, "договор": true, "общество": true, "ответственностью": true,
+		"стороны": true, "сторона": true, "работодатель": true, "работник": true,
+		"предмет": true, "оплата": true, "режим": true, "срок": true, "действие": true,
+		"защита": true, "персональных": true, "данных": true, "конфиденциальность": true,
+		"адреса": true, "реквизиты": true, "подписи": true, "отметка": true, "получении": true,
+		"экземпляра": true, "генеральный": true, "директор": true, "руководитель": true,
+		"ведущего": true, "разработчика": true, "программного": true, "обеспечения": true,
+		"условия": true, "рабочего": true, "времени": true, "отдыха": true, "гарантии": true,
+	}
+	for _, p := range parts {
+		if stopWords[strings.ToLower(p)] {
+			return false
+		}
+		subparts := strings.Split(p, "-")
+		for _, sp := range subparts {
+			runes := []rune(sp)
+			if len(runes) < 2 {
+				return false
+			}
+			if !unicode.IsUpper(runes[0]) {
+				return false
+			}
+			for _, r := range runes[1:] {
+				if !unicode.IsLower(r) {
+					return false
+				}
+			}
+			if stopWords[strings.ToLower(sp)] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // scrubRemainingSensitiveText performs defense-in-depth replacement of any
 // lingering sensitive strings across the decompressed stream.
-func scrubRemainingSensitiveText(stream []byte, customTerms []string) ([]byte, bool) {
+func scrubRemainingSensitiveText(stream []byte, customTerms []string, disabledEntities map[string]bool) ([]byte, bool) {
 	text := string(stream)
-	matches := findSensitiveMatches(text, customTerms)
+	matches := findSensitiveMatches(text, customTerms, disabledEntities)
 	if len(matches) == 0 {
 		return stream, false
 	}

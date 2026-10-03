@@ -47,7 +47,8 @@ type FileInfo struct {
 	PreviewRows            []PreviewRow              `json:"previewRows"`
 	Sheets                 []SheetInfo               `json:"sheets,omitempty"`
 	ActiveSheet            string                    `json:"activeSheet,omitempty"`
-	TextSnippets           []formats.DocxTextSnippet `json:"textSnippets,omitempty"`
-	PDFTextSnippet         string                    `json:"pdfTextSnippet,omitempty"`
-	PDFRedactedSnippet     string                    `json:"pdfRedactedSnippet,omitempty"`
+	TextSnippets           []formats.DocxTextSnippet      `json:"textSnippets,omitempty"`
+	ParagraphPreviews      []formats.TextParagraphPreview `json:"paragraphPreviews,omitempty"`
+	PDFTextSnippet         string                         `json:"pdfTextSnippet,omitempty"`
+	PDFRedactedSnippet     string                         `json:"pdfRedactedSnippet,omitempty"`
 }

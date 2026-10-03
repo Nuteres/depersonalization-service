@@ -46,14 +46,33 @@ func (a *Anonymizer) GenerateEmail(original string) string {
 }
 
 // GeneratePassport генерирует синтетическую серию (4 цифры: 2 цифры региона + 2 цифры года)
-// и номер (6 цифр) паспорта гражданина РФ.
+// и номер (6 цифр) паспорта гражданина РФ с сохранением формата разделителей (пробелы, символ номера).
 func (a *Anonymizer) GeneratePassport(original string) string {
 	seed := a.DeriveSeed(original)
 	region := a.RandInt(seed, 1, 99)
 	year := a.RandInt(seed+1, 0, 99)
 	number := a.RandInt(seed+2, 100000, 999999)
 
+	if strings.Contains(original, "№") {
+		return fmt.Sprintf("%02d %02d № %06d", region, year, number)
+	}
+	if strings.Contains(original, "N") {
+		return fmt.Sprintf("%02d %02d N %06d", region, year, number)
+	}
+	fields := strings.Fields(original)
+	if len(fields) == 3 {
+		return fmt.Sprintf("%02d %02d %06d", region, year, number)
+	}
+
 	return fmt.Sprintf("%02d%02d %06d", region, year, number)
+}
+
+// GeneratePassportDeptCode генерирует синтетический код подразделения в формате xxx-xxx.
+func (a *Anonymizer) GeneratePassportDeptCode(original string) string {
+	seed := a.DeriveSeed(original)
+	p1 := a.RandInt(seed, 100, 999)
+	p2 := a.RandInt(seed+1, 100, 999)
+	return fmt.Sprintf("%03d-%03d", p1, p2)
 }
 
 // GeneratePhone генерирует синтетический номер мобильного телефона в формате РФ (+7 9xx xxx-xx-xx).

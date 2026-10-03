@@ -122,9 +122,13 @@ func TestDOCX_Inspect(t *testing.T) {
 	data := createTestDocx(standardBriefDocXML)
 	r := bytes.NewReader(data)
 
-	pCount, entities, snippets, err := h.Inspect(r, int64(len(data)))
+	pCount, entities, snippets, previews, err := h.Inspect(r, int64(len(data)))
 	if err != nil {
 		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	if len(previews) == 0 {
+		t.Errorf("expected paragraph previews, got 0")
 	}
 
 	if pCount != 3 {
@@ -461,7 +465,7 @@ func TestDOCX_EdgeCases(t *testing.T) {
 	if _, err := h.Process(context.Background(), nil, 100, &buf, nil); err == nil {
 		t.Errorf("expected error with nil reader")
 	}
-	if _, _, _, err := h.Inspect(nil, 100); err == nil {
+	if _, _, _, _, err := h.Inspect(nil, 100); err == nil {
 		t.Errorf("expected error in Inspect with nil reader")
 	}
 	if _, err := formats.RestoreDOCX(context.Background(), nil, 100, &buf, depmap.New("test.docx")); err == nil {
@@ -472,7 +476,7 @@ func TestDOCX_EdgeCases(t *testing.T) {
 	if _, err := h.Process(context.Background(), r, 0, &buf, nil); err == nil {
 		t.Errorf("expected error with size 0")
 	}
-	if _, _, _, err := h.Inspect(r, -5); err == nil {
+	if _, _, _, _, err := h.Inspect(r, -5); err == nil {
 		t.Errorf("expected error in Inspect with negative size")
 	}
 	if _, err := formats.RestoreDOCX(context.Background(), r, 0, &buf, depmap.New("test.docx")); err == nil {
@@ -508,7 +512,7 @@ func TestDOCX_EdgeCases(t *testing.T) {
 	if _, err := h.Process(context.Background(), invR, int64(len(invalidData)), &buf, nil); err == nil {
 		t.Errorf("expected error with invalid zip in Process")
 	}
-	if _, _, _, err := h.Inspect(invR, int64(len(invalidData))); err == nil {
+	if _, _, _, _, err := h.Inspect(invR, int64(len(invalidData))); err == nil {
 		t.Errorf("expected error with invalid zip in Inspect")
 	}
 	if _, err := formats.RestoreDOCX(context.Background(), invR, int64(len(invalidData)), &buf, depmap.New("test.docx")); err == nil {
@@ -532,7 +536,7 @@ func TestDOCX_ContractNumberNotFlaggedAsPassport(t *testing.T) {
 	data := createTestDocx(docXML)
 	r := bytes.NewReader(data)
 
-	_, entities, snippets, err := h.Inspect(r, int64(len(data)))
+	_, entities, snippets, _, err := h.Inspect(r, int64(len(data)))
 	if err != nil {
 		t.Fatalf("Inspect failed: %v", err)
 	}
@@ -590,4 +594,97 @@ func TestDOCX_RestoreCascadePrevention(t *testing.T) {
 		t.Errorf("expected 'TokenBeta88' inside original text to remain intact: %s", restoredDocXML)
 	}
 }
+
+func TestDOCX_ContractComplexEntitiesAndBreaks(t *testing.T) {
+	docXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:r><w:t>ИП Иванов Алексей Сергеевич</w:t><w:br/></w:r>
+      <w:r><w:t>Паспорт: 45 18 № 912384</w:t><w:br/></w:r>
+      <w:r><w:t>Адрес рег.: 119048, г. Москва, ул. Усачёва, д. 29, корп. 2, кв. 74</w:t><w:br/></w:r>
+      <w:r><w:t>Р/с: 40802810438000123456</w:t><w:br/></w:r>
+      <w:r><w:t>Подпись: А.С. Иванов</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>`
+
+	anon := anonymizer.New("test-contract-salt-42")
+	h := formats.NewDOCXHandler(anon)
+
+	data := createTestDocx(docXML)
+	r := bytes.NewReader(data)
+
+	_, entities, snippets, _, err := h.Inspect(r, int64(len(data)))
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	entityTypes := make(map[string]bool)
+	for _, e := range entities {
+		entityTypes[e.Type] = true
+	}
+
+	if !entityTypes["FIO"] && !entityTypes[string(detector.EntityFIO)] {
+		t.Errorf("expected FIO entity, got: %v", entities)
+	}
+	if !entityTypes["PASSPORT"] && !entityTypes[string(detector.EntityPassport)] {
+		t.Errorf("expected PASSPORT entity, got: %v", entities)
+	}
+	if !entityTypes["ADDRESS"] && !entityTypes[string(detector.EntityAddress)] {
+		t.Errorf("expected ADDRESS entity, got: %v", entities)
+	}
+	if !entityTypes["BANK_CARD"] && !entityTypes[string(detector.EntityCard)] {
+		t.Errorf("expected BANK_CARD entity, got: %v", entities)
+	}
+
+	// Process
+	var anonBuf bytes.Buffer
+	dm, err := h.Process(context.Background(), bytes.NewReader(data), int64(len(data)), &anonBuf, nil)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	anonDocXML, err := readZipFile(anonBuf.Bytes(), "word/document.xml")
+	if err != nil {
+		t.Fatalf("read zip failed: %v", err)
+	}
+
+	if strings.Contains(anonDocXML, "45 18 № 912384") {
+		t.Errorf("passport was not anonymized: %s", anonDocXML)
+	}
+	if strings.Contains(anonDocXML, "40802810438000123456") {
+		t.Errorf("bank account was not anonymized: %s", anonDocXML)
+	}
+	if strings.Contains(anonDocXML, "ул. Усачёва, д. 29") {
+		t.Errorf("address was not anonymized: %s", anonDocXML)
+	}
+
+	// Restore
+	var restBuf bytes.Buffer
+	restoredCount, err := formats.RestoreDOCX(context.Background(), bytes.NewReader(anonBuf.Bytes()), int64(anonBuf.Len()), &restBuf, dm)
+	if err != nil {
+		t.Fatalf("RestoreDOCX failed: %v", err)
+	}
+	if restoredCount < 4 {
+		t.Errorf("expected at least 4 restored entities, got %d", restoredCount)
+	}
+
+	restDocXML, err := readZipFile(restBuf.Bytes(), "word/document.xml")
+	if err != nil {
+		t.Fatalf("read restored doc failed: %v", err)
+	}
+
+	if !strings.Contains(restDocXML, "45 18 № 912384") {
+		t.Errorf("passport was not restored: %s", restDocXML)
+	}
+	if !strings.Contains(restDocXML, "40802810438000123456") {
+		t.Errorf("bank account was not restored: %s", restDocXML)
+	}
+	if !strings.Contains(restDocXML, "119048, г. Москва, ул. Усачёва, д. 29, корп. 2, кв. 74") {
+		t.Errorf("address was not restored: %s", restDocXML)
+	}
+	_ = snippets
+}
+
 

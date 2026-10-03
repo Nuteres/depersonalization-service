@@ -40,6 +40,8 @@ interface WailsRuntimeBinding {
   EventsOn?: (eventName: string, callback: AnyFunction) => void;
   EventsOff?: (eventName: string, ...additional: any[]) => void;
   EventsEmit?: (eventName: string, ...args: any[]) => void;
+  OnFileDrop?: (callback: (x: number, y: number, paths: string[]) => void, printStack?: boolean) => void;
+  OnFileDropOff?: () => void;
 }
 
 declare global {
@@ -374,4 +376,19 @@ export function DevEmitEvent(eventName: string, ...args: any[]): void {
       }
     }
   }
+}
+
+export function OnFileDrop(
+  callback: (x: number, y: number, paths: string[]) => void
+): () => void {
+  const runtime = getRuntime();
+  if (runtime?.OnFileDrop) {
+    runtime.OnFileDrop(callback, false);
+    return () => {
+      if (runtime.OnFileDropOff) {
+        runtime.OnFileDropOff();
+      }
+    };
+  }
+  return () => {};
 }

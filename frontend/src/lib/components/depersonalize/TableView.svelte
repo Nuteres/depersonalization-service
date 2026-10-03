@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { appState } from '../../stores/appState.svelte';
   import { tableState } from '../../stores/tableState.svelte';
   import { GetSheetRows } from '../../api/wails';
   import type { EntityInfo } from '../../types/domain';
+
+  let loadAttemptCompleted = $state(false);
 
   const sheetName = $derived.by(() => {
     const info = appState.currentFileInfo;
@@ -161,18 +163,31 @@
   // Automatically pre-load rows to fill the viewport when expanded preview opens
   $effect(() => {
     if (tableState.isFullscreen) {
-      if (tableState.previewRows.length < 50 && tableState.previewRows.length < totalRowCount) {
-        loadMoreRows();
-      }
+      untrack(() => {
+        if (
+          !tableState.isLoadingRows &&
+          tableState.previewRows.length < 50 &&
+          tableState.previewRows.length < totalRowCount &&
+          !loadAttemptCompleted
+        ) {
+          loadMoreRows();
+        }
+      });
+    } else {
+      loadAttemptCompleted = false;
     }
   });
 
   async function loadMoreRows() {
     if (tableState.isLoadingRows) return;
-    if (tableState.previewRows.length >= totalRowCount) return;
+    if (tableState.previewRows.length >= totalRowCount) {
+      loadAttemptCompleted = true;
+      return;
+    }
     if (!appState.currentFilePath) return;
 
     tableState.setIsLoadingRows(true);
+    let noMore = false;
     try {
       const offset = tableState.previewRows.length;
       const limit = 50;
@@ -186,9 +201,12 @@
       );
       if (newRows && newRows.length > 0) {
         tableState.appendPreviewRows(newRows);
+        if (newRows.length < limit || tableState.previewRows.length >= totalRowCount) {
+          noMore = true;
+        }
 
         // Auto-fill until container has scrollable overflow
-        if (tableState.isFullscreen && tableState.previewRows.length < totalRowCount) {
+        if (!noMore && tableState.isFullscreen && tableState.previewRows.length < totalRowCount) {
           setTimeout(() => {
             const container = document.getElementById('modal-table-scroll-container');
             if (container && container.scrollHeight <= container.clientHeight + 100) {
@@ -196,11 +214,17 @@
             }
           }, 60);
         }
+      } else {
+        noMore = true;
       }
     } catch (err) {
       console.error('Failed to load table rows batch:', err);
+      noMore = true;
     } finally {
       tableState.setIsLoadingRows(false);
+      if (noMore) {
+        loadAttemptCompleted = true;
+      }
     }
   }
 
@@ -427,11 +451,14 @@
         <div
           class="px-5 py-3.5 border-b border-[#E8E7E3] flex items-center justify-between bg-[#FAF9F5] shrink-0 gap-3"
         >
-          <div class="flex items-center space-x-3 truncate">
+          <div class="flex items-center space-x-3 min-w-0 flex-1">
             <span class="font-bold text-sm tracking-tight text-[#1C1917] whitespace-nowrap">
               Полный предпросмотр таблицы
             </span>
-            <span class="text-xs font-mono font-semibold text-[#1C1917] bg-[#E8E7E3] px-2 py-0.5 truncate">
+            <span
+              class="text-xs font-mono font-semibold text-[#1C1917] bg-[#E8E7E3] px-2 py-0.5 max-w-xs md:max-w-md lg:max-w-xl truncate"
+              title={appState.currentFileInfo.name}
+            >
               {appState.currentFileInfo.name}
             </span>
             <span class="text-xs text-[#78716C] font-mono whitespace-nowrap">
@@ -610,11 +637,14 @@
             </tbody>
           </table>
 
-          {#if tableState.previewRows.length < totalRowCount}
+          {#if tableState.previewRows.length < totalRowCount && !loadAttemptCompleted}
             <div class="p-3 text-center border-t border-[#F0EFEB] bg-[#FAF9F5]">
               <button
                 type="button"
-                onclick={loadMoreRows}
+                onclick={() => {
+                  loadAttemptCompleted = false;
+                  loadMoreRows();
+                }}
                 disabled={tableState.isLoadingRows}
                 class="px-4 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] shadow-xs active:scale-[0.99] transition cursor-pointer disabled:opacity-50"
               >

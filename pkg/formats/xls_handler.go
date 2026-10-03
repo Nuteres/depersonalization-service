@@ -31,7 +31,8 @@ func (h *XLSHandler) SupportedExtensions() []string {
 	return []string{".xls"}
 }
 
-func safeGetXLSRow(sheet *xls.WorkSheet, i int) (r *xls.Row) {
+// SafeGetXLSRow retrieves row i safely, catching any panics from extrame/xls.
+func SafeGetXLSRow(sheet *xls.WorkSheet, i int) (r *xls.Row) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			r = nil
@@ -40,7 +41,12 @@ func safeGetXLSRow(sheet *xls.WorkSheet, i int) (r *xls.Row) {
 	return sheet.Row(i)
 }
 
-func getXLSRowValues(row *xls.Row) (cols []string) {
+func safeGetXLSRow(sheet *xls.WorkSheet, i int) *xls.Row {
+	return SafeGetXLSRow(sheet, i)
+}
+
+// GetXLSRowValues extracts cell string values from an xls.Row safely.
+func GetXLSRowValues(row *xls.Row) (cols []string) {
 	if row == nil {
 		return nil
 	}
@@ -58,6 +64,10 @@ func getXLSRowValues(row *xls.Row) (cols []string) {
 		cols[c] = row.Col(c)
 	}
 	return cols
+}
+
+func getXLSRowValues(row *xls.Row) []string {
+	return GetXLSRowValues(row)
 }
 
 // Inspect examines the sheets in the .xls workbook, detecting column headers and row counts.
@@ -302,7 +312,7 @@ func (h *XLSHandler) ProcessToXLSX(ctx context.Context, path string, w io.Writer
 		if len(headers) > 0 {
 			headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 		}
-		colTypes := ResolveColumnTypes(headers, options)
+		colTypes := ResolveColumnTypesWithSamples(headers, sample[headerRowIndex+1:], options)
 
 		// Build map of disabled columns (1-based index)
 		disabledMap := BuildDisabledMap(sheetName, options)

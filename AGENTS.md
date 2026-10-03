@@ -43,3 +43,13 @@
   - `npm --prefix frontend run check` (проверка типов TypeScript/Svelte)
   - `npm --prefix frontend run build` (сборка бандла фронтенда)
   - `go test ./...` (прохождение всех тестов Go)
+
+---
+
+## 5. Обязательная сборка свежих бинарников (Build Artifacts)
+- После любых правок, изменений функционала или исправления багов **ОБЯЗАТЕЛЬНО** пересобирать свежие исполняемые бинарные файлы приложения для поддерживаемых платформ (macOS, Windows, Alt Linux) с помещением их в каталог `bin/`.
+- Выполнять сборку через команды:
+  - `make build-windows` (или `GOOS=windows GOARCH=amd64 go build ...`)
+  - `make build-macos` (или Universal ARM64+Intel)
+  - `make build-altlinux` (при наличии Docker)
+

@@ -308,9 +308,6 @@ func TestApp_GetAppInfo(t *testing.T) {
 	if info["version"] != expectedVersion {
 		t.Errorf("expected version %s, got %s", expectedVersion, info["version"])
 	}
-	if info["version"] != "v1.1.0" {
-		t.Errorf("expected version v1.1.0, got %s", info["version"])
-	}
 	if info["os"] == "" {
 		t.Errorf("expected non-empty OS name")
 	}

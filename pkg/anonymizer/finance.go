@@ -32,3 +32,24 @@ func (a *Anonymizer) GenerateCardMIR(original string) string {
 
 	return fmt.Sprintf("2200 %04d %04d %03d%d", p1, p2, p3, checkDigit)
 }
+
+// GenerateBankAccount генерирует синтетический 20-значный номер расчетного счета,
+// сохраняя исходный балансовый префикс (первые 5 цифр счета).
+func (a *Anonymizer) GenerateBankAccount(original string) string {
+	seed := a.DeriveSeed(original)
+	prefix := "40802"
+	var digits []rune
+	for _, r := range original {
+		if r >= '0' && r <= '9' {
+			digits = append(digits, r)
+		}
+	}
+	if len(digits) >= 5 {
+		prefix = string(digits[:5])
+	}
+
+	p1 := a.RandInt(seed, 10000, 99999)
+	p2 := a.RandInt(seed+1, 10000, 99999)
+	p3 := a.RandInt(seed+2, 10000, 99999)
+	return fmt.Sprintf("%s%05d%05d%05d", prefix, p1, p2, p3)
+}

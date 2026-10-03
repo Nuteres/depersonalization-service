@@ -27,6 +27,19 @@ export interface DocxTextSnippet {
   type: string;
 }
 
+export interface TextParagraphSegment {
+  text: string;
+  isEntity: boolean;
+  type?: string;
+  original?: string;
+  anonymized?: string;
+}
+
+export interface TextParagraphPreview {
+  index: number;
+  segments: TextParagraphSegment[];
+}
+
 export interface FileInfo {
   path: string;
   name: string;
@@ -44,6 +57,7 @@ export interface FileInfo {
   sheets?: SheetInfo[];
   activeSheet?: string;
   textSnippets?: DocxTextSnippet[];
+  paragraphPreviews?: TextParagraphPreview[];
   pdfTextSnippet?: string;
   pdfRedactedSnippet?: string;
 }

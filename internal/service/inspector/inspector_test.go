@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
@@ -611,6 +612,117 @@ func TestInspectPDF(t *testing.T) {
 	}
 	if info.PDFTextSnippet == "" {
 		t.Errorf("expected non-empty PDFTextSnippet")
+	}
+}
+
+func TestInspect_UserMockXLS(t *testing.T) {
+	mockPath := filepath.Join("..", "..", "..", "Шаблон импорта в ОУ. Передача данных 01.10.2026.xls")
+	if _, err := os.Stat(mockPath); err != nil {
+		t.Skip("mock xls file not found, skipping")
+	}
+
+	insp := inspector.New()
+	info, err := insp.Inspect(context.Background(), mockPath)
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	if info.RowCount != 29 {
+		t.Errorf("expected 29 rows, got %d", info.RowCount)
+	}
+
+	// Verify entities:
+	// Col 1: Логин(вторичныйключ) -> EMAIL
+	// Col 2: Фамилия -> LAST_NAME
+	// Col 3: Имя -> FIRST_NAME
+	// Col 4: Отчество -> PATRONYMIC
+	// Col 9: Дата увольнения -> DATE
+	// Col 10: Телефон -> PHONE
+	entityMap := make(map[string]domain.EntityInfo)
+	for _, e := range info.Entities {
+		entityMap[e.ColumnName] = e
+	}
+
+	emailEnt, ok := entityMap["Логин(вторичныйключ)"]
+	if !ok {
+		t.Fatalf("expected entity for 'Логин(вторичныйключ)', got none")
+	}
+	if emailEnt.Type != "EMAIL" {
+		t.Errorf("expected EMAIL for login column, got %s", emailEnt.Type)
+	}
+
+	surEnt, ok := entityMap["Фамилия"]
+	if !ok || surEnt.Type != "LAST_NAME" {
+		t.Errorf("expected LAST_NAME for 'Фамилия', got %+v", surEnt)
+	}
+
+	firstEnt, ok := entityMap["Имя"]
+	if !ok || firstEnt.Type != "FIRST_NAME" {
+		t.Errorf("expected FIRST_NAME for 'Имя', got %+v", firstEnt)
+	}
+
+	patrEnt, ok := entityMap["Отчество"]
+	if !ok || patrEnt.Type != "PATRONYMIC" {
+		t.Errorf("expected PATRONYMIC for 'Отчество', got %+v", patrEnt)
+	}
+
+	// Verify preview rows:
+	if len(info.PreviewRows) == 0 {
+		t.Fatalf("expected preview rows, got 0")
+	}
+	p0 := info.PreviewRows[0]
+	// p0.Before[1] = "Самедов"
+	if len(strings.Fields(p0.After[1])) != 1 {
+		t.Errorf("expected single-word surname, got %q", p0.After[1])
+	}
+	// p0.Before[2] = "Самед"
+	if len(strings.Fields(p0.After[2])) != 1 {
+		t.Errorf("expected single-word first name, got %q", p0.After[2])
+	}
+	// p0.Before[3] = "Намиг Оглы"
+	if len(strings.Fields(p0.After[3])) != 1 {
+		t.Errorf("expected single-word patronymic, got %q", p0.After[3])
+	}
+}
+
+func TestInspect_UserMockPDF(t *testing.T) {
+	mockPath := filepath.Join("..", "..", "..", "Трудовой_договор_с_сотрудником_МОК.pdf")
+	if _, err := os.Stat(mockPath); err != nil {
+		t.Skip("mock pdf file not found, skipping")
+	}
+
+	insp := inspector.New()
+	info, err := insp.Inspect(context.Background(), mockPath)
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	if info.Format != "pdf" || info.FileType != "pdf" {
+		t.Errorf("expected format and type pdf, got format=%s, type=%s", info.Format, info.FileType)
+	}
+
+	// Verify that false positives do NOT exist in TextSnippets or Entities
+	for _, snippet := range info.TextSnippets {
+		if strings.Contains(snippet.Original, "дает согласие") {
+			t.Errorf("found false-positive FIO snippet: %q", snippet.Original)
+		}
+		if strings.Contains(snippet.Original, "обязуется не") {
+			t.Errorf("found false-positive FIO snippet: %q", snippet.Original)
+		}
+		if strings.Contains(snippet.Original, "компании") {
+			t.Errorf("found false-positive FIO snippet: %q", snippet.Original)
+		}
+	}
+
+	// Verify genuine PII are found
+	entityTypes := make(map[string]bool)
+	for _, e := range info.Entities {
+		entityTypes[e.Type] = true
+	}
+	for _, required := range []string{"FIO", "PASSPORT", "SNILS", "INN", "PHONE"} {
+		if !entityTypes[required] {
+			t.Errorf("expected entity %s to be detected in mock PDF, detected: %+v", required, info.Entities)
+		}
 	}
 }
 

@@ -71,6 +71,18 @@ func parseODTXML(data []byte) ([]odtParagraph, error) {
 					curPara = &odtParagraph{}
 				}
 				inParaDepth++
+			} else if inParaDepth > 0 && (t.Name.Local == "line-break" || t.Name.Local == "tab") {
+				textVal := "\n"
+				if t.Name.Local == "tab" {
+					textVal = "\t"
+				}
+				if curPara != nil {
+					curPara.nodes = append(curPara.nodes, odtTextNode{
+						startOffset: startOffset,
+						endOffset:   endOffset,
+						text:        textVal,
+					})
+				}
 			} else if inParaDepth > 0 {
 				inParaDepth++
 			}
@@ -99,24 +111,25 @@ func parseODTXML(data []byte) ([]odtParagraph, error) {
 	return paras, nil
 }
 
-// Inspect reads an ODT document from r and returns paragraph count, detected entity counts, and preview snippets.
-func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []DocxTextSnippet, error) {
+// Inspect reads an ODT document from r and returns paragraph count, detected entity counts, preview snippets, and paragraph previews.
+func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []DocxTextSnippet, []TextParagraphPreview, error) {
 	if r == nil {
-		return 0, nil, nil, errors.New("reader cannot be nil")
+		return 0, nil, nil, nil, errors.New("reader cannot be nil")
 	}
 	if size <= 0 {
-		return 0, nil, nil, errors.New("invalid file size")
+		return 0, nil, nil, nil, errors.New("invalid file size")
 	}
 
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("failed to open odt zip: %w", err)
+		return 0, nil, nil, nil, fmt.Errorf("failed to open odt zip: %w", err)
 	}
 
 	totalParagraphs := 0
 	entityTypeCounts := make(map[string]int)
 	var snippets []DocxTextSnippet
 	seenSnippets := make(map[string]bool)
+	var paragraphPreviews []TextParagraphPreview
 
 	for _, f := range zr.File {
 		if !isODTTextXML(f.Name) {
@@ -125,17 +138,17 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 
 		rc, err := f.Open()
 		if err != nil {
-			return 0, nil, nil, fmt.Errorf("failed to open %s: %w", f.Name, err)
+			return 0, nil, nil, nil, fmt.Errorf("failed to open %s: %w", f.Name, err)
 		}
 		data, err := io.ReadAll(rc)
 		_ = rc.Close()
 		if err != nil {
-			return 0, nil, nil, fmt.Errorf("failed to read %s: %w", f.Name, err)
+			return 0, nil, nil, nil, fmt.Errorf("failed to read %s: %w", f.Name, err)
 		}
 
 		paras, err := parseODTXML(data)
 		if err != nil {
-			return 0, nil, nil, fmt.Errorf("failed to parse %s: %w", f.Name, err)
+			return 0, nil, nil, nil, fmt.Errorf("failed to parse %s: %w", f.Name, err)
 		}
 
 		totalParagraphs += len(paras)
@@ -149,9 +162,13 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 			for _, n := range p.nodes {
 				paraTextBuf.WriteString(n.text)
 			}
-			paraText := paraTextBuf.String()
+			pStr := paraTextBuf.String()
+			trimmedP := strings.TrimSpace(pStr)
+			if trimmedP == "" {
+				continue
+			}
 
-			matches := findDocxSensitiveMatches(paraText)
+			matches := findDocxSensitiveMatches(pStr)
 			for _, m := range matches {
 				entityTypeCounts[m.entityType]++
 
@@ -168,6 +185,47 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 					})
 				}
 			}
+
+			var segments []TextParagraphSegment
+			if len(matches) == 0 {
+				segments = append(segments, TextParagraphSegment{
+					Text:     pStr,
+					IsEntity: false,
+				})
+			} else {
+				lastIdx := 0
+				for _, m := range matches {
+					if m.start > lastIdx && m.start <= len(pStr) {
+						segments = append(segments, TextParagraphSegment{
+							Text:     pStr[lastIdx:m.start],
+							IsEntity: false,
+						})
+					}
+					synth := m.value
+					if h.Anon != nil {
+						synth = generateSynthetic(h.Anon, m.entityType, m.value)
+					}
+					segments = append(segments, TextParagraphSegment{
+						Text:       synth,
+						IsEntity:   true,
+						Type:       m.entityType,
+						Original:   m.value,
+						Anonymized: synth,
+					})
+					lastIdx = m.end
+				}
+				if lastIdx < len(pStr) {
+					segments = append(segments, TextParagraphSegment{
+						Text:     pStr[lastIdx:],
+						IsEntity: false,
+					})
+				}
+			}
+
+			paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
+				Index:    len(paragraphPreviews) + 1,
+				Segments: segments,
+			})
 		}
 	}
 
@@ -176,7 +234,7 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 		entities = append(entities, EntityCount{Type: k, Count: v})
 	}
 
-	return totalParagraphs, entities, snippets, nil
+	return totalParagraphs, entities, snippets, paragraphPreviews, nil
 }
 
 // Process reads an ODT document from r, anonymizes detected sensitive personal data,

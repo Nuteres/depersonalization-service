@@ -149,7 +149,7 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 		"progress_callback":         progressCallback,
 	}
 
-	if ext == ".docx" || ext == ".odt" {
+	if ext == ".docx" || ext == ".odt" || ext == ".pdf" {
 		if len(opts.DisabledCols) > 0 && info != nil {
 			var disabledEntityTypes []string
 			for _, cIdx := range opts.DisabledCols {

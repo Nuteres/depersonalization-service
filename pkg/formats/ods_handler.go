@@ -232,7 +232,7 @@ func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 		}
 
 		headerRowIndex, headers := FindHeaderRow(sampleRows)
-		colTypes := ResolveColumnTypes(headers, options)
+		colTypes := ResolveColumnTypesWithSamples(headers, sampleRows[headerRowIndex+1:], options)
 
 		// Build map of disabled columns (1-based index)
 		disabledMap := make(map[int]bool)
@@ -895,7 +895,7 @@ func (h *ODSHandler) ProcessToXLSX(ctx context.Context, r io.ReaderAt, size int6
 		}
 
 		headerRowIndex, headers := FindHeaderRow(sampleRows)
-		colTypes := ResolveColumnTypes(headers, options)
+		colTypes := ResolveColumnTypesWithSamples(headers, sampleRows[headerRowIndex+1:], options)
 
 		// Build map of disabled columns (1-based index)
 		disabledMap := make(map[int]bool)

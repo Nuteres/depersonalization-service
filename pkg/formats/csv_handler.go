@@ -122,7 +122,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
-	colTypes := ResolveColumnTypes(headers, options)
+	colTypes := ResolveColumnTypesWithSamples(headers, initialRows[headerIdx+1:], options)
 
 	// Build map of disabled columns (1-based index)
 	disabledMap := make(map[int]bool)

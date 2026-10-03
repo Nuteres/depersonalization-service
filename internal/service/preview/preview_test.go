@@ -493,3 +493,59 @@ func TestGetTableRows(t *testing.T) {
 		t.Fatalf("expected 5 rows, got %d", len(rows))
 	}
 }
+
+func TestGetXLSRows_Pagination(t *testing.T) {
+	mockPath := filepath.Join("..", "..", "..", "Шаблон импорта в ОУ. Передача данных 01.10.2026.xls")
+	if _, err := os.Stat(mockPath); err != nil {
+		t.Skip("mock xls file not found, skipping")
+	}
+
+	svc := preview.New()
+	ctx := context.Background()
+
+	// 1. Fetch batch past row 10: offset 10, limit 10
+	rows, err := svc.GetSheetRows(ctx, mockPath, "Лист1", 10, 10, "test-salt", nil)
+	if err != nil {
+		t.Fatalf("GetSheetRows failed on .xls: %v", err)
+	}
+
+	if len(rows) == 0 {
+		t.Fatalf("expected rows after offset 10, got 0")
+	}
+
+	// Verify row indexing starts at offset + 1 = 11
+	if rows[0].Index != 11 {
+		t.Errorf("expected first row index 11, got %d", rows[0].Index)
+	}
+
+	// Verify column 0 (Логин) is anonymized as email
+	origEmail := rows[0].Before[0]
+	anonEmail := rows[0].After[0]
+	if !strings.Contains(origEmail, "@") {
+		t.Errorf("expected original cell 0 to be email, got %q", origEmail)
+	}
+	if !strings.Contains(anonEmail, "@") || anonEmail == origEmail {
+		t.Errorf("expected anonymized email in cell 0, got %q", anonEmail)
+	}
+
+	// Verify column 1 (Фамилия) is single-word surname
+	origSurname := rows[0].Before[1]
+	anonSurname := rows[0].After[1]
+	if len(strings.Fields(anonSurname)) != 1 {
+		t.Errorf("expected single-word surname for %q, got %q", origSurname, anonSurname)
+	}
+
+	// Verify column 2 (Имя) is single-word first name
+	origName := rows[0].Before[2]
+	anonName := rows[0].After[2]
+	if len(strings.Fields(anonName)) != 1 {
+		t.Errorf("expected single-word first name for %q, got %q", origName, anonName)
+	}
+
+	// Verify column 3 (Отчество) is single-word patronymic
+	origPatr := rows[0].Before[3]
+	anonPatr := rows[0].After[3]
+	if len(strings.Fields(anonPatr)) != 1 {
+		t.Errorf("expected single-word patronymic for %q, got %q", origPatr, anonPatr)
+	}
+}

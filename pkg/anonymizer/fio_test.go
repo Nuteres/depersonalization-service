@@ -1,6 +1,9 @@
 package anonymizer
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGenderPreservation(t *testing.T) {
 	anon := New("salt-fio")
@@ -53,5 +56,63 @@ func TestDetectGender(t *testing.T) {
 		if got != tt.expected {
 			t.Errorf("DetectGender(%q) = %v; want %v", tt.fio, got, tt.expected)
 		}
+	}
+}
+
+func TestSinglePartGenerators(t *testing.T) {
+	anon := New("salt-single")
+
+	// Last Name: Male and Female
+	maleSurname := anon.GenerateLastName("Самедов")
+	if len(strings.Fields(maleSurname)) != 1 {
+		t.Fatalf("expected single-word surname, got %q", maleSurname)
+	}
+	if DetectGender(maleSurname) != GenderMale {
+		t.Errorf("expected male surname for 'Самедов', got %q", maleSurname)
+	}
+
+	femaleSurname := anon.GenerateLastName("Кудряшова")
+	if len(strings.Fields(femaleSurname)) != 1 {
+		t.Fatalf("expected single-word surname, got %q", femaleSurname)
+	}
+	if DetectGender(femaleSurname) != GenderFemale {
+		t.Errorf("expected female surname for 'Кудряшова', got %q", femaleSurname)
+	}
+
+	// First Name: Male and Female
+	maleName := anon.GenerateFirstName("Самед")
+	if len(strings.Fields(maleName)) != 1 {
+		t.Fatalf("expected single-word first name, got %q", maleName)
+	}
+
+	femaleName := anon.GenerateFirstName("Владислава")
+	if len(strings.Fields(femaleName)) != 1 {
+		t.Fatalf("expected single-word first name, got %q", femaleName)
+	}
+	if DetectGender(femaleName) != GenderFemale {
+		t.Errorf("expected female name for 'Владислава', got %q", femaleName)
+	}
+
+	// Patronymic: Male and Female
+	malePatr := anon.GeneratePatronymic("Намиг Оглы")
+	if len(strings.Fields(malePatr)) != 1 {
+		t.Fatalf("expected single-word patronymic, got %q", malePatr)
+	}
+	if DetectGender(malePatr) != GenderMale {
+		t.Errorf("expected male patronymic for 'Намиг Оглы', got %q", malePatr)
+	}
+
+	femalePatr := anon.GeneratePatronymic("Витальевна")
+	if len(strings.Fields(femalePatr)) != 1 {
+		t.Fatalf("expected single-word patronymic, got %q", femalePatr)
+	}
+	if DetectGender(femalePatr) != GenderFemale {
+		t.Errorf("expected female patronymic for 'Витальевна', got %q", femalePatr)
+	}
+
+	// Determinism test
+	anon2 := New("salt-single")
+	if anon.GenerateLastName("Самедов") != anon2.GenerateLastName("Самедов") {
+		t.Errorf("expected deterministic surname generation")
 	}
 }
