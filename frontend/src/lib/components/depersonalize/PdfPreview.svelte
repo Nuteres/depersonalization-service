@@ -239,16 +239,16 @@
           </span>
         </div>
         <span class="text-xs text-[#78716C] font-mono">
-          · {allEntityMarks.length} плашек ПДн
+          ▪ {allEntityMarks.length} плашек ПДн
         </span>
         {#if fileInfo.pageCount}
           <span class="text-xs text-[#A8A29E] font-mono">
-            · {fileInfo.pageCount} {fileInfo.pageCount === 1 ? 'страница' : 'страницы'}
+            ▪ {fileInfo.pageCount} {fileInfo.pageCount === 1 ? 'страница' : 'страницы'}
           </span>
         {/if}
         {#if paragraphPreviews.length}
           <span class="text-xs text-[#A8A29E] font-mono">
-            · {paragraphPreviews.length} строк/абзацев
+            ▪ {paragraphPreviews.length} строк/абзацев
           </span>
         {/if}
       </div>
@@ -391,95 +391,75 @@
       </div>
 
       <!-- Main Clean Paper Document View (Scrollable Page Container) -->
-      <div class="bg-[#E5E4DE] p-4 sm:p-10 flex justify-center overflow-x-auto min-h-[500px]">
+      <div
+        id="pdf-sheet-viewport"
+        class="p-4 sm:p-8 md:p-10 bg-[#EDEBE6] overflow-y-auto max-h-[720px] custom-scrollbar relative"
+      >
+        <!-- PDF Page Sheet (Full Height Block, grows with content) -->
         <div
-          class="bg-white p-6 sm:p-12 md:p-16 max-w-3xl w-full shadow-lg border border-[#D6D3D1] text-[#1C1917] font-serif leading-relaxed text-[13px] relative flex flex-col gap-4"
+          id="pdf-sheet-paper"
+          class="mx-auto w-full max-w-3xl bg-white shadow-lg border border-[#D5D3CC] p-6 sm:p-10 md:p-12 text-[#1C1917] font-sans text-[14px] sm:text-[15px] leading-[1.8] min-h-[300px] h-auto"
         >
-          <!-- Document Watermark Header -->
-          <div
-            class="flex items-center justify-between pb-4 border-b border-[#E8E7E3] text-[11px] font-sans text-[#78716C] mb-2"
-          >
-            <div class="flex items-center space-x-2">
-              <span class="font-bold text-[#1C1917] font-mono uppercase tracking-wider">
-                ДОКУМЕНТ PDF
-              </span>
-              <span>· {fileInfo.name}</span>
-            </div>
-            <div class="font-mono text-[10px] uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2 py-0.5 border border-emerald-200">
-              152-ФЗ Blackout Redaction
-            </div>
-          </div>
-
           <!-- Paragraphs Render Area -->
           {#if paragraphPreviews.length > 0}
-            <div class="space-y-3.5">
+            <div class="space-y-3">
               {#each paragraphPreviews as para, pIdx}
-                <div class="group relative flex items-start">
-                  <!-- Paragraph Number gutter -->
-                  <span
-                    class="w-6 shrink-0 text-[10px] font-mono text-[#D6D3D1] group-hover:text-[#A8A29E] select-none text-right pr-2 pt-0.5"
-                  >
-                    {para.index}
-                  </span>
+                <p class="mb-3 whitespace-pre-wrap leading-relaxed text-justify break-words">
+                  {#each para.segments as seg, sIdx}
+                    {#if seg.isEntity}
+                      {@const globalIdx = entityIndexMap[`${pIdx}_${sIdx}`]}
+                      {@const entType = seg.type || 'FIO'}
+                      {@const disabled = isEntityTypeDisabled(entType)}
 
-                  <!-- Paragraph Text Content -->
-                  <p class="flex-1 text-justify text-[#1C1917] leading-relaxed">
-                    {#each para.segments as seg, sIdx}
-                      {#if seg.isEntity}
-                        {@const globalIdx = entityIndexMap[`${pIdx}_${sIdx}`]}
-                        {@const entType = seg.type || 'FIO'}
-                        {@const disabled = isEntityTypeDisabled(entType)}
-
-                        {#if isBefore}
-                          <!-- Original text mode -->
-                          <span
-                            id={`pdf-entity-mark-${globalIdx}`}
-                            class="font-semibold bg-amber-50 text-amber-900 px-1 py-0.5 rounded-xs border-b-2 border-amber-500 transition-colors"
-                          >
-                            {seg.original || seg.text}
+                      {#if isBefore}
+                        <!-- Original text mode -->
+                        <span
+                          id={`pdf-entity-mark-${globalIdx}`}
+                          class="font-semibold bg-amber-50 text-amber-900 px-1 py-0.5 rounded-xs border-b-2 border-amber-500 transition-colors"
+                        >
+                          {seg.original || seg.text}
+                        </span>
+                      {:else if disabled}
+                        <!-- Blackout Disabled (Revealed original text with dashed plate) -->
+                        <button
+                          type="button"
+                          id={`pdf-entity-mark-${globalIdx}`}
+                          onclick={() => toggleEntityType(entType)}
+                          onmouseenter={(e) => handleMarkHover(e, seg)}
+                          onmouseleave={handleMarkLeave}
+                          class="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 bg-stone-100 border border-dashed border-stone-400 text-stone-700 font-mono text-xs rounded transition-all cursor-pointer hover:bg-stone-200 hover:border-stone-600 align-baseline select-none"
+                          title="Плашка снята. Нажмите для повторного закрытия плашкой"
+                        >
+                          <span class="font-sans font-medium text-stone-900">{seg.original || seg.text}</span>
+                          <span class="text-[9px] text-stone-500 font-mono bg-stone-200 px-1 rounded">
+                            ○ Без плашки
                           </span>
-                        {:else if disabled}
-                          <!-- Blackout Disabled (Revealed original text with dashed plate) -->
-                          <button
-                            type="button"
-                            id={`pdf-entity-mark-${globalIdx}`}
-                            onclick={() => toggleEntityType(entType)}
-                            onmouseenter={(e) => handleMarkHover(e, seg)}
-                            onmouseleave={handleMarkLeave}
-                            class="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 bg-stone-100 border border-dashed border-stone-400 text-stone-700 font-mono text-xs rounded transition-all cursor-pointer hover:bg-stone-200 hover:border-stone-600 align-baseline select-none"
-                            title="Плашка снята. Нажмите для повторного закрытия плашкой"
-                          >
-                            <span class="font-sans font-medium text-stone-900">{seg.original || seg.text}</span>
-                            <span class="text-[9px] text-stone-500 font-mono bg-stone-200 px-1 rounded">
-                              ○ Без плашки
-                            </span>
-                          </button>
-                        {:else}
-                          <!-- Vector Blackout Redaction Plate (Solid Black Bar) -->
-                          <button
-                            type="button"
-                            id={`pdf-entity-mark-${globalIdx}`}
-                            onclick={() => toggleEntityType(entType)}
-                            onmouseenter={(e) => handleMarkHover(e, seg)}
-                            onmouseleave={handleMarkLeave}
-                            class="inline-flex items-center gap-1.5 px-2 py-0.5 mx-0.5 bg-[#1C1917] hover:bg-neutral-800 text-white font-mono text-[11px] font-bold rounded shadow-xs transition-all cursor-pointer hover:ring-2 hover:ring-indigo-500 hover:ring-offset-1 align-baseline select-none"
-                            title={`Закрыто плашкой [ ${getEntityTypeName(entType)} ]. Нажмите для снятия плашки.`}
-                          >
-                            <span class="tracking-wider">[ ПДн СКРЫТО ]</span>
-                            <span
-                              class="text-[9px] uppercase px-1 py-0.2 bg-neutral-700 text-neutral-200 font-mono font-normal rounded-xs"
-                            >
-                              {getEntityTypeName(entType)}
-                            </span>
-                          </button>
-                        {/if}
+                        </button>
                       {:else}
-                        <!-- Regular Text Run -->
-                        <span>{seg.text}</span>
+                        <!-- Vector Blackout Redaction Plate (Solid Black Bar) -->
+                        <button
+                          type="button"
+                          id={`pdf-entity-mark-${globalIdx}`}
+                          onclick={() => toggleEntityType(entType)}
+                          onmouseenter={(e) => handleMarkHover(e, seg)}
+                          onmouseleave={handleMarkLeave}
+                          class="inline-flex items-center gap-1.5 px-2 py-0.5 mx-0.5 bg-[#1C1917] hover:bg-neutral-800 text-white font-mono text-[11px] font-bold rounded shadow-xs transition-all cursor-pointer hover:ring-2 hover:ring-indigo-500 hover:ring-offset-1 align-baseline select-none"
+                          title={`Закрыто плашкой [ ${getEntityTypeName(entType)} ]. Нажмите для снятия плашки.`}
+                        >
+                          <span class="tracking-wider">[ ПДн СКРЫТО ]</span>
+                          <span
+                            class="text-[9px] uppercase px-1 py-0.2 bg-neutral-700 text-neutral-200 font-mono font-normal rounded-xs"
+                          >
+                            {getEntityTypeName(entType)}
+                          </span>
+                        </button>
                       {/if}
-                    {/each}
-                  </p>
-                </div>
+                    {:else}
+                      <!-- Regular Text Run -->
+                      <span>{seg.text}</span>
+                    {/if}
+                  {/each}
+                </p>
               {/each}
             </div>
           {:else if fileInfo.pdfTextSnippet}
@@ -488,19 +468,6 @@
               {isBefore ? fileInfo.pdfTextSnippet : (fileInfo.pdfRedactedSnippet || fileInfo.pdfTextSnippet)}
             </div>
           {/if}
-
-          <!-- Document Footer -->
-          <div
-            class="mt-12 pt-6 border-t border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[11px] font-sans text-[#78716C]"
-          >
-            <div class="flex items-center space-x-2">
-              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>Физическое стирание символов в PDF стримах и закрашивание векторными плашками</span>
-            </div>
-            <div class="font-mono text-[11px] text-[#A8A29E]">
-              152-ФЗ РФ · Конфиденциально
-            </div>
-          </div>
         </div>
       </div>
     {:else}

@@ -18,9 +18,9 @@ func (a *DesktopApp) SelectFile() (string, error) {
 		return "", errors.New("application context not initialized")
 	}
 
-	selected, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Выберите файл для обезличивания",
-		Filters: []runtime.FileFilter{
+	var filters []runtime.FileFilter
+	if goruntime.GOOS != "darwin" {
+		filters = []runtime.FileFilter{
 			{
 				DisplayName: "Все поддерживаемые форматы (*.xlsx, *.xlsb, *.ods, *.xls, *.csv, *.docx, *.odt, *.pdf)",
 				Pattern:     "*.xlsx;*.xlsb;*.ods;*.xls;*.csv;*.tsv;*.docx;*.odt;*.pdf",
@@ -37,11 +37,12 @@ func (a *DesktopApp) SelectFile() (string, error) {
 				DisplayName: "Документы PDF (*.pdf)",
 				Pattern:     "*.pdf",
 			},
-			{
-				DisplayName: "Все файлы (*.*)",
-				Pattern:     "*.*",
-			},
-		},
+		}
+	}
+
+	selected, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:   "Выберите файл для обезличивания",
+		Filters: filters,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to open file dialog: %w", err)
@@ -56,42 +57,38 @@ func (a *DesktopApp) SaveFileDialog(defaultName string) (string, error) {
 		return "", errors.New("application context not initialized")
 	}
 
-	ext := strings.ToLower(filepath.Ext(defaultName))
 	var filters []runtime.FileFilter
-	switch ext {
-	case ".xlsx", ".xlsm", ".xlsb", ".xls":
-		filters = []runtime.FileFilter{
-			{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
-			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
-		}
-	case ".ods":
-		filters = []runtime.FileFilter{
-			{DisplayName: "Таблица OpenDocument (*.ods)", Pattern: "*.ods"},
-			{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
-			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
-		}
-	case ".docx":
-		filters = []runtime.FileFilter{
-			{DisplayName: "Документ Word (*.docx)", Pattern: "*.docx"},
-			{DisplayName: "Документ OpenDocument Text (*.odt)", Pattern: "*.odt"},
-			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
-		}
-	case ".odt":
-		filters = []runtime.FileFilter{
-			{DisplayName: "Документ OpenDocument Text (*.odt)", Pattern: "*.odt"},
-			{DisplayName: "Документ Word (*.docx)", Pattern: "*.docx"},
-			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
-		}
-	case ".pdf":
-		filters = []runtime.FileFilter{
-			{DisplayName: "Документ PDF (*.pdf)", Pattern: "*.pdf"},
-			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
-		}
-	default:
-		filters = []runtime.FileFilter{
-			{DisplayName: "Таблица CSV (*.csv)", Pattern: "*.csv"},
-			{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
-			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
+	if goruntime.GOOS != "darwin" {
+		ext := strings.ToLower(filepath.Ext(defaultName))
+		switch ext {
+		case ".xlsx", ".xlsm", ".xlsb", ".xls":
+			filters = []runtime.FileFilter{
+				{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
+			}
+		case ".ods":
+			filters = []runtime.FileFilter{
+				{DisplayName: "Таблица OpenDocument (*.ods)", Pattern: "*.ods"},
+				{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
+			}
+		case ".docx":
+			filters = []runtime.FileFilter{
+				{DisplayName: "Документ Word (*.docx)", Pattern: "*.docx"},
+				{DisplayName: "Документ OpenDocument Text (*.odt)", Pattern: "*.odt"},
+			}
+		case ".odt":
+			filters = []runtime.FileFilter{
+				{DisplayName: "Документ OpenDocument Text (*.odt)", Pattern: "*.odt"},
+				{DisplayName: "Документ Word (*.docx)", Pattern: "*.docx"},
+			}
+		case ".pdf":
+			filters = []runtime.FileFilter{
+				{DisplayName: "Документ PDF (*.pdf)", Pattern: "*.pdf"},
+			}
+		default:
+			filters = []runtime.FileFilter{
+				{DisplayName: "Таблица CSV (*.csv)", Pattern: "*.csv"},
+				{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
+			}
 		}
 	}
 
@@ -112,18 +109,19 @@ func (a *DesktopApp) SelectKeyFile() (string, error) {
 		return "", errors.New("application context not initialized")
 	}
 
-	selected, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Выберите файл-ключ восстановления (.depmap)",
-		Filters: []runtime.FileFilter{
+	var filters []runtime.FileFilter
+	if goruntime.GOOS != "darwin" {
+		filters = []runtime.FileFilter{
 			{
 				DisplayName: "Файлы-ключи восстановления (*.depmap)",
 				Pattern:     "*.depmap",
 			},
-			{
-				DisplayName: "Все файлы (*.*)",
-				Pattern:     "*.*",
-			},
-		},
+		}
+	}
+
+	selected, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:   "Выберите файл-ключ восстановления (.depmap)",
+		Filters: filters,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to open file dialog: %w", err)
@@ -137,13 +135,17 @@ func (a *DesktopApp) SaveKeyFileDialog(defaultName string) (string, error) {
 		return "", errors.New("application context not initialized")
 	}
 
+	var filters []runtime.FileFilter
+	if goruntime.GOOS != "darwin" {
+		filters = []runtime.FileFilter{
+			{DisplayName: "Файл-ключ восстановления (*.depmap)", Pattern: "*.depmap"},
+		}
+	}
+
 	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
 		Title:           "Сохранить ключ восстановления (.depmap)",
 		DefaultFilename: defaultName,
-		Filters: []runtime.FileFilter{
-			{DisplayName: "Файл-ключ восстановления (*.depmap)", Pattern: "*.depmap"},
-			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
-		},
+		Filters:         filters,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to open save dialog: %w", err)

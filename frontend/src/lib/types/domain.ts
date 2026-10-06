@@ -40,6 +40,25 @@ export interface TextParagraphPreview {
   segments: TextParagraphSegment[];
 }
 
+export interface TextTableCellPreview {
+  segments: TextParagraphSegment[];
+}
+
+export interface TextTableRowPreview {
+  cells: TextTableCellPreview[];
+}
+
+export interface TextTablePreview {
+  rows: TextTableRowPreview[];
+}
+
+export interface TextDocumentBlock {
+  type: 'paragraph' | 'table' | string;
+  index: number;
+  segments?: TextParagraphSegment[];
+  table?: TextTablePreview;
+}
+
 export interface FileInfo {
   path: string;
   name: string;
@@ -58,6 +77,7 @@ export interface FileInfo {
   activeSheet?: string;
   textSnippets?: DocxTextSnippet[];
   paragraphPreviews?: TextParagraphPreview[];
+  documentBlocks?: TextDocumentBlock[];
   pdfTextSnippet?: string;
   pdfRedactedSnippet?: string;
 }

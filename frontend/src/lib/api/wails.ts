@@ -60,7 +60,25 @@ declare global {
 
 function getApp(): WailsAppBinding | undefined {
   if (typeof window === 'undefined') return undefined;
-  return window.go?.desktop?.DesktopApp || window.go?.main?.App;
+  const w = window as any;
+  if (w.go?.desktop?.DesktopApp) return w.go.desktop.DesktopApp;
+  if (w.go?.desktop?.desktopApp) return w.go.desktop.desktopApp;
+  if (w.go?.main?.App) return w.go.main.App;
+  if (w.go?.main?.app) return w.go.main.app;
+
+  // Fallback: search for any bound object with InspectFile or SelectFile
+  if (w.go && typeof w.go === 'object') {
+    for (const pkg of Object.values(w.go) as any[]) {
+      if (pkg && typeof pkg === 'object') {
+        for (const target of Object.values(pkg) as any[]) {
+          if (target && (typeof target.SelectFile === 'function' || typeof target.InspectFile === 'function')) {
+            return target as WailsAppBinding;
+          }
+        }
+      }
+    }
+  }
+  return undefined;
 }
 
 function getRuntime(): WailsRuntimeBinding | undefined {
@@ -247,7 +265,33 @@ export async function SelectFile(): Promise<string> {
   if (app?.SelectFile) {
     return await app.SelectFile();
   }
-  return '/dev/mock/clients.csv';
+  // Browser fallback when running outside desktop webview
+  return new Promise<string>((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xlsb,.ods,.xls,.csv,.tsv,.docx,.odt,.pdf';
+    input.style.display = 'none';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (file) {
+        const path = (file as any).path || file.name;
+        resolve(path);
+      } else {
+        resolve('');
+      }
+      if (input.parentNode) {
+        input.parentNode.removeChild(input);
+      }
+    };
+    input.oncancel = () => {
+      resolve('');
+      if (input.parentNode) {
+        input.parentNode.removeChild(input);
+      }
+    };
+    document.body.appendChild(input);
+    input.click();
+  });
 }
 
 export async function SaveFileDialog(defaultName: string): Promise<string> {
@@ -263,7 +307,32 @@ export async function SelectKeyFile(): Promise<string> {
   if (app?.SelectKeyFile) {
     return await app.SelectKeyFile();
   }
-  return '/dev/mock/key.depmap';
+  return new Promise<string>((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.depmap';
+    input.style.display = 'none';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (file) {
+        const path = (file as any).path || file.name;
+        resolve(path);
+      } else {
+        resolve('');
+      }
+      if (input.parentNode) {
+        input.parentNode.removeChild(input);
+      }
+    };
+    input.oncancel = () => {
+      resolve('');
+      if (input.parentNode) {
+        input.parentNode.removeChild(input);
+      }
+    };
+    document.body.appendChild(input);
+    input.click();
+  });
 }
 
 export async function SaveKeyFileDialog(defaultName: string): Promise<string> {

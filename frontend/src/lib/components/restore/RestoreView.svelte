@@ -21,7 +21,7 @@
     const countStr = info.paragraphCount
       ? `${info.paragraphCount.toLocaleString('ru-RU')} абз.`
       : `${(info.rowCount || 0).toLocaleString('ru-RU')} строк`;
-    return `${countStr} • ${sizeKb} КБ`;
+    return `${countStr} ▪ ${sizeKb} КБ`;
   });
 
   const isReady = $derived(
@@ -135,7 +135,7 @@
     <div class="flex-1">
       <div class="flex items-center space-x-2 text-xs font-mono text-[#78716C] uppercase mb-1">
         <span>Режим обратной персонализации</span>
-        <span>•</span>
+        <span>▪</span>
         <span>152-ФЗ</span>
       </div>
       <h2 class="text-2xl font-bold tracking-tight text-[#1C1917]">
@@ -317,9 +317,10 @@
           type="button"
           onclick={executeRestore}
           disabled={!isReady}
-          class="w-full bg-[#1C1917] disabled:bg-stone-300 disabled:cursor-not-allowed hover:bg-[#292524] text-white text-xs font-semibold py-3 transition active:scale-[0.99] flex items-center justify-center space-x-2 shadow-sm cursor-pointer"
+          class="w-full bg-[#1C1917] disabled:bg-stone-300 disabled:cursor-not-allowed hover:bg-[#292524] text-white text-xs font-semibold py-3 transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-sm cursor-pointer"
         >
-          <span>🔓 Восстановить данные</span>
+          <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">🔓</span>
+          <span>Восстановить данные</span>
         </button>
       </div>
     </div>

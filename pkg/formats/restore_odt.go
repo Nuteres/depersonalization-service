@@ -96,11 +96,12 @@ func RestoreODT(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 			return restoredCount, fmt.Errorf("failed to read %s: %w", f.Name, err)
 		}
 
-		paras, err := parseODTXML(data)
+		blocks, err := parseODTXML(data)
 		if err != nil {
 			return restoredCount, fmt.Errorf("failed to parse %s: %w", f.Name, err)
 		}
 
+		paras := extractODTParagraphsFromBlocks(blocks)
 		var replacements []textReplacement
 
 		for _, p := range paras {

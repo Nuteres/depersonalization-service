@@ -45,13 +45,46 @@ type odtParagraph struct {
 	nodes []odtTextNode
 }
 
-// parseODTXML parses an ODT XML file (content.xml or styles.xml) and extracts paragraphs (<text:p> and <text:h>)
-// along with their inner character data nodes and byte offsets.
-func parseODTXML(data []byte) ([]odtParagraph, error) {
+type odtCell struct {
+	paragraphs []odtParagraph
+}
+
+type odtRow struct {
+	cells []odtCell
+}
+
+type odtTable struct {
+	rows []odtRow
+}
+
+type odtBlockType int
+
+const (
+	odtBlockTypeParagraph odtBlockType = iota
+	odtBlockTypeTable
+)
+
+type odtBlock struct {
+	blockType odtBlockType
+	paragraph odtParagraph
+	table     odtTable
+}
+
+// parseODTXML parses an ODT XML file (content.xml or styles.xml) and extracts document blocks
+// (paragraphs and tables) along with their inner character data nodes and byte offsets.
+func parseODTXML(data []byte) ([]odtBlock, error) {
 	dec := xml.NewDecoder(bytes.NewReader(data))
-	var paras []odtParagraph
+	var blocks []odtBlock
 	var curPara *odtParagraph
 	inParaDepth := 0
+
+	tblDepth := 0
+	trDepth := 0
+	tcDepth := 0
+
+	var curTable odtTable
+	var curRow odtRow
+	var curCell odtCell
 
 	for {
 		startOffset := dec.InputOffset()
@@ -66,7 +99,22 @@ func parseODTXML(data []byte) ([]odtParagraph, error) {
 
 		switch t := tok.(type) {
 		case xml.StartElement:
-			if (t.Name.Local == "p" || t.Name.Local == "h") && (t.Name.Space == "urn:oasis:names:tc:opendocument:xmlns:text:1.0" || strings.HasPrefix(t.Name.Space, "http") || t.Name.Space == "" || t.Name.Space == "text") {
+			if t.Name.Local == "table" {
+				if tblDepth == 0 {
+					curTable = odtTable{}
+				}
+				tblDepth++
+			} else if t.Name.Local == "table-row" {
+				if tblDepth > 0 && trDepth == 0 {
+					curRow = odtRow{}
+				}
+				trDepth++
+			} else if t.Name.Local == "table-cell" {
+				if tblDepth > 0 && trDepth > 0 && tcDepth == 0 {
+					curCell = odtCell{}
+				}
+				tcDepth++
+			} else if (t.Name.Local == "p" || t.Name.Local == "h") && (t.Name.Space == "urn:oasis:names:tc:opendocument:xmlns:text:1.0" || strings.HasPrefix(t.Name.Space, "http") || t.Name.Space == "" || t.Name.Space == "text") {
 				if inParaDepth == 0 {
 					curPara = &odtParagraph{}
 				}
@@ -91,8 +139,37 @@ func parseODTXML(data []byte) ([]odtParagraph, error) {
 			if inParaDepth > 0 {
 				inParaDepth--
 				if inParaDepth == 0 && curPara != nil {
-					paras = append(paras, *curPara)
+					p := *curPara
+					if tblDepth > 0 && tcDepth > 0 {
+						curCell.paragraphs = append(curCell.paragraphs, p)
+					} else {
+						blocks = append(blocks, odtBlock{
+							blockType: odtBlockTypeParagraph,
+							paragraph: p,
+						})
+					}
 					curPara = nil
+				}
+			} else if t.Name.Local == "table-cell" {
+				tcDepth--
+				if tcDepth == 0 && tblDepth > 0 && trDepth > 0 {
+					curRow.cells = append(curRow.cells, curCell)
+					curCell = odtCell{}
+				}
+			} else if t.Name.Local == "table-row" {
+				trDepth--
+				if trDepth == 0 && tblDepth > 0 {
+					curTable.rows = append(curTable.rows, curRow)
+					curRow = odtRow{}
+				}
+			} else if t.Name.Local == "table" {
+				tblDepth--
+				if tblDepth == 0 {
+					blocks = append(blocks, odtBlock{
+						blockType: odtBlockTypeTable,
+						table:     curTable,
+					})
+					curTable = odtTable{}
 				}
 			}
 
@@ -108,21 +185,37 @@ func parseODTXML(data []byte) ([]odtParagraph, error) {
 		}
 	}
 
-	return paras, nil
+	return blocks, nil
 }
 
-// Inspect reads an ODT document from r and returns paragraph count, detected entity counts, preview snippets, and paragraph previews.
-func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []DocxTextSnippet, []TextParagraphPreview, error) {
+func extractODTParagraphsFromBlocks(blocks []odtBlock) []odtParagraph {
+	var paras []odtParagraph
+	for _, b := range blocks {
+		if b.blockType == odtBlockTypeParagraph {
+			paras = append(paras, b.paragraph)
+		} else if b.blockType == odtBlockTypeTable {
+			for _, row := range b.table.rows {
+				for _, cell := range row.cells {
+					paras = append(paras, cell.paragraphs...)
+				}
+			}
+		}
+	}
+	return paras
+}
+
+// Inspect reads an ODT document from r and returns paragraph count, detected entity counts, preview snippets, paragraph previews, and full document blocks.
+func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []DocxTextSnippet, []TextParagraphPreview, []TextDocumentBlock, error) {
 	if r == nil {
-		return 0, nil, nil, nil, errors.New("reader cannot be nil")
+		return 0, nil, nil, nil, nil, errors.New("reader cannot be nil")
 	}
 	if size <= 0 {
-		return 0, nil, nil, nil, errors.New("invalid file size")
+		return 0, nil, nil, nil, nil, errors.New("invalid file size")
 	}
 
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
-		return 0, nil, nil, nil, fmt.Errorf("failed to open odt zip: %w", err)
+		return 0, nil, nil, nil, nil, fmt.Errorf("failed to open odt zip: %w", err)
 	}
 
 	totalParagraphs := 0
@@ -130,6 +223,7 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 	var snippets []DocxTextSnippet
 	seenSnippets := make(map[string]bool)
 	var paragraphPreviews []TextParagraphPreview
+	var documentBlocks []TextDocumentBlock
 
 	for _, f := range zr.File {
 		if !isODTTextXML(f.Name) {
@@ -138,94 +232,139 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 
 		rc, err := f.Open()
 		if err != nil {
-			return 0, nil, nil, nil, fmt.Errorf("failed to open %s: %w", f.Name, err)
+			return 0, nil, nil, nil, nil, fmt.Errorf("failed to open %s: %w", f.Name, err)
 		}
 		data, err := io.ReadAll(rc)
 		_ = rc.Close()
 		if err != nil {
-			return 0, nil, nil, nil, fmt.Errorf("failed to read %s: %w", f.Name, err)
+			return 0, nil, nil, nil, nil, fmt.Errorf("failed to read %s: %w", f.Name, err)
 		}
 
-		paras, err := parseODTXML(data)
+		blocks, err := parseODTXML(data)
 		if err != nil {
-			return 0, nil, nil, nil, fmt.Errorf("failed to parse %s: %w", f.Name, err)
+			return 0, nil, nil, nil, nil, fmt.Errorf("failed to parse %s: %w", f.Name, err)
 		}
 
+		paras := extractODTParagraphsFromBlocks(blocks)
 		totalParagraphs += len(paras)
 
-		for _, p := range paras {
-			if len(p.nodes) == 0 {
-				continue
-			}
+		isMainBody := (f.Name == "content.xml")
 
-			var paraTextBuf strings.Builder
-			for _, n := range p.nodes {
-				paraTextBuf.WriteString(n.text)
-			}
-			pStr := paraTextBuf.String()
-			trimmedP := strings.TrimSpace(pStr)
-			if trimmedP == "" {
-				continue
-			}
-
-			matches := findDocxSensitiveMatches(pStr)
-			for _, m := range matches {
-				entityTypeCounts[m.entityType]++
-
-				if len(snippets) < 20 && !seenSnippets[m.value] {
-					seenSnippets[m.value] = true
-					synth := m.value
-					if h.Anon != nil {
-						synth = generateSynthetic(h.Anon, m.entityType, m.value)
-					}
-					snippets = append(snippets, DocxTextSnippet{
-						Original:   m.value,
-						Anonymized: synth,
-						Type:       m.entityType,
-					})
+		for _, b := range blocks {
+			if b.blockType == odtBlockTypeParagraph {
+				if len(b.paragraph.nodes) == 0 {
+					continue
 				}
-			}
 
-			var segments []TextParagraphSegment
-			if len(matches) == 0 {
-				segments = append(segments, TextParagraphSegment{
-					Text:     pStr,
-					IsEntity: false,
-				})
-			} else {
-				lastIdx := 0
+				var paraTextBuf strings.Builder
+				for _, n := range b.paragraph.nodes {
+					paraTextBuf.WriteString(n.text)
+				}
+				pStr := paraTextBuf.String()
+				trimmedP := strings.TrimSpace(pStr)
+				if trimmedP == "" {
+					continue
+				}
+
+				matches := findDocxSensitiveMatches(pStr)
 				for _, m := range matches {
-					if m.start > lastIdx && m.start <= len(pStr) {
-						segments = append(segments, TextParagraphSegment{
-							Text:     pStr[lastIdx:m.start],
-							IsEntity: false,
+					entityTypeCounts[m.entityType]++
+
+					if len(snippets) < 20 && !seenSnippets[m.value] {
+						seenSnippets[m.value] = true
+						synth := m.value
+						if h.Anon != nil {
+							synth = generateSynthetic(h.Anon, m.entityType, m.value)
+						}
+						snippets = append(snippets, DocxTextSnippet{
+							Original:   m.value,
+							Anonymized: synth,
+							Type:       m.entityType,
 						})
 					}
-					synth := m.value
-					if h.Anon != nil {
-						synth = generateSynthetic(h.Anon, m.entityType, m.value)
-					}
-					segments = append(segments, TextParagraphSegment{
-						Text:       synth,
-						IsEntity:   true,
-						Type:       m.entityType,
-						Original:   m.value,
-						Anonymized: synth,
-					})
-					lastIdx = m.end
 				}
-				if lastIdx < len(pStr) {
-					segments = append(segments, TextParagraphSegment{
-						Text:     pStr[lastIdx:],
-						IsEntity: false,
+
+				if isMainBody {
+					segments := buildParagraphSegments(pStr, matches, h.Anon)
+
+					paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
+						Index:    len(paragraphPreviews) + 1,
+						Segments: segments,
+					})
+
+					documentBlocks = append(documentBlocks, TextDocumentBlock{
+						Type:     "paragraph",
+						Index:    len(documentBlocks) + 1,
+						Segments: segments,
+					})
+				}
+			} else if b.blockType == odtBlockTypeTable {
+				var rowPreviews []TextTableRowPreview
+				for _, r := range b.table.rows {
+					var cellPreviews []TextTableCellPreview
+					for _, c := range r.cells {
+						var cellText strings.Builder
+						for pIdx, cp := range c.paragraphs {
+							if pIdx > 0 {
+								cellText.WriteString("\n")
+							}
+							for _, n := range cp.nodes {
+								cellText.WriteString(n.text)
+							}
+						}
+						cStr := cellText.String()
+						matches := findDocxSensitiveMatches(cStr)
+						for _, m := range matches {
+							entityTypeCounts[m.entityType]++
+
+							if len(snippets) < 20 && !seenSnippets[m.value] {
+								seenSnippets[m.value] = true
+								synth := m.value
+								if h.Anon != nil {
+									synth = generateSynthetic(h.Anon, m.entityType, m.value)
+								}
+								snippets = append(snippets, DocxTextSnippet{
+									Original:   m.value,
+									Anonymized: synth,
+									Type:       m.entityType,
+								})
+							}
+						}
+
+						if isMainBody {
+							var segments []TextParagraphSegment
+							if strings.TrimSpace(cStr) == "" {
+								segments = []TextParagraphSegment{{Text: cStr, IsEntity: false}}
+							} else {
+								segments = buildParagraphSegments(cStr, matches, h.Anon)
+								paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
+									Index:    len(paragraphPreviews) + 1,
+									Segments: segments,
+								})
+							}
+
+							cellPreviews = append(cellPreviews, TextTableCellPreview{
+								Segments: segments,
+							})
+						}
+					}
+					if isMainBody {
+						rowPreviews = append(rowPreviews, TextTableRowPreview{
+							Cells: cellPreviews,
+						})
+					}
+				}
+
+				if isMainBody {
+					documentBlocks = append(documentBlocks, TextDocumentBlock{
+						Type:  "table",
+						Index: len(documentBlocks) + 1,
+						Table: &TextTablePreview{
+							Rows: rowPreviews,
+						},
 					})
 				}
 			}
-
-			paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
-				Index:    len(paragraphPreviews) + 1,
-				Segments: segments,
-			})
 		}
 	}
 
@@ -234,7 +373,7 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 		entities = append(entities, EntityCount{Type: k, Count: v})
 	}
 
-	return totalParagraphs, entities, snippets, paragraphPreviews, nil
+	return totalParagraphs, entities, snippets, paragraphPreviews, documentBlocks, nil
 }
 
 // Process reads an ODT document from r, anonymizes detected sensitive personal data,
@@ -300,11 +439,12 @@ func (h *ODTHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 			return nil, fmt.Errorf("failed to read %s: %w", f.Name, err)
 		}
 
-		paras, err := parseODTXML(data)
+		blocks, err := parseODTXML(data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse %s: %w", f.Name, err)
 		}
 
+		paras := extractODTParagraphsFromBlocks(blocks)
 		var replacements []textReplacement
 
 		for _, p := range paras {

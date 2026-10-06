@@ -49,6 +49,7 @@ type FileInfo struct {
 	ActiveSheet            string                    `json:"activeSheet,omitempty"`
 	TextSnippets           []formats.DocxTextSnippet      `json:"textSnippets,omitempty"`
 	ParagraphPreviews      []formats.TextParagraphPreview `json:"paragraphPreviews,omitempty"`
+	DocumentBlocks         []formats.TextDocumentBlock    `json:"documentBlocks,omitempty"`
 	PDFTextSnippet         string                         `json:"pdfTextSnippet,omitempty"`
 	PDFRedactedSnippet     string                         `json:"pdfRedactedSnippet,omitempty"`
 }

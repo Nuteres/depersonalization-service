@@ -386,9 +386,9 @@
         <button
           type="button"
           onclick={handleStart}
-          class="px-5 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold transition cursor-pointer flex items-center space-x-1.5 shadow-sm active:scale-[0.99]"
+          class="px-5 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-[0.99]"
         >
-          <span>💾</span>
+          <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">💾</span>
           <span>Начать обезличивание</span>
         </button>
       </div>

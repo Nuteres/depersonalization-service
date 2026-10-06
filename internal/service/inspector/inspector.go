@@ -821,7 +821,7 @@ func inspectDOCX(ctx context.Context, path string) (*domain.FileInfo, error) {
 
 	anon := anonymizer.New(defaultPreviewSalt)
 	handler := formats.NewDOCXHandler(anon)
-	paramCount, entitiesCounts, snippets, paragraphPreviews, err := handler.Inspect(file, stat.Size())
+	paramCount, entitiesCounts, snippets, paragraphPreviews, documentBlocks, err := handler.Inspect(file, stat.Size())
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect docx file: %w", err)
 	}
@@ -853,6 +853,7 @@ func inspectDOCX(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Headers:                []string{"Тип сущности", "Количество", "Действие"},
 		TextSnippets:           snippets,
 		ParagraphPreviews:      paragraphPreviews,
+		DocumentBlocks:         documentBlocks,
 	}, nil
 }
 
@@ -874,7 +875,7 @@ func inspectODT(ctx context.Context, path string) (*domain.FileInfo, error) {
 
 	anon := anonymizer.New(defaultPreviewSalt)
 	handler := formats.NewODTHandler(anon)
-	paramCount, entitiesCounts, snippets, paragraphPreviews, err := handler.Inspect(file, stat.Size())
+	paramCount, entitiesCounts, snippets, paragraphPreviews, documentBlocks, err := handler.Inspect(file, stat.Size())
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect odt file: %w", err)
 	}
@@ -906,6 +907,7 @@ func inspectODT(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Headers:                []string{"Тип сущности", "Количество", "Действие"},
 		TextSnippets:           snippets,
 		ParagraphPreviews:      paragraphPreviews,
+		DocumentBlocks:         documentBlocks,
 	}, nil
 }
 

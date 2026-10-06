@@ -44,7 +44,7 @@
 
   {#if keyInfo && keyInfo.valid}
     <div class="text-[11px] text-[#57534E]" id="restore-key-meta">
-      Исходный: {keyInfo.originalFileName || 'данные'} • Записей: {keyInfo.recordsCount.toLocaleString('ru-RU')} • {keyInfo.createdAt}
+      Исходный: {keyInfo.originalFileName || 'данные'} ▪ Записей: {keyInfo.recordsCount.toLocaleString('ru-RU')} ▪ {keyInfo.createdAt}
     </div>
   {:else}
     <div id="restore-key-error" class="text-[11px] text-rose-700 bg-rose-50 p-1.5 border border-rose-200">

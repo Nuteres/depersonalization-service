@@ -1,11 +1,14 @@
 package main
 
 import (
+	_ "embed"
 	"log"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 
 	"dep_service/frontend"
 	"dep_service/internal/desktop"
@@ -15,6 +18,9 @@ import (
 	"dep_service/internal/service/processor"
 	"dep_service/internal/service/restorer"
 )
+
+//go:embed icon.png
+var appIcon []byte
 
 func main() {
 	insp := inspector.New()
@@ -34,6 +40,16 @@ func main() {
 		OnStartup: app.Startup,
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop: true,
+		},
+		Mac: &mac.Options{
+			About: &mac.AboutInfo{
+				Title:   "Деперсонализация ПД (152-ФЗ)",
+				Message: "Автономное приложение для деперсонализации и обратного восстановления ПДн (152-ФЗ)",
+				Icon:    appIcon,
+			},
+		},
+		Linux: &linux.Options{
+			Icon: appIcon,
 		},
 		Bind: []interface{}{
 			app,

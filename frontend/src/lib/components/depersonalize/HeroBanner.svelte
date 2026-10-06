@@ -65,7 +65,7 @@
     if (info.fileType === 'pdf') {
       return 'Чувствительные персональные данные вырезаются физически и закрываются плашками.';
     }
-    return `Обнаружено категорий ПДн: ${entityCount}. Чувствительные поля подготовлены к безопасной деперсонализации по 152-ФЗ.`;
+    return `Обнаружено категорий ПДн: ${entityCount}.`;
   });
 
   async function handleSelectFile() {
@@ -179,14 +179,14 @@
     <div class="flex-1 min-w-0">
       <div id="file-meta-bar" class="flex flex-wrap items-center gap-2 text-xs font-mono text-[#78716C] uppercase mb-1.5">
         <span>Файл загружен</span>
-        <span>•</span>
+        <span>▪</span>
         <span>{unitsLabel}</span>
         {#if fileSizeLabel}
-          <span>•</span>
+          <span>▪</span>
           <span>{fileSizeLabel}</span>
         {/if}
         {#if formatLabel}
-          <span>•</span>
+          <span>▪</span>
           <span>{formatLabel}</span>
         {/if}
       </div>
@@ -210,10 +210,10 @@
         id="btn-change-file-hero"
         type="button"
         onclick={handleSelectFile}
-        class="px-3.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold shadow-xs transition flex items-center space-x-1.5 active:scale-[0.99] cursor-pointer"
+        class="px-3.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold shadow-xs transition flex items-center gap-1.5 active:scale-[0.99] cursor-pointer"
         title="Выбрать другой файл"
       >
-        <span>📁</span>
+        <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">📁</span>
         <span>Сменить файл...</span>
       </button>
 
@@ -221,11 +221,13 @@
         id="btn-save"
         type="button"
         onclick={onOpenSaveModal}
-        class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-5 py-2 transition active:scale-[0.99] flex items-center justify-center space-x-2 shadow-sm whitespace-nowrap cursor-pointer"
+        class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-5 py-2 transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-sm whitespace-nowrap cursor-pointer"
       >
-        <span>💾</span>
-        <span>Сохранить и обезличить</span>
-        <span class="font-mono text-[11px] text-[#A8A29E]">({fileExtBadge})</span>
+        <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">💾</span>
+        <span class="inline-flex items-baseline gap-1.5">
+          <span>Сохранить и обезличить</span>
+          <span class="font-mono text-xs text-[#A8A29E] font-medium">({fileExtBadge})</span>
+        </span>
       </button>
     </div>
   </div>

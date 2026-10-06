@@ -197,17 +197,17 @@ make build-altlinux
 ```
 Использует контейнер `alt:p10` архитектуры `linux/amd64` с нативно установленными пакетами `gcc`, `golang`, `libwebkit2gtk-devel`, `libgtk+3-devel`. Гарантирует привязку к системной `glibc 2.32` отечественного дистрибутива.
 
-### 2. macOS Universal Binary
+### 2. macOS Universal Binary (.app Bundle)
 ```bash
 make build-macos
 ```
-Собирает две независимые версии (`darwin/arm64` под Apple Silicon и `darwin/amd64` под Intel) с флагами связывания `-framework UniformTypeIdentifiers`, после чего объединяет их через утилиту `lipo -create` в единый универсальный файл.
+Собирает две независимые версии (`darwin/arm64` под Apple Silicon и `darwin/amd64` под Intel) с флагами связывания `-framework UniformTypeIdentifiers`, объединяет их через утилиту `lipo -create` в единый универсальный файл, после чего формирует полноценный бандл `Depersonalizer.app` с иконкой `icon.icns`.
 
 ### 3. Windows x86_64
 ```bash
 make build-windows
 ```
-Использует кросс-компиляцию Go (`GOOS=windows GOARCH=amd64`) с флагом `-H windowsgui` для подавления окна командной строки при запуске GUI.
+Генерирует Windows PE-ресурсы `.syso` (`build/tools/build_syso.go`) со встроенной иконкой приложения, после чего использует кросс-компиляцию Go (`GOOS=windows GOARCH=amd64`) с флагом `-H windowsgui` для подавления окна командной строки при запуске GUI.
 
 ---
 
@@ -249,14 +249,14 @@ make build-windows
   ```go
   package version
 
-  const Version = "1.2.0"
+  const Version = "1.5.2"
   ```
 - Метод `GetAppInfo()` возвращает `v + version.Version`, отображаемый в шапке `Header.svelte`.
 - Версия синхронизирована с `frontend/package.json` и `Makefile`.
 
 ### 6.2 Семантическое версионирование (SemVer)
 - **PATCH (`X.Y.Z+1`)**: исправление ошибок, точечные правки стилей, текстовые фиксы.
-- **MINOR (`X.Y+1.0`)**: новые возможности, новые форматы файлов, переработка экранов UI, оптимизация производительности (текущий релиз `1.2.0`).
+- **MINOR (`X.Y+1.0`)**: новые возможности, новые форматы файлов, переработка экранов UI, оптимизация производительности (текущий релиз `1.5.2`).
 - **MAJOR (`X+1.0.0`)**: несовместимые изменения формата контейнера `.depmap` или фундаментальные изменения протоколов.
 
 ### 6.3 Журнал изменений (`CHANGELOG.md`)

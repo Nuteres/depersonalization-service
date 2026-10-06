@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -122,13 +123,28 @@ func TestDOCX_Inspect(t *testing.T) {
 	data := createTestDocx(standardBriefDocXML)
 	r := bytes.NewReader(data)
 
-	pCount, entities, snippets, previews, err := h.Inspect(r, int64(len(data)))
+	pCount, entities, snippets, previews, blocks, err := h.Inspect(r, int64(len(data)))
 	if err != nil {
 		t.Fatalf("Inspect failed: %v", err)
 	}
 
 	if len(previews) == 0 {
 		t.Errorf("expected paragraph previews, got 0")
+	}
+
+	if len(blocks) == 0 {
+		t.Errorf("expected document blocks, got 0")
+	}
+
+	// standardBriefDocXML has 2 top-level paragraphs and 1 table
+	if len(blocks) != 3 {
+		t.Errorf("expected 3 document blocks, got %d", len(blocks))
+	}
+	if blocks[0].Type != "paragraph" || blocks[1].Type != "paragraph" || blocks[2].Type != "table" {
+		t.Errorf("unexpected block types: %v, %v, %v", blocks[0].Type, blocks[1].Type, blocks[2].Type)
+	}
+	if blocks[2].Table == nil || len(blocks[2].Table.Rows) != 1 || len(blocks[2].Table.Rows[0].Cells) != 1 {
+		t.Errorf("unexpected table structure: %+v", blocks[2].Table)
 	}
 
 	if pCount != 3 {
@@ -465,7 +481,7 @@ func TestDOCX_EdgeCases(t *testing.T) {
 	if _, err := h.Process(context.Background(), nil, 100, &buf, nil); err == nil {
 		t.Errorf("expected error with nil reader")
 	}
-	if _, _, _, _, err := h.Inspect(nil, 100); err == nil {
+	if _, _, _, _, _, err := h.Inspect(nil, 100); err == nil {
 		t.Errorf("expected error in Inspect with nil reader")
 	}
 	if _, err := formats.RestoreDOCX(context.Background(), nil, 100, &buf, depmap.New("test.docx")); err == nil {
@@ -476,7 +492,7 @@ func TestDOCX_EdgeCases(t *testing.T) {
 	if _, err := h.Process(context.Background(), r, 0, &buf, nil); err == nil {
 		t.Errorf("expected error with size 0")
 	}
-	if _, _, _, _, err := h.Inspect(r, -5); err == nil {
+	if _, _, _, _, _, err := h.Inspect(r, -5); err == nil {
 		t.Errorf("expected error in Inspect with negative size")
 	}
 	if _, err := formats.RestoreDOCX(context.Background(), r, 0, &buf, depmap.New("test.docx")); err == nil {
@@ -512,7 +528,7 @@ func TestDOCX_EdgeCases(t *testing.T) {
 	if _, err := h.Process(context.Background(), invR, int64(len(invalidData)), &buf, nil); err == nil {
 		t.Errorf("expected error with invalid zip in Process")
 	}
-	if _, _, _, _, err := h.Inspect(invR, int64(len(invalidData))); err == nil {
+	if _, _, _, _, _, err := h.Inspect(invR, int64(len(invalidData))); err == nil {
 		t.Errorf("expected error with invalid zip in Inspect")
 	}
 	if _, err := formats.RestoreDOCX(context.Background(), invR, int64(len(invalidData)), &buf, depmap.New("test.docx")); err == nil {
@@ -536,7 +552,7 @@ func TestDOCX_ContractNumberNotFlaggedAsPassport(t *testing.T) {
 	data := createTestDocx(docXML)
 	r := bytes.NewReader(data)
 
-	_, entities, snippets, _, err := h.Inspect(r, int64(len(data)))
+	_, entities, snippets, _, _, err := h.Inspect(r, int64(len(data)))
 	if err != nil {
 		t.Fatalf("Inspect failed: %v", err)
 	}
@@ -615,7 +631,7 @@ func TestDOCX_ContractComplexEntitiesAndBreaks(t *testing.T) {
 	data := createTestDocx(docXML)
 	r := bytes.NewReader(data)
 
-	_, entities, snippets, _, err := h.Inspect(r, int64(len(data)))
+	_, entities, snippets, _, _, err := h.Inspect(r, int64(len(data)))
 	if err != nil {
 		t.Fatalf("Inspect failed: %v", err)
 	}
@@ -686,5 +702,262 @@ func TestDOCX_ContractComplexEntitiesAndBreaks(t *testing.T) {
 	}
 	_ = snippets
 }
+
+func TestDOCX_Inspect_HeadersFooters_NotInDocumentBlocks(t *testing.T) {
+	anon := anonymizer.New("test-salt-123")
+	h := formats.NewDOCXHandler(anon)
+
+	headerXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:p>
+    <w:r><w:t>Header SNILS: 123-456-789 01 and page number 6</w:t></w:r>
+  </w:p>
+</w:hdr>`
+
+	parts := map[string]string{
+		"word/document.xml": standardBriefDocXML,
+		"word/header1.xml":  headerXML,
+	}
+
+	data := createTestDocxWithParts(parts)
+	r := bytes.NewReader(data)
+
+	pCount, entities, snippets, previews, blocks, err := h.Inspect(r, int64(len(data)))
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	// 1. Header SNILS should be in entity counts and snippets
+	foundSNILS := false
+	for _, e := range entities {
+		if e.Type == "SNILS" || e.Type == string(detector.EntitySNILS) {
+			foundSNILS = true
+		}
+	}
+	if !foundSNILS {
+		t.Errorf("header SNILS not found in entities: %+v", entities)
+	}
+
+	// 2. But blocks and previews should ONLY contain standardBriefDocXML (3 blocks: 2 paras, 1 table)
+	if len(blocks) != 3 {
+		t.Errorf("expected exactly 3 document blocks from document.xml, got %d", len(blocks))
+	}
+
+	// Check that header text ("page number 6") does not exist in any document block
+	for _, b := range blocks {
+		if b.Type == "paragraph" {
+			for _, seg := range b.Segments {
+				if strings.Contains(seg.Text, "page number 6") {
+					t.Errorf("documentBlocks polluted by header XML content: %s", seg.Text)
+				}
+			}
+		}
+	}
+
+	_ = pCount
+	_ = snippets
+	_ = previews
+}
+
+func TestDOCX_Endnotes_And_Footnotes(t *testing.T) {
+	anon := anonymizer.New("test-salt-123")
+	h := formats.NewDOCXHandler(anon)
+
+	docXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:r><w:t>Основной текст документа с примечанием</w:t></w:r>
+      <w:r><w:endnoteReference w:id="1"/></w:r>
+    </w:p>
+  </w:body>
+</w:document>`
+
+	endnotesXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:endnote w:type="separator" w:id="-1">
+    <w:p><w:r><w:separator/></w:r></w:p>
+  </w:endnote>
+  <w:endnote w:type="continuationSeparator" w:id="0">
+    <w:p><w:r><w:continuationSeparator/></w:r></w:p>
+  </w:endnote>
+  <w:endnote w:id="1">
+    <w:p>
+      <w:r><w:endnoteRef/></w:r>
+      <w:r><w:t xml:space="preserve"> Период блокировки для клиента Иванов Иван Иванович</w:t></w:r>
+    </w:p>
+  </w:endnote>
+  <w:endnote w:id="2">
+    <w:p>
+      <w:r><w:endnoteRef/></w:r>
+      <w:r><w:t xml:space="preserve"> Телефон поддержки: +7 916 111-22-33</w:t></w:r>
+    </w:p>
+  </w:endnote>
+</w:endnotes>`
+
+	parts := map[string]string{
+		"word/document.xml": docXML,
+		"word/endnotes.xml": endnotesXML,
+	}
+
+	data := createTestDocxWithParts(parts)
+	r := bytes.NewReader(data)
+
+	// 1. Test Inspect
+	pCount, entities, snippets, previews, blocks, err := h.Inspect(r, int64(len(data)))
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	// Total paragraphs: 1 from doc + 2 from endnotes = 3 (separators are skipped)
+	if len(blocks) != 3 {
+		t.Fatalf("expected 3 document blocks (1 body + 2 endnotes), got %d", len(blocks))
+	}
+
+	// Verify endnote 1 text starts with "1 Период"
+	if len(blocks[1].Segments) == 0 || !strings.HasPrefix(blocks[1].Segments[0].Text, "1 Период") {
+		var fullText strings.Builder
+		for _, seg := range blocks[1].Segments {
+			fullText.WriteString(seg.Text)
+		}
+		t.Errorf("expected block 1 to start with '1 Период', got: %q", fullText.String())
+	}
+
+	// Verify endnote 2 text starts with "2 Телефон"
+	if len(blocks[2].Segments) == 0 || !strings.HasPrefix(blocks[2].Segments[0].Text, "2 Телефон") {
+		var fullText strings.Builder
+		for _, seg := range blocks[2].Segments {
+			fullText.WriteString(seg.Text)
+		}
+		t.Errorf("expected block 2 to start with '2 Телефон', got: %q", fullText.String())
+	}
+
+	// 2. Test Process
+	var anonBuf bytes.Buffer
+	dm, err := h.Process(context.Background(), r, int64(len(data)), &anonBuf, map[string]interface{}{
+		"original_file_name": "test_endnotes.docx",
+	})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	if len(dm.Mapping) < 2 {
+		t.Fatalf("expected at least 2 anonymized entities in DepMap, got %d", len(dm.Mapping))
+	}
+
+	anonEndnotesXML, err := readZipFile(anonBuf.Bytes(), "word/endnotes.xml")
+	if err != nil {
+		t.Fatalf("failed to read anonymized endnotes.xml: %v", err)
+	}
+	if strings.Contains(anonEndnotesXML, "Иванов Иван Иванович") {
+		t.Errorf("anonymized endnotes.xml still contains original FIO: %s", anonEndnotesXML)
+	}
+	if strings.Contains(anonEndnotesXML, "+7 916 111-22-33") {
+		t.Errorf("anonymized endnotes.xml still contains original phone: %s", anonEndnotesXML)
+	}
+
+	// 3. Test RestoreDOCX
+	var restBuf bytes.Buffer
+	anonReader := bytes.NewReader(anonBuf.Bytes())
+	restoredCount, err := formats.RestoreDOCX(context.Background(), anonReader, int64(anonBuf.Len()), &restBuf, dm)
+	if err != nil {
+		t.Fatalf("RestoreDOCX failed: %v", err)
+	}
+	if restoredCount < 2 {
+		t.Errorf("expected at least 2 restored entities, got %d", restoredCount)
+	}
+
+	restEndnotesXML, err := readZipFile(restBuf.Bytes(), "word/endnotes.xml")
+	if err != nil {
+		t.Fatalf("failed to read restored endnotes.xml: %v", err)
+	}
+	if !strings.Contains(restEndnotesXML, "Иванов Иван Иванович") {
+		t.Errorf("restored endnotes.xml does not contain restored FIO: %s", restEndnotesXML)
+	}
+	if !strings.Contains(restEndnotesXML, "+7 916 111-22-33") {
+		t.Errorf("restored endnotes.xml does not contain restored phone: %s", restEndnotesXML)
+	}
+
+	_ = pCount
+	_ = entities
+	_ = snippets
+	_ = previews
+}
+
+func TestDOCX_UserDocument_EndnotesPresent(t *testing.T) {
+	importPath := "../../Приложение №1_Тарифы на услуги ДБ_22.10.2026 (1).docx"
+	importPathAlt := "Приложение №1_Тарифы на услуги ДБ_22.10.2026 (1).docx"
+	importPathRoot := "../Приложение №1_Тарифы на услуги ДБ_22.10.2026 (1).docx"
+
+	var f io.ReaderAt
+	var size int64
+	for _, p := range []string{importPathAlt, importPathRoot, importPath} {
+		if file, err := zip.OpenReader(p); err == nil {
+			_ = file.Close()
+			if fileBytes, err := osReadFile(p); err == nil {
+				f = bytes.NewReader(fileBytes)
+				size = int64(len(fileBytes))
+				break
+			}
+		}
+	}
+
+	if f == nil {
+		t.Skip("user docx file not found in test search paths, skipping")
+	}
+
+	anon := anonymizer.New("test-salt-123")
+	h := formats.NewDOCXHandler(anon)
+
+	pCount, entities, snippets, previews, blocks, err := h.Inspect(f, size)
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	if len(blocks) == 0 {
+		t.Fatalf("no blocks returned")
+	}
+
+	// Verify that the last blocks contain the endnotes
+	lastBlock := blocks[len(blocks)-1]
+	foundEndnote1 := false
+	foundEndnote5 := false
+	for _, b := range blocks {
+		if b.Type == "paragraph" {
+			for _, seg := range b.Segments {
+				if strings.Contains(seg.Text, "1 Период, в который абонент") {
+					foundEndnote1 = true
+				}
+				if strings.Contains(seg.Text, "5 Максимальный срок") {
+					foundEndnote5 = true
+				}
+			}
+		}
+	}
+
+	if !foundEndnote1 {
+		t.Errorf("endnote 1 not found in document blocks!")
+	}
+	if !foundEndnote5 {
+		t.Errorf("endnote 5 not found in document blocks!")
+	}
+
+	_ = pCount
+	_ = entities
+	_ = snippets
+	_ = previews
+	_ = lastBlock
+}
+
+func osReadFile(name string) ([]byte, error) {
+	importOS, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer importOS.Close()
+	return io.ReadAll(importOS)
+}
+
+
 
 

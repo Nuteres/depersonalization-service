@@ -103,11 +103,12 @@ func RestoreDOCX(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm
 			return restoredCount, fmt.Errorf("failed to read %s: %w", f.Name, err)
 		}
 
-		paras, err := parseDocxXML(data)
+		blocks, err := parseDocxXML(data)
 		if err != nil {
 			return restoredCount, fmt.Errorf("failed to parse %s: %w", f.Name, err)
 		}
 
+		paras := extractParagraphsFromBlocks(blocks)
 		var replacements []textReplacement
 
 		for _, p := range paras {

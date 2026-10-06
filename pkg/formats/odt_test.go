@@ -120,13 +120,17 @@ func TestODT_Inspect(t *testing.T) {
 	anon := anonymizer.New("test-salt-odt")
 	h := NewODTHandler(anon)
 
-	paraCount, entities, snippets, previews, err := h.Inspect(bytes.NewReader(raw), int64(len(raw)))
+	paraCount, entities, snippets, previews, blocks, err := h.Inspect(bytes.NewReader(raw), int64(len(raw)))
 	if err != nil {
 		t.Fatalf("Inspect failed: %v", err)
 	}
 
 	if len(previews) == 0 {
 		t.Errorf("expected paragraphPreviews, got 0")
+	}
+
+	if len(blocks) == 0 {
+		t.Errorf("expected document blocks, got 0")
 	}
 
 	if paraCount < 5 {
@@ -303,7 +307,7 @@ func TestODT_EdgeCases(t *testing.T) {
 	h := NewODTHandler(anon)
 
 	// Nil reader
-	if _, _, _, _, err := h.Inspect(nil, 100); err == nil {
+	if _, _, _, _, _, err := h.Inspect(nil, 100); err == nil {
 		t.Errorf("expected error on nil reader")
 	}
 	if _, err := h.Process(context.Background(), nil, 100, new(bytes.Buffer), nil); err == nil {
@@ -314,7 +318,7 @@ func TestODT_EdgeCases(t *testing.T) {
 	}
 
 	// Invalid size
-	if _, _, _, _, err := h.Inspect(bytes.NewReader(raw), 0); err == nil {
+	if _, _, _, _, _, err := h.Inspect(bytes.NewReader(raw), 0); err == nil {
 		t.Errorf("expected error on 0 size")
 	}
 
@@ -326,7 +330,7 @@ func TestODT_EdgeCases(t *testing.T) {
 
 	// Corrupt zip
 	corrupt := []byte("not a zip at all")
-	if _, _, _, _, err := h.Inspect(bytes.NewReader(corrupt), int64(len(corrupt))); err == nil {
+	if _, _, _, _, _, err := h.Inspect(bytes.NewReader(corrupt), int64(len(corrupt))); err == nil {
 		t.Errorf("expected error on corrupt zip")
 	}
 

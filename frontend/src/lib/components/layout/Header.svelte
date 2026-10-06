@@ -2,9 +2,9 @@
   import { appState } from '../../stores/appState.svelte';
 
   const envBadge = $derived.by(() => {
-    if (!appState.appInfo) return 'v1.0 • Загрузка...';
+    if (!appState.appInfo) return 'v1.0 ▪ Загрузка...';
     const { version, os, arch } = appState.appInfo;
-    return arch ? `${version} • ${os} (${arch})` : `${version} • ${os}`;
+    return arch ? `${version} ▪ ${os} (${arch})` : `${version} ▪ ${os}`;
   });
 </script>
 
@@ -20,7 +20,6 @@
           {envBadge}
         </span>
       </div>
-      <p class="text-xs text-[#78716C]">Локальная очистка и обратная персонализация без выхода в сеть</p>
     </div>
   </div>
 

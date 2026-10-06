@@ -16,6 +16,7 @@ const (
 	EntityCard       EntityType = "BANK_CARD"
 	EntityAddress    EntityType = "ADDRESS"
 	EntityBirthday   EntityType = "BIRTHDAY"
+	EntityDate       EntityType = "DATE"
 	EntityGrade      EntityType = "GRADE"
 	EntityEmployeeID EntityType = "EMPLOYEE_ID"
 )

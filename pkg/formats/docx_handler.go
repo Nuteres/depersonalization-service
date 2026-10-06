@@ -42,6 +42,29 @@ type TextParagraphSegment struct {
 	Anonymized string `json:"anonymized,omitempty"`
 }
 
+// TextTableCellPreview represents a cell inside a table row for Word-like preview.
+type TextTableCellPreview struct {
+	Segments []TextParagraphSegment `json:"segments"`
+}
+
+// TextTableRowPreview represents a table row for Word-like preview.
+type TextTableRowPreview struct {
+	Cells []TextTableCellPreview `json:"cells"`
+}
+
+// TextTablePreview represents a structured table for Word-like preview.
+type TextTablePreview struct {
+	Rows []TextTableRowPreview `json:"rows"`
+}
+
+// TextDocumentBlock represents either a top-level paragraph or a table in a document.
+type TextDocumentBlock struct {
+	Type     string                 `json:"type"` // "paragraph" or "table"
+	Index    int                    `json:"index"`
+	Segments []TextParagraphSegment `json:"segments,omitempty"`
+	Table    *TextTablePreview      `json:"table,omitempty"`
+}
+
 // TextParagraphPreview holds the segmented text of a paragraph for inline Word-like document preview.
 type TextParagraphPreview struct {
 	Index    int                    `json:"index"`
@@ -154,6 +177,112 @@ func isDocxAddressValid(s string) bool {
 		}
 	}
 	return false
+}
+
+var docxAddressAbbreviations = map[string]bool{
+	"Г": true, "С": true, "Д": true, "П": true, "Р": true, "В": true, "Т": true, "Н": true,
+	"Б": true, "М": true, "УЛ": true, "КВ": true, "СТ": true, "ИМ": true, "ОБЛ": true,
+	"ПЕР": true, "ПР": true, "ПЛ": true, "НАБ": true, "Ш": true, "СТР": true, "ЭТ": true,
+	"ОФ": true, "РИС": true, "ТАБЛ": true, "СМ": true, "СР": true, "РУБ": true, "КОП": true,
+	"ТЫС": true, "МЛН": true, "МЛРД": true, "ТЕЛ": true, "ФАКС": true, "ЭКЗ": true, "ПРИЛ": true,
+}
+
+var docxNonFIOKeywords = map[string]bool{
+	"МОСКВА": true, "САНКТ-ПЕТЕРБУРГ": true, "ПЕТЕРБУРГ": true, "ПИТЕР": true, "НОВОСИБИРСК": true,
+	"ЕКАТЕРИНБУРГ": true, "КАЗАНЬ": true, "НИЖНИЙ НОВГОРОД": true, "ЧЕЛЯБИНСК": true, "САМАРА": true,
+	"ОМСК": true, "РОСТОВ-НА-ДОНУ": true, "РОСТОВ": true, "УФА": true, "КРАСНОЯРСК": true,
+	"ВОРОНЕЖ": true, "ПЕРМЬ": true, "ВОЛГОГРАД": true, "КРАСНОДАР": true, "САРАТОВ": true,
+	"ТЮМЕНЬ": true, "ТОЛЬЯТТИ": true, "ИЖЕВСК": true, "БАРНАУЛ": true, "УЛЬЯНОВСК": true,
+	"ИРКУТСК": true, "ХАБАРОВСК": true, "ЯРОСЛАВЛЬ": true, "ВЛАДИВОСТОК": true, "МАХАЧКАЛА": true,
+	"ТОМСК": true, "ОРЕНБУРГ": true, "КЕМЕРОВО": true, "НОВОКУЗНЕЦК": true, "РЯЗАНЬ": true,
+	"АСТРАХАНЬ": true, "ПЕНЗА": true, "ЛИПЕЦК": true, "КИРОВ": true, "ЧЕБОКСАРЫ": true,
+	"ТУЛА": true, "КАЛИНИНГРАД": true, "БАЛАШИХА": true, "КУРСК": true, "СЕВАСТОПОЛЬ": true,
+	"УЛАН-УДЭ": true, "СОЧИ": true, "СТАВРОПОЛЬ": true, "ТВЕРЬ": true, "МАГНИТОГОРСК": true,
+	"ИВАНОВО": true, "БРЯНСК": true, "СУРГУТ": true, "ВЛАДИМИР": true, "ЧИТА": true,
+	"АРХАНГЕЛЬСК": true, "КАЛУГА": true, "СМОЛЕНСК": true, "ВОЛЖСКИЙ": true, "ЯКУТСК": true,
+	"САРАНСК": true, "ЧЕРЕПОВЕЦ": true, "КУРГАН": true, "ВОЛОГДА": true, "ОРЁЛ": true, "ОРЕЛ": true,
+	"ПОДОЛЬСК": true, "ГРОЗНЫЙ": true, "ВЛАДИКАВКАЗ": true, "ТАМБОВ": true, "МУРМАНСК": true,
+	"ПЕТРОЗАВОДСК": true, "НИЖНЕВАРТОВСК": true, "КОСТРОМА": true, "СТЕРЛИТАМАК": true, "НОВОРОССИЙСК": true,
+	"ЙОШКАР-ОЛА": true, "ХИМКИ": true, "ТАГАНРОГ": true, "КОМСОМОЛЬСК-НА-АМУРЕ": true, "СЫКТЫВКАР": true,
+	"НАЛЬЧИК": true, "НИЖНЕКАМСК": true, "ШАХТЫ": true, "ДЗЕРЖИНСК": true, "БРАТСК": true,
+	"ОРСК": true, "АНГАРСК": true, "ЭНГЕЛЬС": true, "БЛАГОВЕЩЕНСК": true, "СТАРЫЙ ОСКОЛ": true,
+	"ВЕЛИКИЙ НОВГОРОД": true, "КОРОЛЁВ": true, "КОРОЛЕВ": true, "ПСКОВ": true, "МЫТИЩИ": true,
+	"БИЙСК": true, "ЛЮБЕРЦЫ": true, "ПРОКОПЬЕВСК": true, "ЮЖНО-САХАЛИНСК": true, "АРМАВИР": true,
+	"РЫБИНСК": true, "БАЛАКОВО": true, "АБАКАН": true, "СЕВЕРОДВИНСК": true, "ПЕТРОПАВЛОВСК-КАМЧАТСКИЙ": true,
+	"НОРИЛЬСК": true, "УССУРИЙСК": true, "ВОЛГОДОНСК": true, "СЫЗРАНЬ": true, "КАМЕНСК-УРАЛЬСКИЙ": true,
+	"ЗЛАТОУСТ": true, "НОВОЧЕРКАССК": true, "КРАСНОГОРСК": true, "ЭЛЕКТРОСТАЛЬ": true, "АЛЬМЕТЬЕВСК": true,
+	"САЛАВАТ": true, "МИАСС": true, "КЕРЧЬ": true, "НАХОДКА": true, "КОПЕЙСК": true,
+	"ПЯТИГОРСК": true, "РУБЦОВСК": true, "БЕРЕЗНИКИ": true, "КОЛОМНА": true, "МАЙКОП": true,
+	"ОДИНЦОВО": true, "ХАСАВЮРТ": true, "КОВРОВ": true, "КИСЛОВОДСК": true, "НЕФТЕКАМСК": true,
+	"НЕФТЕЮГАНСК": true, "НОВОЧЕБОКСАРСК": true, "СЕРПУХОВ": true, "ЩЁЛКОВО": true, "ЩЕЛКОВО": true,
+	"НОВОМОСКОВСК": true, "БАТАЙСК": true, "ПЕРВОУРАЛЬСК": true, "ДОМОДЕДОВО": true, "ДЕРБЕНТ": true,
+	"ЧЕРКЕССК": true, "ОРЕХОВО-ЗУЕВО": true, "НЕВИННОМЫССК": true, "ДИМИТРОВГРАД": true, "НАЗРАНЬ": true,
+	"КЫЗЫЛ": true, "ОКТЯБРЬСКИЙ": true, "ОБНИНСК": true, "КАСПИЙСК": true, "НОВЫЙ УРЕНГОЙ": true,
+	"РАМЕНСКОЕ": true, "МУРОМ": true, "НОВОШАХТИНСК": true, "ЖУКОВСКИЙ": true, "СЕВЕРСК": true,
+	"ЕССЕНТУКИ": true, "НОЯБРЬСК": true, "АРТЁМ": true, "АРТЕМ": true, "ЕВПАТОРИЯ": true,
+	"АЧИНСК": true, "ЕЛЕЦ": true, "СЕРГИЕВ ПОСАД": true, "АРЗАМАС": true, "ДОЛГОПРУДНЫЙ": true,
+	"ЭЛИСТА": true, "БЕРДСК": true, "НОВОКУЙБЫШЕВСК": true, "ПУШКИНО": true, "ЖЕЛЕЗНОГОРСК": true,
+	"НОГИНСК": true, "ЛЕНИНГРАДСКАЯ": true, "МОСКОВСКАЯ": true, "РОССИЯ": true, "ФЕДЕРАЦИЯ": true,
+	"ТАБЛИЦА": true, "ПРИЛОЖЕНИЕ": true, "ПРИКАЗ": true, "ДОГОВОР": true, "АКТ": true,
+	"СЧЕТ": true, "СЧЁТ": true, "УСЛУГА": true, "УСЛУГИ": true, "ТАРИФ": true, "ТАРИФЫ": true,
+	"УТВЕРЖДЕНО": true, "БЛОКИРОВКА": true, "ПЕРИОД": true, "СТОИМОСТЬ": true, "ТЕРРИТОРИЯ": true,
+	"НАИМЕНОВАНИЕ": true, "МОРАТОРИЙ": true, "АБОНЕНТ": true, "ОБЛАСТЬ": true, "РАЙОН": true,
+	"КРАЙ": true, "ГОРОД": true, "СЕЛО": true, "ДЕРЕВНЯ": true, "ПОСЕЛОК": true, "ПОСЁЛОК": true,
+	"УЛИЦА": true, "ПРОСПЕКТ": true, "ПЕРЕУЛОК": true, "ПЛОЩАДЬ": true, "ШОССЕ": true, "СТРОЕНИЕ": true,
+}
+
+func isDocxFIOInitialsValid(match string) bool {
+	clean := strings.TrimSpace(match)
+	parts := strings.Fields(clean)
+	if len(parts) < 2 {
+		return false
+	}
+
+	var surnamePart string
+	var initialPart string
+
+	if strings.Contains(parts[0], ".") {
+		initialPart = parts[0]
+		if len(parts) > 2 && strings.Contains(parts[1], ".") {
+			initialPart += parts[1]
+			surnamePart = parts[2]
+		} else {
+			surnamePart = parts[1]
+		}
+	} else {
+		surnamePart = parts[0]
+		initialPart = strings.Join(parts[1:], "")
+	}
+
+	surnameUpper := strings.ToUpper(strings.Trim(surnamePart, ".,:;!?\"'()[]{} \t"))
+	if docxNonFIOKeywords[surnameUpper] || docxAddressAbbreviations[surnameUpper] {
+		return false
+	}
+
+	dotCount := strings.Count(initialPart, ".")
+	if dotCount == 1 {
+		// Single initial like "Г. Москва" or "И. Иванов"
+		initialLetters := strings.ToUpper(strings.Trim(initialPart, ".,:;!?\"'()[]{} \t"))
+		if docxAddressAbbreviations[initialLetters] {
+			return false
+		}
+		runes := []rune(surnameUpper)
+		if len(runes) < 3 {
+			return false
+		}
+		hasSurnameSuffix := false
+		for _, suffix := range []string{"ОВ", "ОВА", "ЕВ", "ЕВА", "ИН", "ИНА", "ЫН", "ЫНА", "СКИЙ", "СКАЯ", "ЦКИЙ", "ЦКАЯ", "НЫХ", "НИХ", "ИХ", "ИЧ", "ЮК", "УК", "АК", "ЯК", "КО"} {
+			if strings.HasSuffix(surnameUpper, suffix) {
+				hasSurnameSuffix = true
+				break
+			}
+		}
+		if !hasSurnameSuffix {
+			return false
+		}
+	}
+
+	return true
 }
 
 // findDocxSensitiveMatches locates sensitive entities in paragraph text.
@@ -269,15 +398,15 @@ func findDocxSensitiveMatches(text string) []docxMatch {
 		parts := strings.Fields(s)
 		return len(parts) >= 2
 	})
-	addRegexMatches(docxFIOInitials1, 1, string(detector.EntityFIO), nil)
-	addRegexMatches(docxFIOInitials2, 1, string(detector.EntityFIO), nil)
+	addRegexMatches(docxFIOInitials1, 1, string(detector.EntityFIO), isDocxFIOInitialsValid)
+	addRegexMatches(docxFIOInitials2, 1, string(detector.EntityFIO), isDocxFIOInitialsValid)
 
-	// 9. Dates
-	addRegexMatches(docxDateDMY, 1, string(detector.EntityBirthday), func(s string) bool {
+	// 9. Dates (General document dates)
+	addRegexMatches(docxDateDMY, 1, string(detector.EntityDate), func(s string) bool {
 		_, err := time.Parse("02.01.2006", s)
 		return err == nil
 	})
-	addRegexMatches(docxDateYMD, 1, string(detector.EntityBirthday), func(s string) bool {
+	addRegexMatches(docxDateYMD, 1, string(detector.EntityDate), func(s string) bool {
 		_, err := time.Parse("2006-01-02", s)
 		return err == nil
 	})
@@ -347,8 +476,29 @@ func isWordElement(name xml.Name, local string) bool {
 	return name.Space == "" || strings.Contains(name.Space, "wordprocessingml")
 }
 
+func getDocxFileOrder(name string) (order int, isBodyOrNotes bool) {
+	switch name {
+	case "word/document.xml":
+		return 1, true
+	case "word/footnotes.xml":
+		return 2, true
+	case "word/endnotes.xml":
+		return 3, true
+	case "word/comments.xml":
+		return 4, false
+	default:
+		if strings.HasPrefix(name, "word/header") && strings.HasSuffix(name, ".xml") {
+			return 5, false
+		}
+		if strings.HasPrefix(name, "word/footer") && strings.HasSuffix(name, ".xml") {
+			return 6, false
+		}
+		return 100, false
+	}
+}
+
 func isDocumentXML(name string) bool {
-	if name == "word/document.xml" {
+	if name == "word/document.xml" || name == "word/footnotes.xml" || name == "word/endnotes.xml" || name == "word/comments.xml" {
 		return true
 	}
 	if strings.HasPrefix(name, "word/header") && strings.HasSuffix(name, ".xml") {
@@ -370,14 +520,50 @@ type docxParagraph struct {
 	nodes []docxTextNode
 }
 
-func parseDocxXML(xmlData []byte) ([]docxParagraph, error) {
+type docxCell struct {
+	paragraphs []docxParagraph
+}
+
+type docxRow struct {
+	cells []docxCell
+}
+
+type docxTable struct {
+	rows []docxRow
+}
+
+type docxBlockType int
+
+const (
+	docxBlockTypeParagraph docxBlockType = iota
+	docxBlockTypeTable
+)
+
+type docxBlock struct {
+	blockType docxBlockType
+	paragraph docxParagraph
+	table     docxTable
+}
+
+func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 	dec := xml.NewDecoder(bytes.NewReader(xmlData))
-	var paragraphs []docxParagraph
+	var blocks []docxBlock
 	var curNodes []docxTextNode
 	pDepth := 0
 	inT := false
 	var curTText strings.Builder
 	var tStartOffset int
+
+	tblDepth := 0
+	trDepth := 0
+	tcDepth := 0
+
+	var curTable docxTable
+	var curRow docxRow
+	var curCell docxCell
+
+	var curNoteId string
+	inSpecialNote := false
 
 	for {
 		offsetBefore := int(dec.InputOffset())
@@ -392,7 +578,37 @@ func parseDocxXML(xmlData []byte) ([]docxParagraph, error) {
 
 		switch t := tok.(type) {
 		case xml.StartElement:
-			if isWordElement(t.Name, "p") {
+			if isWordElement(t.Name, "endnote") || isWordElement(t.Name, "footnote") {
+				var noteId, noteType string
+				for _, attr := range t.Attr {
+					if attr.Name.Local == "id" {
+						noteId = attr.Value
+					} else if attr.Name.Local == "type" {
+						noteType = attr.Value
+					}
+				}
+				if noteType == "separator" || noteType == "continuationSeparator" || noteId == "-1" || noteId == "0" {
+					inSpecialNote = true
+				} else {
+					inSpecialNote = false
+					curNoteId = noteId
+				}
+			} else if isWordElement(t.Name, "tbl") {
+				if tblDepth == 0 {
+					curTable = docxTable{}
+				}
+				tblDepth++
+			} else if isWordElement(t.Name, "tr") {
+				if tblDepth > 0 && trDepth == 0 {
+					curRow = docxRow{}
+				}
+				trDepth++
+			} else if isWordElement(t.Name, "tc") {
+				if tblDepth > 0 && trDepth > 0 && tcDepth == 0 {
+					curCell = docxCell{}
+				}
+				tcDepth++
+			} else if isWordElement(t.Name, "p") {
 				if pDepth == 0 {
 					curNodes = nil
 				}
@@ -413,13 +629,24 @@ func parseDocxXML(xmlData []byte) ([]docxParagraph, error) {
 					endOffset:   offsetAfter,
 					text:        "\t",
 				})
+			} else if pDepth > 0 && (isWordElement(t.Name, "endnoteRef") || isWordElement(t.Name, "footnoteRef")) {
+				if curNoteId != "" && !inSpecialNote {
+					curNodes = append(curNodes, docxTextNode{
+						startOffset: offsetBefore,
+						endOffset:   offsetAfter,
+						text:        curNoteId,
+					})
+				}
 			}
 		case xml.CharData:
 			if inT {
 				curTText.Write(t)
 			}
 		case xml.EndElement:
-			if inT && isWordElement(t.Name, "t") {
+			if isWordElement(t.Name, "endnote") || isWordElement(t.Name, "footnote") {
+				curNoteId = ""
+				inSpecialNote = false
+			} else if inT && isWordElement(t.Name, "t") {
 				inT = false
 				curNodes = append(curNodes, docxTextNode{
 					startOffset: tStartOffset,
@@ -429,16 +656,99 @@ func parseDocxXML(xmlData []byte) ([]docxParagraph, error) {
 			} else if isWordElement(t.Name, "p") {
 				pDepth--
 				if pDepth == 0 {
-					paragraphs = append(paragraphs, docxParagraph{
-						nodes: curNodes,
-					})
+					if !inSpecialNote {
+						p := docxParagraph{nodes: curNodes}
+						if tblDepth > 0 && tcDepth > 0 {
+							curCell.paragraphs = append(curCell.paragraphs, p)
+						} else {
+							blocks = append(blocks, docxBlock{
+								blockType: docxBlockTypeParagraph,
+								paragraph: p,
+							})
+						}
+					}
 					curNodes = nil
+				}
+			} else if isWordElement(t.Name, "tc") {
+				tcDepth--
+				if tcDepth == 0 && tblDepth > 0 && trDepth > 0 {
+					curRow.cells = append(curRow.cells, curCell)
+					curCell = docxCell{}
+				}
+			} else if isWordElement(t.Name, "tr") {
+				trDepth--
+				if trDepth == 0 && tblDepth > 0 {
+					curTable.rows = append(curTable.rows, curRow)
+					curRow = docxRow{}
+				}
+			} else if isWordElement(t.Name, "tbl") {
+				tblDepth--
+				if tblDepth == 0 {
+					blocks = append(blocks, docxBlock{
+						blockType: docxBlockTypeTable,
+						table:     curTable,
+					})
+					curTable = docxTable{}
 				}
 			}
 		}
 	}
 
-	return paragraphs, nil
+	return blocks, nil
+}
+
+func extractParagraphsFromBlocks(blocks []docxBlock) []docxParagraph {
+	var paras []docxParagraph
+	for _, b := range blocks {
+		if b.blockType == docxBlockTypeParagraph {
+			paras = append(paras, b.paragraph)
+		} else if b.blockType == docxBlockTypeTable {
+			for _, row := range b.table.rows {
+				for _, cell := range row.cells {
+					paras = append(paras, cell.paragraphs...)
+				}
+			}
+		}
+	}
+	return paras
+}
+
+func buildParagraphSegments(text string, matches []docxMatch, anon *anonymizer.Anonymizer) []TextParagraphSegment {
+	if len(matches) == 0 {
+		return []TextParagraphSegment{
+			{
+				Text:     text,
+				IsEntity: false,
+			},
+		}
+	}
+
+	var segments []TextParagraphSegment
+	lastIdx := 0
+	for _, m := range matches {
+		if m.start > lastIdx && m.start <= len(text) {
+			segments = append(segments, TextParagraphSegment{
+				Text:     text[lastIdx:m.start],
+				IsEntity: false,
+			})
+		}
+		synth := generateSynthetic(anon, m.entityType, m.value)
+		segments = append(segments, TextParagraphSegment{
+			Text:       synth,
+			IsEntity:   true,
+			Type:       m.entityType,
+			Original:   m.value,
+			Anonymized: synth,
+		})
+		lastIdx = m.end
+	}
+	if lastIdx < len(text) {
+		segments = append(segments, TextParagraphSegment{
+			Text:     text[lastIdx:],
+			IsEntity: false,
+		})
+	}
+	return segments
 }
 
 func getDisabledEntityTypes(options map[string]interface{}) map[string]bool {
@@ -494,110 +804,165 @@ func getDisabledEntityTypes(options map[string]interface{}) map[string]bool {
 	return disabled
 }
 
-// Inspect examines paragraphs in the DOCX archive and reports paragraph count, detected entities, snippets, and structured paragraph previews.
-func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []DocxTextSnippet, []TextParagraphPreview, error) {
+// Inspect examines paragraphs and tables in the DOCX archive and reports paragraph count, detected entities, snippets, structured paragraph previews, and full document blocks.
+func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []DocxTextSnippet, []TextParagraphPreview, []TextDocumentBlock, error) {
 	if r == nil {
-		return 0, nil, nil, nil, errors.New("reader cannot be nil")
+		return 0, nil, nil, nil, nil, errors.New("reader cannot be nil")
 	}
 	if size <= 0 {
-		return 0, nil, nil, nil, errors.New("invalid file size")
+		return 0, nil, nil, nil, nil, errors.New("invalid file size")
 	}
 
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
-		return 0, nil, nil, nil, fmt.Errorf("failed to open docx zip: %w", err)
+		return 0, nil, nil, nil, nil, fmt.Errorf("failed to open docx zip: %w", err)
 	}
 
 	paragraphCount := 0
 	counts := make(map[string]int)
 	var snippets []DocxTextSnippet
 	var paragraphPreviews []TextParagraphPreview
+	var documentBlocks []TextDocumentBlock
 
+	// Filter and sort XML files in logical document reading order:
+	// 1. word/document.xml (main body)
+	// 2. word/footnotes.xml (footnotes)
+	// 3. word/endnotes.xml (endnotes)
+	// 4. word/comments.xml (comments)
+	// 5. word/header*.xml & word/footer*.xml (headers & footers)
+	var docxFiles []*zip.File
 	for _, f := range zr.File {
-		if !isDocumentXML(f.Name) {
-			continue
+		if isDocumentXML(f.Name) {
+			docxFiles = append(docxFiles, f)
 		}
+	}
+	sort.Slice(docxFiles, func(i, j int) bool {
+		oi, _ := getDocxFileOrder(docxFiles[i].Name)
+		oj, _ := getDocxFileOrder(docxFiles[j].Name)
+		if oi == oj {
+			return docxFiles[i].Name < docxFiles[j].Name
+		}
+		return oi < oj
+	})
 
+	for _, f := range docxFiles {
 		rc, err := f.Open()
 		if err != nil {
-			return 0, nil, nil, nil, fmt.Errorf("failed to open %s: %w", f.Name, err)
+			return 0, nil, nil, nil, nil, fmt.Errorf("failed to open %s: %w", f.Name, err)
 		}
 		data, err := io.ReadAll(rc)
 		_ = rc.Close()
 		if err != nil {
-			return 0, nil, nil, nil, fmt.Errorf("failed to read %s: %w", f.Name, err)
+			return 0, nil, nil, nil, nil, fmt.Errorf("failed to read %s: %w", f.Name, err)
 		}
 
-		paras, err := parseDocxXML(data)
+		blocks, err := parseDocxXML(data)
 		if err != nil {
-			return 0, nil, nil, nil, fmt.Errorf("failed to parse %s: %w", f.Name, err)
+			return 0, nil, nil, nil, nil, fmt.Errorf("failed to parse %s: %w", f.Name, err)
 		}
 
+		paras := extractParagraphsFromBlocks(blocks)
 		paragraphCount += len(paras)
 
-		for _, p := range paras {
-			if len(p.nodes) == 0 {
-				continue
-			}
+		_, isBodyOrNotes := getDocxFileOrder(f.Name)
 
-			var paraText strings.Builder
-			for _, n := range p.nodes {
-				paraText.WriteString(n.text)
-			}
-			pStr := paraText.String()
-			trimmedP := strings.TrimSpace(pStr)
-			if trimmedP == "" {
-				continue
-			}
+		for _, b := range blocks {
+			if b.blockType == docxBlockTypeParagraph {
+				var paraText strings.Builder
+				for _, n := range b.paragraph.nodes {
+					paraText.WriteString(n.text)
+				}
+				pStr := paraText.String()
+				trimmedP := strings.TrimSpace(pStr)
+				if trimmedP == "" {
+					continue
+				}
 
-			matches := findDocxSensitiveMatches(pStr)
-			for _, m := range matches {
-				counts[m.entityType]++
-				synth := generateSynthetic(h.Anon, m.entityType, m.value)
-				snippets = append(snippets, DocxTextSnippet{
-					Original:   m.value,
-					Anonymized: synth,
-					Type:       m.entityType,
-				})
-			}
-
-			var segments []TextParagraphSegment
-			if len(matches) == 0 {
-				segments = append(segments, TextParagraphSegment{
-					Text:     pStr,
-					IsEntity: false,
-				})
-			} else {
-				lastIdx := 0
+				matches := findDocxSensitiveMatches(pStr)
 				for _, m := range matches {
-					if m.start > lastIdx && m.start <= len(pStr) {
-						segments = append(segments, TextParagraphSegment{
-							Text:     pStr[lastIdx:m.start],
-							IsEntity: false,
-						})
-					}
+					counts[m.entityType]++
 					synth := generateSynthetic(h.Anon, m.entityType, m.value)
-					segments = append(segments, TextParagraphSegment{
-						Text:       synth,
-						IsEntity:   true,
-						Type:       m.entityType,
+					snippets = append(snippets, DocxTextSnippet{
 						Original:   m.value,
 						Anonymized: synth,
+						Type:       m.entityType,
 					})
-					lastIdx = m.end
 				}
-				if lastIdx < len(pStr) {
-					segments = append(segments, TextParagraphSegment{
-						Text:     pStr[lastIdx:],
-						IsEntity: false,
+
+				if isBodyOrNotes {
+					segments := buildParagraphSegments(pStr, matches, h.Anon)
+
+					paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
+						Index:    len(paragraphPreviews) + 1,
+						Segments: segments,
+					})
+
+					documentBlocks = append(documentBlocks, TextDocumentBlock{
+						Type:     "paragraph",
+						Index:    len(documentBlocks) + 1,
+						Segments: segments,
+					})
+				}
+			} else if b.blockType == docxBlockTypeTable {
+				var rowPreviews []TextTableRowPreview
+				for _, r := range b.table.rows {
+					var cellPreviews []TextTableCellPreview
+					for _, c := range r.cells {
+						var cellText strings.Builder
+						for pIdx, cp := range c.paragraphs {
+							if pIdx > 0 {
+								cellText.WriteString("\n")
+							}
+							for _, n := range cp.nodes {
+								cellText.WriteString(n.text)
+							}
+						}
+						cStr := cellText.String()
+						matches := findDocxSensitiveMatches(cStr)
+						for _, m := range matches {
+							counts[m.entityType]++
+							synth := generateSynthetic(h.Anon, m.entityType, m.value)
+							snippets = append(snippets, DocxTextSnippet{
+								Original:   m.value,
+								Anonymized: synth,
+								Type:       m.entityType,
+							})
+						}
+
+						if isBodyOrNotes {
+							var segments []TextParagraphSegment
+							if strings.TrimSpace(cStr) == "" {
+								segments = []TextParagraphSegment{{Text: cStr, IsEntity: false}}
+							} else {
+								segments = buildParagraphSegments(cStr, matches, h.Anon)
+								paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
+									Index:    len(paragraphPreviews) + 1,
+									Segments: segments,
+								})
+							}
+
+							cellPreviews = append(cellPreviews, TextTableCellPreview{
+								Segments: segments,
+							})
+						}
+					}
+					if isBodyOrNotes {
+						rowPreviews = append(rowPreviews, TextTableRowPreview{
+							Cells: cellPreviews,
+						})
+					}
+				}
+
+				if isBodyOrNotes {
+					documentBlocks = append(documentBlocks, TextDocumentBlock{
+						Type:  "table",
+						Index: len(documentBlocks) + 1,
+						Table: &TextTablePreview{
+							Rows: rowPreviews,
+						},
 					})
 				}
 			}
-
-			paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
-				Index:    len(paragraphPreviews) + 1,
-				Segments: segments,
-			})
 		}
 	}
 
@@ -630,7 +995,7 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 		entities = append(entities, EntityCount{Type: k, Count: counts[k]})
 	}
 
-	return paragraphCount, entities, snippets, paragraphPreviews, nil
+	return paragraphCount, entities, snippets, paragraphPreviews, documentBlocks, nil
 }
 
 // Process reads a DOCX document from r, anonymizes detected entities across paragraphs and runs,
@@ -696,11 +1061,12 @@ func (h *DOCXHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w 
 			return nil, fmt.Errorf("failed to read %s: %w", f.Name, err)
 		}
 
-		paras, err := parseDocxXML(data)
+		blocks, err := parseDocxXML(data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse %s: %w", f.Name, err)
 		}
 
+		paras := extractParagraphsFromBlocks(blocks)
 		var replacements []textReplacement
 
 		for _, p := range paras {

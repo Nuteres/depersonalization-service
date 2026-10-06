@@ -1,7 +1,12 @@
 <script lang="ts">
   import { appState } from '../../stores/appState.svelte';
   import { tableState } from '../../stores/tableState.svelte';
-  import type { DocxTextSnippet, TextParagraphPreview, TextParagraphSegment } from '../../types/domain';
+  import type {
+    DocxTextSnippet,
+    TextDocumentBlock,
+    TextParagraphPreview,
+    TextParagraphSegment
+  } from '../../types/domain';
 
   // View modes
   let viewMode = $state<'doc' | 'snippets'>('doc');
@@ -18,6 +23,9 @@
   } | null>(null);
 
   const fileInfo = $derived(appState.currentFileInfo);
+  const documentBlocks = $derived<TextDocumentBlock[]>(
+    fileInfo?.documentBlocks || []
+  );
   const paragraphPreviews = $derived<TextParagraphPreview[]>(
     fileInfo?.paragraphPreviews || []
   );
@@ -90,45 +98,83 @@
     }
   }
 
-  // Count total entity segments across all paragraphs
+  // Count total entity segments across all document blocks or paragraphs
   interface FlatEntityMark {
     globalIndex: number;
-    paraIndex: number;
-    segIndex: number;
+    key: string;
     type: string;
     original: string;
     anonymized: string;
     elementId: string;
   }
 
-  // Pre-calculate entity marks for linear navigation
+  // Pre-calculate entity marks for linear navigation across paragraphs and table cells
   const allEntityMarks = $derived.by<FlatEntityMark[]>(() => {
     const list: FlatEntityMark[] = [];
     let gIdx = 0;
-    paragraphPreviews.forEach((para, pIdx) => {
-      para.segments.forEach((seg, sIdx) => {
-        if (seg.isEntity) {
-          gIdx++;
-          list.push({
-            globalIndex: gIdx,
-            paraIndex: pIdx,
-            segIndex: sIdx,
-            type: seg.type || 'FIO',
-            original: seg.original || seg.text,
-            anonymized: seg.anonymized || seg.text,
-            elementId: `doc-entity-mark-${gIdx}`
+
+    if (documentBlocks.length > 0) {
+      documentBlocks.forEach((block, bIdx) => {
+        if (block.type === 'paragraph' && block.segments) {
+          block.segments.forEach((seg, sIdx) => {
+            if (seg.isEntity) {
+              gIdx++;
+              list.push({
+                globalIndex: gIdx,
+                key: `${bIdx}_${sIdx}`,
+                type: seg.type || 'FIO',
+                original: seg.original || seg.text,
+                anonymized: seg.anonymized || seg.text,
+                elementId: `doc-entity-mark-${gIdx}`
+              });
+            }
+          });
+        } else if (block.type === 'table' && block.table) {
+          block.table.rows.forEach((row, rIdx) => {
+            row.cells.forEach((cell, cIdx) => {
+              cell.segments.forEach((seg, sIdx) => {
+                if (seg.isEntity) {
+                  gIdx++;
+                  list.push({
+                    globalIndex: gIdx,
+                    key: `${bIdx}_${rIdx}_${cIdx}_${sIdx}`,
+                    type: seg.type || 'FIO',
+                    original: seg.original || seg.text,
+                    anonymized: seg.anonymized || seg.text,
+                    elementId: `doc-entity-mark-${gIdx}`
+                  });
+                }
+              });
+            });
           });
         }
       });
-    });
+    } else {
+      paragraphPreviews.forEach((para, pIdx) => {
+        para.segments.forEach((seg, sIdx) => {
+          if (seg.isEntity) {
+            gIdx++;
+            list.push({
+              globalIndex: gIdx,
+              key: `${pIdx}_${sIdx}`,
+              type: seg.type || 'FIO',
+              original: seg.original || seg.text,
+              anonymized: seg.anonymized || seg.text,
+              elementId: `doc-entity-mark-${gIdx}`
+            });
+          }
+        });
+      });
+    }
+
     return list;
   });
 
-  // Calculate global index lookup map for fast rendering: `${paraIndex}_${segIndex}` -> globalIndex
+  // Calculate global index lookup map for fast rendering: key -> globalIndex
   const entityIndexMap = $derived.by<Record<string, number>>(() => {
     const map: Record<string, number> = {};
     for (const m of allEntityMarks) {
-      map[`${m.paraIndex}_${m.segIndex}`] = m.globalIndex;
+      map[m.key] = m.globalIndex;
     }
     return map;
   });
@@ -245,11 +291,11 @@
           </span>
         </div>
         <span class="text-xs text-[#78716C] font-mono">
-          · {allEntityMarks.length > 0 ? allEntityMarks.length : snippets.length} фрагментов ПДн
+          ▪ {allEntityMarks.length > 0 ? allEntityMarks.length : snippets.length} фрагментов ПДн
         </span>
         {#if fileInfo.paragraphCount}
           <span class="text-xs text-[#A8A29E] font-mono">
-            · {fileInfo.paragraphCount} абзацев
+            ▪ {fileInfo.paragraphCount} абзацев
           </span>
         {/if}
       </div>
@@ -397,60 +443,106 @@
         <!-- Word Page Sheet (Full Height Block, grows with content) -->
         <div
           id="word-sheet-paper"
-          class="mx-auto w-full max-w-3xl bg-white shadow-lg border border-[#D5D3CC] p-8 sm:p-14 md:p-16 text-[#1C1917] font-sans text-[14px] sm:text-[15px] leading-[1.8] min-h-[500px] h-auto"
+          class="mx-auto w-full max-w-3xl bg-white shadow-lg border border-[#D5D3CC] p-6 sm:p-10 md:p-12 text-[#1C1917] font-sans text-[14px] sm:text-[15px] leading-[1.8] min-h-[300px] h-auto"
         >
-          <!-- Document Header Simulation -->
-          <div class="border-b border-[#E8E7E3] pb-3 mb-6 flex items-center justify-between text-[11px] text-[#A8A29E] font-mono">
-            <span class="truncate max-w-sm">{fileInfo.name}</span>
-            <span class="uppercase tracking-widest">{fileInfo.format} DOCUMENT</span>
-          </div>
-
-          {#if paragraphPreviews.length === 0}
-            <!-- Fallback if no paragraph previews were generated -->
-            {#if snippets.length === 0}
-              <div class="text-center py-16 text-xs text-[#78716C] font-mono">
-                В документе не обнаружено фрагментов персональных данных для замены
-              </div>
-            {:else}
-              <div>
-                {#each snippets as snip, sIdx}
-                  {@const isTypeDisabled = isEntityTypeDisabled(snip.type)}
-                  <p class="mb-4 last:mb-0 whitespace-pre-wrap leading-relaxed">
-                    <span class="text-[#78716C] font-mono text-xs mr-2">[{sIdx + 1}]</span>
-                    {#if isTypeDisabled}
-                      <button
-                        type="button"
-                        onclick={() => toggleEntityType(snip.type)}
-                        class="bg-stone-100 text-stone-600 font-medium px-1.5 py-0.5 rounded-[3px] border border-dashed border-stone-400 transition hover:bg-stone-200 cursor-pointer font-mono text-[13px] line-through"
-                        title="Деперсонализация отключена. Нажмите, чтобы включить."
-                      >
-                        {snip.original}
-                      </button>
-                    {:else if !isBefore}
-                      <button
-                        type="button"
-                        onclick={() => toggleEntityType(snip.type)}
-                        class="bg-emerald-100/90 text-emerald-950 font-medium px-1.5 py-0.5 rounded-[3px] border border-emerald-300 transition hover:bg-emerald-200 cursor-pointer font-mono text-[13px]"
-                        title="Деперсонализация активна. Нажмите, чтобы отключить замену."
-                      >
-                        {snip.anonymized}
-                      </button>
-                    {:else}
-                      <button
-                        type="button"
-                        onclick={() => toggleEntityType(snip.type)}
-                        class="bg-amber-100/90 text-amber-950 font-medium px-1.5 py-0.5 rounded-[3px] border border-amber-300 transition hover:bg-amber-200 cursor-pointer font-mono text-[13px]"
-                        title="Исходный вид. Нажмите, чтобы переключить."
-                      >
-                        {snip.original}
-                      </button>
-                    {/if}
+          {#if documentBlocks.length > 0}
+            <!-- Structured Document Blocks: Paragraphs and Word Tables -->
+            <div class="space-y-3">
+              {#each documentBlocks as block, bIdx}
+                {#if block.type === 'paragraph' && block.segments}
+                  <p class="mb-3 whitespace-pre-wrap leading-relaxed text-justify break-words">
+                    {#each block.segments as seg, sIdx}
+                      {#if !seg.isEntity}
+                        <span>{seg.text}</span>
+                      {:else}
+                        {@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}
+                        {@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}
+                        {@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}
+                        {@const markClass = isTypeDisabled
+                          ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
+                          : !isBefore
+                          ? 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
+                          : 'bg-amber-100/95 text-amber-950 border-amber-400 hover:bg-amber-200'}
+                        
+                        <button
+                          type="button"
+                          id="doc-entity-mark-{gIdx}"
+                          onmouseenter={(e) => handleMarkHover(e, seg)}
+                          onmouseleave={handleMarkLeave}
+                          onclick={() => {
+                            currentActiveChangeIdx = gIdx;
+                            toggleEntityType(seg.type || '');
+                          }}
+                          class="inline px-1.5 py-0.5 mx-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
+                          title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : 'Заменено'}. Нажмите для переключения."
+                        >
+                          {#if isTypeDisabled}
+                            <span class="line-through decoration-stone-400">{seg.original || seg.text}</span>
+                          {:else if !isBefore}
+                            {seg.anonymized || seg.text}
+                          {:else}
+                            {seg.original || seg.text}
+                          {/if}
+                        </button>
+                      {/if}
+                    {/each}
                   </p>
-                {/each}
-              </div>
-            {/if}
-          {:else}
-            <!-- Full Document Paragraphs Rendered with Highlighted Spans -->
+                {:else if block.type === 'table' && block.table}
+                  <!-- Word Table Simulation -->
+                  <div class="my-5 overflow-x-auto border border-[#D5D3CC] shadow-xs bg-white rounded-none">
+                    <table class="w-full border-collapse text-left text-xs font-sans">
+                      <tbody>
+                        {#each block.table.rows as row, rIdx}
+                          <tr class="{rIdx === 0 ? 'bg-[#F5F4F0] font-semibold text-[#1C1917] border-b-2 border-[#D5D3CC]' : 'border-b border-[#E8E7E3] hover:bg-[#FAF9F5]/70'}">
+                            {#each row.cells as cell, cIdx}
+                              <td class="p-2 sm:p-2.5 border-r border-[#E8E7E3] last:border-r-0 align-top break-words">
+                                {#each cell.segments as seg, sIdx}
+                                  {#if !seg.isEntity}
+                                    <span>{seg.text}</span>
+                                  {:else}
+                                    {@const gIdx = entityIndexMap[`${bIdx}_${rIdx}_${cIdx}_${sIdx}`] || 0}
+                                    {@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}
+                                    {@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}
+                                    {@const markClass = isTypeDisabled
+                                      ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
+                                      : !isBefore
+                                      ? 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
+                                      : 'bg-amber-100/95 text-amber-950 border-amber-400 hover:bg-amber-200'}
+
+                                    <button
+                                      type="button"
+                                      id="doc-entity-mark-{gIdx}"
+                                      onmouseenter={(e) => handleMarkHover(e, seg)}
+                                      onmouseleave={handleMarkLeave}
+                                      onclick={() => {
+                                        currentActiveChangeIdx = gIdx;
+                                        toggleEntityType(seg.type || '');
+                                      }}
+                                      class="inline px-1 py-0.5 mx-0.5 rounded-[3px] border font-medium text-[12px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
+                                      title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : 'Заменено'}. Нажмите для переключения."
+                                    >
+                                      {#if isTypeDisabled}
+                                        <span class="line-through decoration-stone-400">{seg.original || seg.text}</span>
+                                      {:else if !isBefore}
+                                        {seg.anonymized || seg.text}
+                                      {:else}
+                                        {seg.original || seg.text}
+                                      {/if}
+                                    </button>
+                                  {/if}
+                                {/each}
+                              </td>
+                            {/each}
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  </div>
+                {/if}
+              {/each}
+            </div>
+          {:else if paragraphPreviews.length > 0}
+            <!-- Fallback: Full Document Paragraphs Rendered with Highlighted Spans -->
             <div>
               {#each paragraphPreviews as para, pIdx}
                 <p class="mb-4 last:mb-0 whitespace-pre-wrap leading-relaxed text-justify break-words">
@@ -493,13 +585,48 @@
                 </p>
               {/each}
             </div>
+          {:else if snippets.length === 0}
+            <div class="text-center py-16 text-xs text-[#78716C] font-mono">
+              В документе не обнаружено фрагментов персональных данных для замены
+            </div>
+          {:else}
+            <div>
+              {#each snippets as snip, sIdx}
+                {@const isTypeDisabled = isEntityTypeDisabled(snip.type)}
+                <p class="mb-4 last:mb-0 whitespace-pre-wrap leading-relaxed">
+                  <span class="text-[#78716C] font-mono text-xs mr-2">[{sIdx + 1}]</span>
+                  {#if isTypeDisabled}
+                    <button
+                      type="button"
+                      onclick={() => toggleEntityType(snip.type)}
+                      class="bg-stone-100 text-stone-600 font-medium px-1.5 py-0.5 rounded-[3px] border border-dashed border-stone-400 transition hover:bg-stone-200 cursor-pointer font-mono text-[13px] line-through"
+                      title="Деперсонализация отключена. Нажмите, чтобы включить."
+                    >
+                      {snip.original}
+                    </button>
+                  {:else if !isBefore}
+                    <button
+                      type="button"
+                      onclick={() => toggleEntityType(snip.type)}
+                      class="bg-emerald-100/90 text-emerald-950 font-medium px-1.5 py-0.5 rounded-[3px] border border-emerald-300 transition hover:bg-emerald-200 cursor-pointer font-mono text-[13px]"
+                      title="Деперсонализация активна. Нажмите, чтобы отключить замену."
+                    >
+                      {snip.anonymized}
+                    </button>
+                  {:else}
+                    <button
+                      type="button"
+                      onclick={() => toggleEntityType(snip.type)}
+                      class="bg-amber-100/90 text-amber-950 font-medium px-1.5 py-0.5 rounded-[3px] border border-amber-300 transition hover:bg-amber-200 cursor-pointer font-mono text-[13px]"
+                      title="Исходный вид. Нажмите, чтобы переключить."
+                    >
+                      {snip.original}
+                    </button>
+                  {/if}
+                </p>
+              {/each}
+            </div>
           {/if}
-
-          <!-- Document Footer Simulation -->
-          <div class="border-t border-[#E8E7E3] pt-4 mt-8 flex items-center justify-between text-[11px] text-[#A8A29E] font-mono">
-            <span>Страница 1 из 1</span>
-            <span>Конфиденциально · 152-ФЗ РФ</span>
-          </div>
         </div>
 
         <!-- Floating Popover / Tooltip on Hover -->

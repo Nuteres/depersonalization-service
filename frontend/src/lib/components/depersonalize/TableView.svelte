@@ -262,7 +262,7 @@
           Предпросмотр таблицы
         </span>
         <span id="preview-count-label" class="text-xs text-[#78716C] font-mono">
-          {sheetName ? `[Лист: ${sheetName}] ` : ''}• Показано {Math.min(10, tableState.previewRows.length)} из {totalRowCount.toLocaleString('ru-RU')} строк
+          {sheetName ? `[Лист: ${sheetName}] ` : ''}▪ Показано {Math.min(10, tableState.previewRows.length)} из {totalRowCount.toLocaleString('ru-RU')} строк
         </span>
       </div>
 
@@ -659,7 +659,7 @@
           class="px-5 py-2.5 bg-[#FAF9F5] border-t border-[#E8E7E3] text-xs text-[#78716C] flex items-center justify-between font-mono shrink-0"
         >
           <span id="modal-columns-summary">
-            {sheetName ? `Лист: ${sheetName} • ` : ''}Колонок: {headers.length} • ПДн: {entities.length}
+            {sheetName ? `Лист: ${sheetName} ▪ ` : ''}Колонок: {headers.length} ▪ ПДн: {entities.length}
           </span>
           <span class="text-[#065F46] font-semibold">
             Листайте вниз для динамической подгрузки строк файла

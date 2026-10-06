@@ -24,10 +24,10 @@
     if (!res) return '';
     const duration = res.durationMs || 0;
     if ('restoredCells' in res && typeof res.restoredCells === 'number') {
-      return `Восстановлено ячеек с ПДн: ${res.restoredCells.toLocaleString('ru-RU')} • Время: ${duration} мс`;
+      return `Восстановлено ячеек с ПДн: ${res.restoredCells.toLocaleString('ru-RU')} ▪ Время: ${duration} мс`;
     }
     if ('rowsCount' in res && typeof res.rowsCount === 'number') {
-      return `Обработано строк: ${res.rowsCount.toLocaleString('ru-RU')} • Время: ${duration} мс`;
+      return `Обработано строк: ${res.rowsCount.toLocaleString('ru-RU')} ▪ Время: ${duration} мс`;
     }
     return `Время: ${duration} мс`;
   });
@@ -173,9 +173,9 @@
             id="btn-reveal-folder"
             type="button"
             onclick={handleRevealFolder}
-            class="px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold transition cursor-pointer flex items-center space-x-1"
+            class="px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
           >
-            <span>📁</span>
+            <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">📁</span>
             <span>Показать в папке</span>
           </button>
         {/if}
