@@ -2,6 +2,8 @@ package desktop_test
 
 import (
 	"context"
+	"encoding/csv"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -350,4 +352,66 @@ func TestDesktopApp_AuditIntegration(t *testing.T) {
 		t.Errorf("exported audit log missing expected entries: %s", string(exportData))
 	}
 }
+
+func TestDesktopApp_ProcessFileWithSheets_ShuffleRows(t *testing.T) {
+	app := newTestApp()
+	tmpDir := t.TempDir()
+
+	inPath := filepath.Join(tmpDir, "app_shuffle.csv")
+	outPath := filepath.Join(tmpDir, "app_shuffled.csv")
+
+	var sb strings.Builder
+	sb.WriteString("ID,Отдел\n")
+	for i := 1; i <= 10; i++ {
+		sb.WriteString(fmt.Sprintf("%d,Отдел_%d\n", i, i))
+	}
+	if err := os.WriteFile(inPath, []byte(sb.String()), 0644); err != nil {
+		t.Fatalf("failed to write input file: %v", err)
+	}
+
+	res, err := app.ProcessFileWithSheets(inPath, outPath, "app-salt", nil, nil, false, "", "", true)
+	if err != nil {
+		t.Fatalf("ProcessFileWithSheets with shuffleRows failed: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected res.Success to be true")
+	}
+
+	outData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed reading output: %v", err)
+	}
+
+	reader := csv.NewReader(strings.NewReader(string(outData)))
+	rows, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("failed reading csv: %v", err)
+	}
+
+	if len(rows) != 11 {
+		t.Fatalf("expected 11 rows, got %d", len(rows))
+	}
+
+	// Verify Header
+	if rows[0][0] != "ID" || rows[0][1] != "Отдел" {
+		t.Errorf("header changed: %v", rows[0])
+	}
+
+	// Verify rows are shuffled
+	shuffledIDs := make([]string, 10)
+	for i := 1; i <= 10; i++ {
+		shuffledIDs[i-1] = rows[i][0]
+	}
+	sequential := true
+	for i := 1; i <= 10; i++ {
+		if shuffledIDs[i-1] != fmt.Sprintf("%d", i) {
+			sequential = false
+			break
+		}
+	}
+	if sequential {
+		t.Errorf("expected shuffled IDs, got sequential: %v", shuffledIDs)
+	}
+}
+
 

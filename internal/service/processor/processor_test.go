@@ -754,4 +754,74 @@ func TestProcessor_AuditLogging(t *testing.T) {
 	}
 }
 
+func TestProcessor_ShuffleRows(t *testing.T) {
+	proc := processor.New(nil)
+	tmpDir := t.TempDir()
+
+	inPath := filepath.Join(tmpDir, "input_shuffle.csv")
+	outPath := filepath.Join(tmpDir, "output_shuffled.csv")
+
+	var sb strings.Builder
+	sb.WriteString("ID,Отдел,Примечание\n")
+	for i := 1; i <= 10; i++ {
+		sb.WriteString(fmt.Sprintf("%d,Отдел_%d,Заметка_%d\n", i, i, i))
+	}
+	if err := os.WriteFile(inPath, []byte(sb.String()), 0644); err != nil {
+		t.Fatalf("failed to write input file: %v", err)
+	}
+
+	opts := domain.ProcessOptions{
+		InputPath:   inPath,
+		OutputPath:  outPath,
+		Salt:        "proc-shuffle-salt-1",
+		ShuffleRows: true,
+	}
+
+	res, err := proc.Process(context.Background(), opts, nil)
+	if err != nil {
+		t.Fatalf("proc.Process failed: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected res.Success to be true")
+	}
+
+	outData, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed reading output: %v", err)
+	}
+
+	reader := csv.NewReader(strings.NewReader(string(outData)))
+	rows, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("failed reading output csv: %v", err)
+	}
+
+	if len(rows) != 11 {
+		t.Fatalf("expected 11 rows, got %d", len(rows))
+	}
+
+	// Verify Header is preserved at row 0
+	if rows[0][0] != "ID" || rows[0][1] != "Отдел" || rows[0][2] != "Примечание" {
+		t.Errorf("header row mismatch: %v", rows[0])
+	}
+
+	// Verify data rows are shuffled
+	shuffledIDs := make([]string, 10)
+	for i := 1; i <= 10; i++ {
+		shuffledIDs[i-1] = rows[i][0]
+	}
+
+	sequential := true
+	for i := 1; i <= 10; i++ {
+		if shuffledIDs[i-1] != fmt.Sprintf("%d", i) {
+			sequential = false
+			break
+		}
+	}
+	if sequential {
+		t.Errorf("expected rows to be shuffled, but IDs remained in sequential order: %v", shuffledIDs)
+	}
+}
+
+
 

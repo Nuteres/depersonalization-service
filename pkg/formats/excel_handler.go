@@ -172,6 +172,9 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 			return fmt.Errorf("failed to read rows for sheet %s: %w", sheetName, err)
 		}
 
+		shouldShuffle := isShuffleRows(options)
+		var pendingDataRows [][]interface{}
+
 		rowNum := 1
 
 		for rows.Next() {
@@ -225,13 +228,17 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 					}
 					dataCells[i] = AnonymizeCell(h.Anon, colType, v, dateRange)
 				}
-				if err := sw.SetRow(cellCoordinate, dataCells); err != nil {
-					_ = rows.Close()
-					return fmt.Errorf("failed to write data row %d in sheet %s: %w", rowNum, sheetName, err)
+				if shouldShuffle {
+					pendingDataRows = append(pendingDataRows, dataCells)
+				} else {
+					if err := sw.SetRow(cellCoordinate, dataCells); err != nil {
+						_ = rows.Close()
+						return fmt.Errorf("failed to write data row %d in sheet %s: %w", rowNum, sheetName, err)
+					}
 				}
 			}
 
-			if progressFn != nil && rowNum%50 == 0 {
+			if progressFn != nil && !shouldShuffle && rowNum%50 == 0 {
 				progressFn(rowNum)
 			}
 
@@ -245,6 +252,31 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 
 		if err := rows.Close(); err != nil {
 			return fmt.Errorf("failed to close rows iterator for sheet %s: %w", sheetName, err)
+		}
+
+		if shouldShuffle && len(pendingDataRows) > 0 {
+			ShuffleRows(h.Anon, pendingDataRows)
+			for i, dataCells := range pendingDataRows {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+				}
+				targetRowNum := headerRowIndex + 2 + i
+				cellCoordinate, err := excelize.CoordinatesToCellName(1, targetRowNum)
+				if err != nil {
+					return fmt.Errorf("failed to get cell coordinate for row %d: %w", targetRowNum, err)
+				}
+				if err := sw.SetRow(cellCoordinate, dataCells); err != nil {
+					return fmt.Errorf("failed to write shuffled data row %d in sheet %s: %w", targetRowNum, sheetName, err)
+				}
+				if progressFn != nil && (targetRowNum)%50 == 0 {
+					progressFn(targetRowNum)
+				}
+			}
+			if progressFn != nil {
+				progressFn(headerRowIndex + 1 + len(pendingDataRows))
+			}
 		}
 
 		if err := sw.Flush(); err != nil {

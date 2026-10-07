@@ -222,6 +222,7 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 		"disabled_columns":          opts.DisabledCols,
 		"disabled_columns_by_sheet": opts.DisabledBySheet,
 		"progress_callback":         progressCallback,
+		"shuffle_rows":              opts.ShuffleRows,
 	}
 
 	if ext == ".docx" || ext == ".odt" || ext == ".pdf" {
