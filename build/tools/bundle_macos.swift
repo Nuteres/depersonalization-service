@@ -117,9 +117,9 @@ let infoPlist = """
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.4.2</string>
+    <string>1.6.0</string>
     <key>CFBundleVersion</key>
-    <string>1.4.2</string>
+    <string>1.6.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>11.0</string>
     <key>NSHighResolutionCapable</key>
