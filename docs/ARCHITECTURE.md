@@ -1,6 +1,6 @@
 # Архитектура системы: Деперсонализация ПД (152-ФЗ)
 
-Техническое описание архитектуры, алгоритмов, структур данных и криптографических протоколов кроссплатформенного приложения локального обезличивания и обратной персонализации данных.
+Техническое описание архитектуры, алгоритмов, структур данных и криптографических протоколов кроссплатформенного приложения локального обезличивания и обратной персонализации данных в соответствии с требованиями 152-ФЗ РФ и Приказа Роскомнадзора от 19.06.2025 № 140.
 
 ---
 
@@ -11,7 +11,7 @@
 ```mermaid
 graph TD
     subgraph "Frontend (Svelte 5 + Runes + Vite + Tailwind v4)"
-        UI[UI Components: DepersonalizeView, RestoreView, TableView, Modals]
+        UI[UI Components: DepersonalizeView, RestoreView, TableView, AuditModal, Modals]
         Stores[Runes Stores: appState, tableState with $state.raw]
         Facade[Wails IPC Facade: typed wrappers & Event listeners]
         UI --> Stores
@@ -26,19 +26,21 @@ graph TD
         Adapter --> Proc[ProcessorService: Streaming anonymization & cancellation]
         Adapter --> KM[KeyManager: .depmap PBKDF2/AES-GCM management]
         Adapter --> Rest[RestorerService: Multi-format reverse depersonalization]
+        Adapter --> AuditSvc[AuditLogger: JSONL operation audit log]
         Proc --> KM
         Proc --> Insp
         Rest --> KM
     end
 
     subgraph "Core Engines & Formats (pkg/)"
-        Insp --> Formats[pkg/formats: XLSX, XLSB, ODS, XLS, CSV, DOCX, ODT, PDF]
+        Insp --> Formats[pkg/formats: XLSX, XLSB, ODS, XLS, CSV, DOCX, ODT, PDF, Shuffling]
         Prev --> Formats
         Proc --> Formats
         Rest --> Formats
         Proc --> Anonymizer[pkg/anonymizer: Synthetic PII generation]
         Insp --> Detector[pkg/detector: Checksums & header heuristics]
-        KM --> DepMap[pkg/depmap: Encrypted container engine]
+        KM --> DepMap[pkg/depmap: Encrypted container engine & CipherProvider]
+        AuditSvc --> AuditPkg[pkg/audit: Operation audit logging & SHA-256 hashes]
     end
 ```
 
@@ -50,6 +52,7 @@ graph TD
 5. **Потоковая обработка (Streaming I/O)**: Обработка больших файлов выполняется чанками и строковыми потоками с низким потреблением оперативной памяти.
 6. **Ссылочная целостность (Referential Integrity)**: Синтетические данные генерируются псевдослучайно, но строго детерминировано на основе `HMAC-SHA256(исходное_значение, соль)`.
 7. **Неинвазивная обратимость (Reversibility via `.depmap`)**: Обратная персонализация не требует изменения бизнес-логики генераторов; соответствия вычисляются стриминговым сравнением входа и выхода и упаковываются в зашифрованный файл-контейнер.
+8. **Нормативное соответствие Приказу РКН от 19.06.2025 № 140**: автоматическая фиксация каждого факта деперсонализации и деобезличивания с расчетом хэшей SHA-256 в структурированном локальном журнале `audit.jsonl`; поддержка метода перемешивания строк (Shuffling, п. 13) для предотвращения косвенной деанонимизации; обязательное шифрование ключей `.depmap` стойким паролем с исключением создания ключей без пароля.
 
 ---
 
@@ -100,9 +103,18 @@ graph TD
 1. **Заголовок (Magic)**: 8 байт `DEPMAP01` для строгой идентификации типа файла и версии протокола.
 2. **KDF Salt**: 16 криптографически стойких случайных байт (`crypto/rand`).
 3. **GCM Nonce**: 12 уникальных байт инициализирующего вектора для режима Galois/Counter Mode.
-4. **Формирование ключа шифрования**:
-   $$\text{Key} = \text{PBKDF2}(\text{password}, \text{salt}, 100\,000, 32, \text{SHA256})$$
-   Если пользователь не задал пароль, используется встроенный мастер-секрет приложения, деривированный с уникальной солью конкретного файла.
+4. **Формирование ключа шифрования и интерфейс CipherProvider**:
+   - Интерфейс криптопровайдера `CipherProvider`:
+     ```go
+     type CipherProvider interface {
+         Encrypt(plaintext []byte, password string) ([]byte, error)
+         Decrypt(ciphertext []byte, password string) ([]byte, error)
+     }
+     ```
+   - Стандартная реализация `AES256GCMProvider`:
+     $$\text{Key} = \text{PBKDF2}(\text{password}, \text{salt}, 100\,000, 32, \text{SHA256})$$
+   - При сохранении новых файлов `.depmap` обязателен пользовательский или сгенерированный стойкий пароль (создание ключей без пароля заблокировано).
+   - Встроенный мастер-ключ приложения сохранен исключительно в режиме дешифрования для обратной совместимости с ранее созданными файлами.
 5. **Тело контейнера**:
    - Словарь замен сериализуется в JSON:
      ```json
@@ -118,7 +130,7 @@ graph TD
      }
      ```
    - JSON сжимается алгоритмом `zlib` (максимальное сжатие).
-   - Сжатые данные шифруются **AES-256-GCM** с добавлением 16-байтового имитовставки (Auth Tag).
+   - Сжатые данные шифруются **AES-256-GCM** с добавлением 16-байтовой имитовставки (Auth Tag).
 6. **Права доступа**: Файл создаётся с маской разрешений `0600` (`-rw-------`), запрещая чтение другим пользователям операционной системы.
 
 ### 2.4. Пакет `pkg/formats` (Форматные процессоры)
@@ -145,6 +157,11 @@ graph TD
   - Инжектирует векторные графические операторы отрисовки непрозрачных черных прямоугольников (`re`, `f*`, `0 0 0 rg`) с маркером `[ ПДн СКРЫТО ]`.
   - Пересчитывает таблицу перекрёстных ссылок (`xref`) и трейлер документа.
 
+#### Перемешивание строк (`shuffle.go`)
+- Реализация алгоритма тасования Фишера-Йетса с использованием криптографически стойкого источника случайных чисел (`crypto/rand`).
+- Применяется при экспорте электронных таблиц (`.xlsx`, `.ods`, `.csv`) при включении опции `shuffleRows` (строка заголовков сохраняется на первой позиции).
+- Соответствует п. 13 Приказа Роскомнадзора от 19.06.2025 № 140 для противодействия косвенной деанонимизации по исходному порядку следования записей.
+
 #### Распознавание колонок и семплирование (`columns.go`)
 - Функция `DetectColumnTypeWithSamples(header, sampleValues)` комбинирует анализ заголовка с проверкой фактических значений ячеек регулярными выражениями:
   - Выявление email-адресов в произвольных колонках (`Логин`, `Учетная запись` и др.).
@@ -155,6 +172,29 @@ graph TD
 - Унифицированный интерфейс постраничной выборки `GetSheetRows`:
   - Нативная постраничная выборка строк для всех поддерживаемых табличных форматов: `.xlsx`, `.xls`, `.xlsb`, `.ods`, `.csv`.
   - Применение псевдонимизации на лету с учетом отключенных колонок и предоставленной соли без перезаписи исходного файла.
+
+### 2.5. Пакет `pkg/audit` (Журнал учета операций по Приказу РКН № 140)
+Обеспечивает непрерывный локальный аудит всех операций деперсонализации и деобезличивания данных в соответствии с требованиями Приказа Роскомнадзора от 19.06.2025 № 140:
+- **Структура записи `AuditEntry`**:
+  ```go
+  type AuditEntry struct {
+      ID           string    `json:"id"`
+      Timestamp    time.Time `json:"timestamp"`
+      Operation    string    `json:"operation"`     // "depersonalize" или "restore"
+      SourceFile   string    `json:"source_file"`
+      SourceHash   string    `json:"source_hash"`   // SHA-256 исходного файла
+      ResultFile   string    `json:"result_file"`
+      ResultHash   string    `json:"result_hash"`   // SHA-256 сохраненного файла
+      Status       string    `json:"status"`        // "success" или "error"
+      RecordsCount int       `json:"records_count"`
+      ErrorMessage string    `json:"error_message,omitempty"`
+  }
+  ```
+- **Локальное хранение**: Записи добавляются в конец структурированного файла `~/.depersonalizer/audit.jsonl` (JSON Lines) с потоковой синхронизацией на диск (`O_APPEND|O_CREATE|O_WRONLY`).
+- **Контроль целостности**: Автоматический расчет контрольных сумм по алгоритму SHA-256 до и после обработки подтверждает неизменность исходных данных и корректность результирующего файла.
+- **Интеграция с UI**:
+  - `GetRecentEntries(limit int)`: возвращает последние N записей (по умолчанию 50) для быстрого рендеринга в модальном окне журнала.
+  - `Export(destPath string)`: атомарно копирует файл журнала в указанное пользователем место для передачи регуляторам.
 
 ---
 
@@ -173,12 +213,15 @@ graph TD
 | `GetTableRows` | `(path, offset, limit, salt, disabledCols)` | Динамическая подгрузка строк для бесконечного скролла таблицы |
 | `GetSheetRows` | `(path, sheet, offset, limit, salt, disabledCols)` | Подгрузка строк конкретного листа многостраничной книги |
 | `ProcessFile` | `(path, salt)` | Быстрое обезличивание в файл по умолчанию |
-| `ProcessFileTo` | `(path, outPath, salt, disabledCols, createKey, password, keyPath)` | Обезличивание с выборочным исключением колонок и ключом |
-| `ProcessFileWithSheets` | `(path, outPath, salt, disabledCols, disabledBySheet, createKey, password, keyPath)` | Пакетное обезличивание многостраничных книг с раздельными колонками |
+| `ProcessFileTo` | `(path, outPath, salt, disabledCols, createKey, password, keyPath, shuffleRows)` | Обезличивание с выборочным исключением колонок, защищенным ключом и перемешиванием строк |
+| `ProcessFileWithSheets` | `(path, outPath, salt, disabledCols, disabledBySheet, createKey, password, keyPath, shuffleRows)` | Пакетное обезличивание многостраничных книг с раздельными колонками и перемешиванием строк |
 | `CancelCurrentOperation` | `()` | **Мгновенная отмена текущей операции** (потока деперсонализации или восстановления) |
 | `InspectKeyFile` | `(keyPath, password)` | Проверка валидности контейнера `.depmap` и чтение метаданных |
 | `RestoreFileTo` | `(inputPath, keyPath, password, destPath)` | Обратная персонализация документа по ключу `.depmap` |
 | `OpenContainingFolder` | `(path)` | Открывает папку с файлом в Finder / Explorer / Nautilus |
+| `GetAuditLog` | `()` | Возвращает последние 50 записей локального журнала учета операций (Приказ РКН № 140) |
+| `ExportAuditLogDialog` | `()` | Открывает диалог экспорта полного журнала аудита в файл `.jsonl` |
+| `GenerateSecurePassword` | `()` | Генерирует криптостойкий 16-значный случайный пароль для ключа `.depmap` |
 
 ### События (Wails Events):
 - `process-progress`: `{ "processed": 1500, "total": 8500, "percent": 17 }`
@@ -249,14 +292,14 @@ make build-windows
   ```go
   package version
 
-  const Version = "1.5.2"
+  const Version = "1.6.0"
   ```
 - Метод `GetAppInfo()` возвращает `v + version.Version`, отображаемый в шапке `Header.svelte`.
 - Версия синхронизирована с `frontend/package.json` и `Makefile`.
 
 ### 6.2 Семантическое версионирование (SemVer)
 - **PATCH (`X.Y.Z+1`)**: исправление ошибок, точечные правки стилей, текстовые фиксы.
-- **MINOR (`X.Y+1.0`)**: новые возможности, новые форматы файлов, переработка экранов UI, оптимизация производительности (текущий релиз `1.5.2`).
+- **MINOR (`X.Y+1.0`)**: новые возможности, новые форматы файлов, переработка экранов UI, оптимизация производительности (текущий релиз `1.6.0`).
 - **MAJOR (`X+1.0.0`)**: несовместимые изменения формата контейнера `.depmap` или фундаментальные изменения протоколов.
 
 ### 6.3 Журнал изменений (`CHANGELOG.md`)
