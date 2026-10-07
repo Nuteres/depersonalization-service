@@ -3,10 +3,7 @@ package depmap
 import (
 	"bytes"
 	"compress/zlib"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -15,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -56,6 +54,9 @@ var (
 
 	// ErrFileTooShort indicates that the file is too small to contain valid metadata.
 	ErrFileTooShort = errors.New("file is too short to be a valid .depmap file")
+
+	// ErrEmptyPassword indicates that a password was not provided for saving.
+	ErrEmptyPassword = errors.New("password cannot be empty: use SaveFileWithAutoPassword or provide a password")
 )
 
 // DepMap holds the bidirectional mapping metadata and synthetic-to-original dictionary.
@@ -105,9 +106,42 @@ func (dm *DepMap) LookupOriginal(synthetic string) (string, bool) {
 	return dm.Get(synthetic)
 }
 
+// SaveFileWithAutoPassword serializes the DepMap to zlib-compressed JSON, encrypts it
+// using an auto-generated random password if password is empty (or the provided password),
+// and returns the effective password used.
+func (dm *DepMap) SaveFileWithAutoPassword(path string, password string) (string, error) {
+	effectivePassword := password
+	if strings.TrimSpace(effectivePassword) == "" {
+		generated, err := GenerateRandomPassword(16)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate random password: %w", err)
+		}
+		effectivePassword = generated
+	}
+
+	if err := dm.SaveFile(path, effectivePassword); err != nil {
+		return "", err
+	}
+	return effectivePassword, nil
+}
+
 // SaveFile serializes the DepMap to zlib-compressed JSON, encrypts it with AES-256-GCM
 // using a key derived via PBKDF2-HMAC-SHA256, and writes it to the specified path.
+// If password is empty, ErrEmptyPassword is returned.
 func (dm *DepMap) SaveFile(path string, password string) error {
+	return dm.SaveFileWithProvider(path, password, DefaultCipherProvider)
+}
+
+// SaveFileWithProvider serializes the DepMap to zlib-compressed JSON, encrypts it with
+// the specified CipherProvider, and writes it to the specified path.
+func (dm *DepMap) SaveFileWithProvider(path string, password string, provider CipherProvider) error {
+	if strings.TrimSpace(password) == "" {
+		return ErrEmptyPassword
+	}
+	if provider == nil {
+		provider = DefaultCipherProvider
+	}
+
 	dm.RecordsCount = len(dm.Mapping)
 
 	jsonData, err := json.Marshal(dm)
@@ -129,35 +163,10 @@ func (dm *DepMap) SaveFile(path string, password string) error {
 		return fmt.Errorf("failed to finalize zlib compression: %w", err)
 	}
 
-	// Generate random salt and nonce
-	salt := make([]byte, SaltSize)
-	if _, err := rand.Read(salt); err != nil {
-		return fmt.Errorf("failed to generate random salt: %w", err)
-	}
-
-	nonce := make([]byte, NonceSize)
-	if _, err := rand.Read(nonce); err != nil {
-		return fmt.Errorf("failed to generate random nonce: %w", err)
-	}
-
-	// Derive AES-256 key
-	keySecret := password
-	if keySecret == "" {
-		keySecret = DefaultMasterSecret
-	}
-	key := DerivePBKDF2Key([]byte(keySecret), salt, PBKDF2Iterations, KeySize)
-
-	block, err := aes.NewCipher(key)
+	salt, nonce, ciphertext, err := provider.Encrypt(compressed.Bytes(), password)
 	if err != nil {
-		return fmt.Errorf("failed to create AES cipher: %w", err)
+		return fmt.Errorf("failed to encrypt depmap payload: %w", err)
 	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return fmt.Errorf("failed to create GCM block: %w", err)
-	}
-
-	ciphertext := gcm.Seal(nil, nonce, compressed.Bytes(), nil)
 
 	// Ensure destination directory exists
 	dir := filepath.Dir(path)
@@ -183,7 +192,18 @@ func (dm *DepMap) SaveFile(path string, password string) error {
 }
 
 // LoadFile reads and decrypts a .depmap container from the specified path.
+// If password is provided, it attempts decryption with that password only.
+// If password is empty, it attempts legacy decryption with DefaultMasterSecret.
 func LoadFile(path string, password string) (*DepMap, error) {
+	return LoadFileWithProvider(path, password, DefaultCipherProvider)
+}
+
+// LoadFileWithProvider reads and decrypts a .depmap container using the specified CipherProvider.
+func LoadFileWithProvider(path string, password string, provider CipherProvider) (*DepMap, error) {
+	if provider == nil {
+		provider = DefaultCipherProvider
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read depmap file: %w", err)
@@ -206,26 +226,18 @@ func LoadFile(path string, password string) (*DepMap, error) {
 
 	ciphertext := data[offset:]
 
-	// Derive key
-	keySecret := password
-	if keySecret == "" {
-		keySecret = DefaultMasterSecret
-	}
-	key := DerivePBKDF2Key([]byte(keySecret), salt, PBKDF2Iterations, KeySize)
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize AES cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize GCM: %w", err)
-	}
-
-	compressed, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrAuthenticationFailed, err)
+	var compressed []byte
+	if strings.TrimSpace(password) != "" {
+		compressed, err = provider.Decrypt(salt, nonce, ciphertext, password)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Legacy fallback: files created prior to v1.6.0 with empty password used DefaultMasterSecret.
+		compressed, err = provider.Decrypt(salt, nonce, ciphertext, DefaultMasterSecret)
+		if err != nil {
+			return nil, fmt.Errorf("%w: legacy decryption failed", ErrAuthenticationFailed)
+		}
 	}
 
 	// Decompress payload

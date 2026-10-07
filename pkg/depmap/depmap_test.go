@@ -1,6 +1,7 @@
 package depmap_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -148,22 +149,95 @@ func TestDepMap_CorruptedData(t *testing.T) {
 	}
 }
 
-func TestDepMap_DefaultMasterKey(t *testing.T) {
+func TestDepMap_SaveFile_EmptyPassword(t *testing.T) {
 	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "default_key.depmap")
+	filePath := filepath.Join(tmpDir, "empty_password.depmap")
 
 	dm := depmap.New("unprotected.xlsx")
 	dm.Put("Synthetic_Val", "Original_Val")
 
-	// Save with empty password
-	if err := dm.SaveFile(filePath, ""); err != nil {
-		t.Fatalf("SaveFile with empty password failed: %v", err)
+	// Save with empty password must fail with ErrEmptyPassword
+	err := dm.SaveFile(filePath, "")
+	if err == nil {
+		t.Fatalf("expected error when saving with empty password, got nil")
+	}
+	if !errors.Is(err, depmap.ErrEmptyPassword) {
+		t.Fatalf("expected ErrEmptyPassword, got: %v", err)
 	}
 
-	// Load with empty password
+	// Also whitespace-only password must fail
+	err = dm.SaveFile(filePath, "   ")
+	if !errors.Is(err, depmap.ErrEmptyPassword) {
+		t.Fatalf("expected ErrEmptyPassword for whitespace password, got: %v", err)
+	}
+}
+
+func TestDepMap_SaveFileWithAutoPassword(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "auto_password.depmap")
+
+	dm := depmap.New("auto.xlsx")
+	dm.Put("Syn1", "Orig1")
+
+	// Save with empty password should auto-generate password
+	effectivePwd, err := dm.SaveFileWithAutoPassword(filePath, "")
+	if err != nil {
+		t.Fatalf("SaveFileWithAutoPassword failed: %v", err)
+	}
+	if len(effectivePwd) != 16 {
+		t.Fatalf("expected 16-char auto-generated password, got %d (%s)", len(effectivePwd), effectivePwd)
+	}
+
+	// Should be decryptable with effectivePwd
+	loaded, err := depmap.LoadFile(filePath, effectivePwd)
+	if err != nil {
+		t.Fatalf("LoadFile with effective password failed: %v", err)
+	}
+	val, ok := loaded.Get("Syn1")
+	if !ok || val != "Orig1" {
+		t.Fatalf("expected 'Orig1', got '%s'", val)
+	}
+
+	// Loading with empty password should fail (new files are not encrypted with legacy DefaultMasterSecret)
+	_, err = depmap.LoadFile(filePath, "")
+	if err == nil {
+		t.Fatalf("expected failure loading auto-password file with empty password")
+	}
+
+	// Providing explicit password to SaveFileWithAutoPassword preserves it
+	filePath2 := filepath.Join(tmpDir, "explicit.depmap")
+	explicitPwd, err := dm.SaveFileWithAutoPassword(filePath2, "CustomSecret123")
+	if err != nil {
+		t.Fatalf("SaveFileWithAutoPassword with explicit password failed: %v", err)
+	}
+	if explicitPwd != "CustomSecret123" {
+		t.Fatalf("expected 'CustomSecret123', got '%s'", explicitPwd)
+	}
+	loaded2, err := depmap.LoadFile(filePath2, "CustomSecret123")
+	if err != nil {
+		t.Fatalf("failed to load explicit password file: %v", err)
+	}
+	if val, _ := loaded2.Get("Syn1"); val != "Orig1" {
+		t.Fatalf("expected 'Orig1', got '%s'", val)
+	}
+}
+
+func TestDepMap_LegacyDefaultMasterKey(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "legacy_default_key.depmap")
+
+	dm := depmap.New("legacy.xlsx")
+	dm.Put("Synthetic_Val", "Original_Val")
+
+	// Create legacy file using DefaultMasterSecret directly
+	if err := dm.SaveFile(filePath, depmap.DefaultMasterSecret); err != nil {
+		t.Fatalf("failed to create legacy file: %v", err)
+	}
+
+	// Load with empty password should succeed via legacy fallback
 	loaded, err := depmap.LoadFile(filePath, "")
 	if err != nil {
-		t.Fatalf("LoadFile with empty password failed: %v", err)
+		t.Fatalf("LoadFile with empty password on legacy file failed: %v", err)
 	}
 
 	got, ok := loaded.Get("Synthetic_Val")
@@ -171,10 +245,10 @@ func TestDepMap_DefaultMasterKey(t *testing.T) {
 		t.Fatalf("expected 'Original_Val', got '%s'", got)
 	}
 
-	// Trying to open with an arbitrary non-empty password should fail
+	// Trying to open with an arbitrary non-empty wrong password should fail
 	_, err = depmap.LoadFile(filePath, "SomeOtherPassword")
 	if err == nil {
-		t.Fatalf("expected failure when opening default-key file with non-empty wrong password")
+		t.Fatalf("expected failure when opening legacy file with non-empty wrong password")
 	}
 }
 
@@ -252,4 +326,19 @@ func TestDerivePBKDF2Key_RFC6070(t *testing.T) {
 		t.Fatalf("RFC 6070 test vector 4096 mismatch:\ngot:  %x\nwant: %s", k4096, expectedHex4096)
 	}
 }
+
+func TestGenerateRandomPassword(t *testing.T) {
+	pwd1, err := depmap.GenerateRandomPassword(16)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pwd1) != 16 {
+		t.Fatalf("expected length 16, got %d", len(pwd1))
+	}
+	pwd2, _ := depmap.GenerateRandomPassword(16)
+	if pwd1 == pwd2 {
+		t.Fatalf("passwords should be unique")
+	}
+}
+
 
