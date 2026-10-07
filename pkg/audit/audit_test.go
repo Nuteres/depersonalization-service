@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
@@ -279,8 +280,59 @@ func TestDefaultLogger(t *testing.T) {
 	if logger == nil {
 		t.Fatalf("expected non-nil logger")
 	}
-	expectedSuffix := filepath.Join(".dep_service", "audit.jsonl")
-	if !filepath.IsAbs(logger.Path()) || filepath.Base(logger.Path()) != "audit.jsonl" {
+	expectedSuffix := filepath.Join(".depersonalizer", "audit.jsonl")
+	if !filepath.IsAbs(logger.Path()) || !strings.HasSuffix(logger.Path(), expectedSuffix) {
 		t.Errorf("expected path ending with %s, got %s", expectedSuffix, logger.Path())
 	}
 }
+
+func TestDefaultAuditPath_Isolated(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", tmpDir)
+	}
+
+	// 1. Fresh environment: returns ~/.depersonalizer/audit.jsonl
+	path, err := audit.DefaultAuditPath()
+	if err != nil {
+		t.Fatalf("DefaultAuditPath failed: %v", err)
+	}
+	expected := filepath.Join(tmpDir, ".depersonalizer", "audit.jsonl")
+	if path != expected {
+		t.Errorf("expected %s, got %s", expected, path)
+	}
+
+	// 2. Legacy exists, default does not: migrates file to ~/.depersonalizer/audit.jsonl
+	tmpDir2 := t.TempDir()
+	t.Setenv("HOME", tmpDir2)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", tmpDir2)
+	}
+	legacyDir := filepath.Join(tmpDir2, ".dep_service")
+	if err := os.MkdirAll(legacyDir, 0700); err != nil {
+		t.Fatalf("failed to create legacy dir: %v", err)
+	}
+	legacyFile := filepath.Join(legacyDir, "audit.jsonl")
+	testData := []byte(`{"operation":"depersonalize","status":"success"}` + "\n")
+	if err := os.WriteFile(legacyFile, testData, 0600); err != nil {
+		t.Fatalf("failed to write legacy file: %v", err)
+	}
+
+	migratedPath, err := audit.DefaultAuditPath()
+	if err != nil {
+		t.Fatalf("DefaultAuditPath with legacy failed: %v", err)
+	}
+	expectedMigrated := filepath.Join(tmpDir2, ".depersonalizer", "audit.jsonl")
+	if migratedPath != expectedMigrated {
+		t.Errorf("expected %s, got %s", expectedMigrated, migratedPath)
+	}
+	content, err := os.ReadFile(migratedPath)
+	if err != nil {
+		t.Fatalf("failed to read migrated file: %v", err)
+	}
+	if string(content) != string(testData) {
+		t.Errorf("expected content %q, got %q", string(testData), string(content))
+	}
+}
+

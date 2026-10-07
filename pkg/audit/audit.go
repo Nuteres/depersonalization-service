@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -41,16 +42,74 @@ type AuditLogger struct {
 	mu   sync.Mutex
 }
 
-// DefaultAuditPath returns the standard audit log path (~/.dep_service/audit.jsonl).
+// setSecurePerm applies filesystem permissions, ignoring errors on Windows where POSIX chmod is unsupported.
+func setSecurePerm(path string, perm os.FileMode) error {
+	if err := os.Chmod(path, perm); err != nil {
+		if runtime.GOOS == "windows" {
+			return nil
+		}
+		return fmt.Errorf("failed to set permissions %04o on %s: %w", perm, path, err)
+	}
+	return nil
+}
+
+func migrateLegacyAuditLog(legacyPath, defaultPath string) error {
+	if err := os.Rename(legacyPath, defaultPath); err == nil {
+		return nil
+	}
+	// Fallback for cross-filesystem moves
+	in, err := os.Open(legacyPath)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(defaultPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	_ = in.Close()
+	_ = out.Close()
+	_ = setSecurePerm(defaultPath, 0600)
+	_ = os.Remove(legacyPath)
+	return nil
+}
+
+// DefaultAuditPath returns the standard audit log path (~/.depersonalizer/audit.jsonl).
+// If legacy path ~/.dep_service/audit.jsonl exists and ~/.depersonalizer/audit.jsonl does not,
+// it migrates it to ~/.depersonalizer/audit.jsonl or falls back to the legacy path.
 func DefaultAuditPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get user home directory: %w", err)
 	}
-	return filepath.Join(home, ".dep_service", "audit.jsonl"), nil
+	defaultDir := filepath.Join(home, ".depersonalizer")
+	defaultPath := filepath.Join(defaultDir, "audit.jsonl")
+	legacyPath := filepath.Join(home, ".dep_service", "audit.jsonl")
+
+	if _, err := os.Stat(defaultPath); err == nil {
+		return defaultPath, nil
+	}
+
+	if _, err := os.Stat(legacyPath); err == nil {
+		if err := os.MkdirAll(defaultDir, 0700); err == nil {
+			_ = setSecurePerm(defaultDir, 0700)
+			if err := migrateLegacyAuditLog(legacyPath, defaultPath); err == nil {
+				return defaultPath, nil
+			}
+		}
+		return legacyPath, nil
+	}
+
+	return defaultPath, nil
 }
 
-// DefaultLogger creates an AuditLogger using the default path (~/.dep_service/audit.jsonl).
+// DefaultLogger creates an AuditLogger using the default path (~/.depersonalizer/audit.jsonl).
 func DefaultLogger() (*AuditLogger, error) {
 	p, err := DefaultAuditPath()
 	if err != nil {
@@ -70,7 +129,9 @@ func NewLogger(path string) (*AuditLogger, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create audit directory %s: %w", dir, err)
 	}
-	_ = os.Chmod(dir, 0700)
+	if err := setSecurePerm(dir, 0700); err != nil {
+		return nil, err
+	}
 
 	return &AuditLogger{
 		path: path,
@@ -103,6 +164,9 @@ func (l *AuditLogger) Log(r AuditRecord) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create audit directory: %w", err)
 	}
+	if err := setSecurePerm(dir, 0700); err != nil {
+		return err
+	}
 
 	data, err := json.Marshal(r)
 	if err != nil {
@@ -116,7 +180,9 @@ func (l *AuditLogger) Log(r AuditRecord) error {
 	}
 	defer f.Close()
 
-	_ = os.Chmod(l.path, 0600)
+	if err := setSecurePerm(l.path, 0600); err != nil {
+		return err
+	}
 
 	if _, err := f.Write(data); err != nil {
 		return fmt.Errorf("failed to write audit log record: %w", err)
