@@ -91,7 +91,11 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 
 	salt := opts.Salt
 	if strings.TrimSpace(salt) == "" {
-		salt = "152fz-secure-salt"
+		generatedSalt, err := anonymizer.GenerateSalt(16)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate random salt: %w", err)
+		}
+		salt = generatedSalt
 	}
 
 	keyPath := opts.KeyPath
@@ -245,13 +249,18 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	}
 
 	// Key generation
+	var effectivePassword string
+	var keyPasswordGenerated bool
 	if opts.CreateKey {
 		if ctx.Err() != nil {
 			cleanup()
 			return nil, ctx.Err()
 		}
+		isAuto := strings.TrimSpace(opts.KeyPassword) == ""
+		var savedPwd string
 		if directDepMap != nil {
-			if err := directDepMap.SaveFile(keyPath, opts.KeyPassword); err != nil {
+			savedPwd, err = directDepMap.SaveFileWithAutoPassword(keyPath, opts.KeyPassword)
+			if err != nil {
 				cleanup()
 				return nil, fmt.Errorf("failed to save key file: %w", err)
 			}
@@ -261,11 +270,14 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 				cleanup()
 				return nil, fmt.Errorf("failed to extract key mappings: %w", err)
 			}
-			if err := dm.SaveFile(keyPath, opts.KeyPassword); err != nil {
+			savedPwd, err = dm.SaveFileWithAutoPassword(keyPath, opts.KeyPassword)
+			if err != nil {
 				cleanup()
 				return nil, fmt.Errorf("failed to save key file: %w", err)
 			}
 		}
+		effectivePassword = savedPwd
+		keyPasswordGenerated = isAuto
 	}
 
 	if ctx.Err() != nil {
@@ -280,13 +292,15 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	durationMs := time.Since(startTime).Milliseconds()
 
 	res := &domain.ProcessResult{
-		Success:       true,
-		InputPath:     opts.InputPath,
-		OutputPath:    outPath,
-		RowsCount:     totalRows,
-		EntitiesCount: entitiesCount,
-		DurationMs:    durationMs,
-		Message:       fmt.Sprintf("Файл успешно сохранен: %s (%d мс)", filepath.Base(outPath), durationMs),
+		Success:              true,
+		InputPath:            opts.InputPath,
+		OutputPath:           outPath,
+		RowsCount:            totalRows,
+		EntitiesCount:        entitiesCount,
+		DurationMs:           durationMs,
+		Message:              fmt.Sprintf("Файл успешно сохранен: %s (%d мс)", filepath.Base(outPath), durationMs),
+		EffectivePassword:    effectivePassword,
+		KeyPasswordGenerated: keyPasswordGenerated,
 	}
 	if opts.CreateKey {
 		res.KeyPath = keyPath

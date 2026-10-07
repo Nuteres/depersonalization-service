@@ -531,12 +531,12 @@ func TestApp_ProcessWithKeyGeneration(t *testing.T) {
 		t.Fatalf("ProcessFileTo with default key gen failed: %v", err)
 	}
 	expectedDefaultKey := outPath2 + ".depmap"
-	if res2.KeyPath != expectedDefaultKey {
-		t.Fatalf("expected default KeyPath=%s, got %s", expectedDefaultKey, res2.KeyPath)
+	if !res2.KeyPasswordGenerated || res2.EffectivePassword == "" {
+		t.Fatalf("expected auto-generated password, got generated=%v, pwd=%q", res2.KeyPasswordGenerated, res2.EffectivePassword)
 	}
-	dm2, err := depmap.LoadFile(expectedDefaultKey, "")
+	dm2, err := depmap.LoadFile(expectedDefaultKey, res2.EffectivePassword)
 	if err != nil {
-		t.Fatalf("failed to load default key file with master key: %v", err)
+		t.Fatalf("failed to load default key file with effective password: %v", err)
 	}
 	if dm2.RecordsCount == 0 {
 		t.Errorf("expected non-zero mappings in default key file")
@@ -676,7 +676,7 @@ func TestApp_RestoreWorkflow(t *testing.T) {
 		_ = anonXl.Close()
 
 		// Restore file
-		restoreRes, err := app.RestoreFileTo(scoredPath, procRes.KeyPath, "", restoredPath)
+		restoreRes, err := app.RestoreFileTo(scoredPath, procRes.KeyPath, procRes.EffectivePassword, restoredPath)
 		if err != nil {
 			t.Fatalf("RestoreFileTo on xlsx failed: %v", err)
 		}
