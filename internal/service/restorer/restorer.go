@@ -11,13 +11,15 @@ import (
 
 	"dep_service/internal/domain"
 	"dep_service/internal/service/keymanager"
+	"dep_service/pkg/audit"
 	"dep_service/pkg/depmap"
 	"dep_service/pkg/formats"
 )
 
 // Restorer handles reverse depersonalization of previously anonymized files using .depmap keys.
 type Restorer struct {
-	km *keymanager.KeyManager
+	km    *keymanager.KeyManager
+	audit *audit.AuditLogger
 }
 
 // RestorerService is an alias to Restorer for architectural consistency.
@@ -31,21 +33,74 @@ func New(km ...*keymanager.KeyManager) *Restorer {
 	} else {
 		k = keymanager.New()
 	}
-	return &Restorer{km: k}
+	al, _ := audit.DefaultLogger()
+	return &Restorer{km: k, audit: al}
+}
+
+// SetAuditLogger sets the audit logger for the restorer.
+func (r *Restorer) SetAuditLogger(l *audit.AuditLogger) {
+	r.audit = l
+}
+
+// AuditLogger returns the configured audit logger.
+func (r *Restorer) AuditLogger() *audit.AuditLogger {
+	return r.audit
 }
 
 // Restore restores original sensitive data in inputPath using keyPath (.depmap),
 // writing the restored file to destPath, and calling reporter with progress updates.
 // It wraps invalid password with domain.ErrInvalidPassword and unsupported formats with domain.ErrUnsupportedFormat.
-func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, reporter domain.ProgressReporter) (*domain.RestoreResult, error) {
-	if ctx != nil && ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
+func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, reporter domain.ProgressReporter) (res *domain.RestoreResult, err error) {
 	inputPath := opts.InputPath
 	keyPath := opts.KeyPath
 	password := opts.Password
 	destPath := opts.OutputPath
+
+	var (
+		sourceHash    string
+		resultHash    string
+		restoredCount int
+	)
+
+	if strings.TrimSpace(inputPath) != "" {
+		sourceHash, _ = audit.ComputeFileSHA256(inputPath)
+	}
+
+	defer func() {
+		if r.audit == nil {
+			return
+		}
+		status := "success"
+		errMsg := ""
+		if err != nil {
+			if errors.Is(err, context.Canceled) || (ctx != nil && ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled)) {
+				status = "canceled"
+			} else {
+				status = "error"
+			}
+			errMsg = err.Error()
+		} else {
+			if destPath != "" {
+				resultHash, _ = audit.ComputeFileSHA256(destPath)
+			}
+		}
+
+		_ = r.audit.Log(audit.AuditRecord{
+			Operation:    "restore",
+			SourceFile:   inputPath,
+			SourceHash:   sourceHash,
+			ResultFile:   destPath,
+			ResultHash:   resultHash,
+			RecordsCount: restoredCount,
+			KeyCreated:   false,
+			Status:       status,
+			Error:        errMsg,
+		})
+	}()
+
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 
 	if strings.TrimSpace(inputPath) == "" {
 		return nil, errors.New("input file path cannot be empty")
@@ -96,7 +151,6 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 	}
 
 	startTime := time.Now()
-	var restoredCount int
 
 	switch ext {
 	case ".csv", ".tsv":

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -149,6 +150,35 @@ func (a *DesktopApp) SaveKeyFileDialog(defaultName string) (string, error) {
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to open save dialog: %w", err)
+	}
+	return selected, nil
+}
+
+// SaveAuditFileDialog opens a native system file save dialog for exporting the audit log.
+func (a *DesktopApp) SaveAuditFileDialog(defaultName string) (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("application context not initialized")
+	}
+
+	if strings.TrimSpace(defaultName) == "" {
+		defaultName = fmt.Sprintf("audit_%s.jsonl", time.Now().Format("2006-01-02"))
+	}
+
+	var filters []runtime.FileFilter
+	if goruntime.GOOS != "darwin" {
+		filters = []runtime.FileFilter{
+			{DisplayName: "Журнал аудита (*.jsonl)", Pattern: "*.jsonl"},
+			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
+		}
+	}
+
+	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Экспорт журнала аудита (152-ФЗ)",
+		DefaultFilename: defaultName,
+		Filters:         filters,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to open audit save dialog: %w", err)
 	}
 	return selected, nil
 }

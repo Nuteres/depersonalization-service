@@ -16,6 +16,7 @@ import (
 	"dep_service/internal/service/inspector"
 	"dep_service/internal/service/keymanager"
 	"dep_service/internal/service/processor"
+	"dep_service/pkg/audit"
 )
 
 func TestProcessor_New(t *testing.T) {
@@ -659,4 +660,98 @@ func TestProcessor_ExplicitKeyPassword(t *testing.T) {
 		t.Fatalf("failed to inspect key with explicit password: %v", err)
 	}
 }
+
+func TestProcessor_AuditLogging(t *testing.T) {
+	tmpDir := t.TempDir()
+	auditPath := filepath.Join(tmpDir, "audit.jsonl")
+	al, err := audit.NewLogger(auditPath)
+	if err != nil {
+		t.Fatalf("failed to create audit logger: %v", err)
+	}
+
+	km := keymanager.New()
+	insp := inspector.New()
+	proc := processor.New(km, insp)
+	proc.SetAuditLogger(al)
+
+	inPath := filepath.Join(tmpDir, "test_audit.csv")
+	outPath := filepath.Join(tmpDir, "test_audit_out.csv")
+	keyPath := filepath.Join(tmpDir, "test_audit.depmap")
+
+	csvContent := "ФИО,СНИЛС\nИванов Иван Иванович,112-233-445 95\n"
+	if err := os.WriteFile(inPath, []byte(csvContent), 0644); err != nil {
+		t.Fatalf("failed to write input file: %v", err)
+	}
+
+	// 1. Success case
+	_, err = proc.Process(context.Background(), domain.ProcessOptions{
+		InputPath:  inPath,
+		OutputPath: outPath,
+		Salt:       "audit-salt",
+		CreateKey:  true,
+		KeyPath:    keyPath,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	records, err := al.ReadRecent(10)
+	if err != nil {
+		t.Fatalf("ReadRecent failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 audit record, got %d", len(records))
+	}
+	r0 := records[0]
+	if r0.Operation != "depersonalize" {
+		t.Errorf("expected operation 'depersonalize', got %q", r0.Operation)
+	}
+	if r0.Status != "success" {
+		t.Errorf("expected status 'success', got %q", r0.Status)
+	}
+	if !r0.KeyCreated {
+		t.Errorf("expected KeyCreated=true")
+	}
+	if r0.SourceHash == "" || r0.ResultHash == "" {
+		t.Errorf("expected non-empty source and result hashes, got src=%q, res=%q", r0.SourceHash, r0.ResultHash)
+	}
+	if r0.RecordsCount != 1 {
+		t.Errorf("expected RecordsCount=1, got %d", r0.RecordsCount)
+	}
+
+	// 2. Error case
+	_, _ = proc.Process(context.Background(), domain.ProcessOptions{
+		InputPath: filepath.Join(tmpDir, "non_existent.csv"),
+	}, nil)
+
+	records, err = al.ReadRecent(10)
+	if err != nil {
+		t.Fatalf("ReadRecent failed: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 audit records, got %d", len(records))
+	}
+	if records[0].Status != "error" || records[0].Error == "" {
+		t.Errorf("expected newest record to be error, got %+v", records[0])
+	}
+
+	// 3. Cancel case
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _ = proc.Process(ctx, domain.ProcessOptions{
+		InputPath: inPath,
+	}, nil)
+
+	records, err = al.ReadRecent(10)
+	if err != nil {
+		t.Fatalf("ReadRecent failed: %v", err)
+	}
+	if len(records) != 3 {
+		t.Fatalf("expected 3 audit records, got %d", len(records))
+	}
+	if records[0].Status != "canceled" {
+		t.Errorf("expected newest record to be canceled, got %+v", records[0])
+	}
+}
+
 

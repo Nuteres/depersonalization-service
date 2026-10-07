@@ -16,6 +16,7 @@ import (
 	"dep_service/internal/service/processor"
 	"dep_service/internal/service/restorer"
 	"dep_service/internal/version"
+	"dep_service/pkg/audit"
 )
 
 func newTestApp() *desktop.DesktopApp {
@@ -215,6 +216,9 @@ func TestDesktopApp_Dialogs_NilContext(t *testing.T) {
 	if _, err := app.SaveKeyFileDialog("key.depmap"); err == nil {
 		t.Errorf("expected error for SaveKeyFileDialog with nil ctx")
 	}
+	if _, err := app.SaveAuditFileDialog("audit.jsonl"); err == nil {
+		t.Errorf("expected error for SaveAuditFileDialog with nil ctx")
+	}
 	if err := app.OpenContainingFolder(""); err == nil {
 		t.Errorf("expected error for OpenContainingFolder with empty path")
 	}
@@ -256,3 +260,94 @@ func TestDesktopApp_InspectKeyFile_EdgeCases(t *testing.T) {
 		t.Errorf("expected info.Valid=false for corrupted key file")
 	}
 }
+
+func TestDesktopApp_AuditIntegration(t *testing.T) {
+	tmpDir := t.TempDir()
+	auditPath := filepath.Join(tmpDir, "audit.jsonl")
+	al, err := audit.NewLogger(auditPath)
+	if err != nil {
+		t.Fatalf("failed to create audit logger: %v", err)
+	}
+
+	insp := inspector.New()
+	prev := preview.New()
+	km := keymanager.New()
+	proc := processor.New(km, insp)
+	rest := restorer.New(km)
+	app := desktop.New(insp, prev, proc, rest, km, al)
+
+	csvPath := filepath.Join(tmpDir, "input.csv")
+	outPath := filepath.Join(tmpDir, "output.csv")
+	keyPath := filepath.Join(tmpDir, "output.depmap")
+	restPath := filepath.Join(tmpDir, "restored.csv")
+
+	content := "ФИО,Телефон\nИванов Иван,+7 999 123-45-67\n"
+	if err := os.WriteFile(csvPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write csv: %v", err)
+	}
+
+	// 1. Process
+	procRes, err := app.ProcessFileTo(csvPath, outPath, "audit-salt", nil, true, "secret", keyPath)
+	if err != nil {
+		t.Fatalf("ProcessFileTo failed: %v", err)
+	}
+	if !procRes.Success {
+		t.Fatalf("ProcessFileTo reported failure")
+	}
+
+	// Check GetAuditRecords
+	records, err := app.GetAuditRecords(10)
+	if err != nil {
+		t.Fatalf("GetAuditRecords failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].Operation != "depersonalize" || records[0].Status != "success" {
+		t.Errorf("unexpected record: %+v", records[0])
+	}
+
+	// 2. Restore
+	restRes, err := app.RestoreFileTo(outPath, keyPath, "secret", restPath)
+	if err != nil {
+		t.Fatalf("RestoreFileTo failed: %v", err)
+	}
+	if !restRes.Success {
+		t.Fatalf("RestoreFileTo reported failure")
+	}
+
+	// Check GetAuditRecords with limit 1 and limit 10
+	records, err = app.GetAuditRecords(1)
+	if err != nil {
+		t.Fatalf("GetAuditRecords failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record for limit=1, got %d", len(records))
+	}
+	if records[0].Operation != "restore" {
+		t.Errorf("expected newest record to be 'restore', got %s", records[0].Operation)
+	}
+
+	allRecords, err := app.GetAuditRecords(10)
+	if err != nil {
+		t.Fatalf("GetAuditRecords failed: %v", err)
+	}
+	if len(allRecords) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(allRecords))
+	}
+
+	// 3. Export
+	exportPath := filepath.Join(tmpDir, "exported_audit.jsonl")
+	if err := app.ExportAuditLog(exportPath); err != nil {
+		t.Fatalf("ExportAuditLog failed: %v", err)
+	}
+
+	exportData, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatalf("failed to read export: %v", err)
+	}
+	if !strings.Contains(string(exportData), "depersonalize") || !strings.Contains(string(exportData), "restore") {
+		t.Errorf("exported audit log missing expected entries: %s", string(exportData))
+	}
+}
+
