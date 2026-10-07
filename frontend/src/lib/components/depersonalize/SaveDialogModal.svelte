@@ -11,12 +11,22 @@
 
   const { isOpen, onClose }: Props = $props();
 
-  let salt = $state(appState.currentSalt || '152fz-secure-salt');
+  let salt = $state(appState.currentSalt || '');
+  let shuffleRows = $state(false);
   let createKey = $state(true);
   let keyPassword = $state('');
   let outputPath = $state('');
   let keyPath = $state('');
   let selectedExportFormat = $state('xlsx');
+
+  // Generate random salt on open if not already set
+  $effect(() => {
+    if (isOpen) {
+      if (!salt || salt === '152fz-secure-salt') {
+        generateRandomSalt();
+      }
+    }
+  });
 
   // Initialize selected export format when file changes
   $effect(() => {
@@ -140,7 +150,8 @@
         disabledBySheet,
         createKey,
         keyPassword,
-        keyPath
+        keyPath,
+        shuffleRows
       );
 
       if (result && result.success) {
@@ -197,7 +208,7 @@
       <!-- Modal Header -->
       <div class="flex items-center justify-between border-b border-[#F0EFEB] pb-3">
         <h2 id="save-modal-title" class="text-sm font-bold text-[#1C1917]">
-          Параметры сохранения и деперсонализации
+          Параметры сохранения
         </h2>
         <button
           type="button"
@@ -274,7 +285,7 @@
             class="w-full px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5]"
           />
           <div class="text-[11px] text-[#78716C] leading-relaxed">
-            Одинаковый ключ гарантирует, что одни и те же ФИО и значения во всех файлах будут заменяться одинаково.
+            Одинаковый ключ гарантирует одинаковую замену повторяющихся значений.
           </div>
         </div>
 
@@ -304,20 +315,36 @@
           </div>
         </div>
 
-        <!-- Key Generation Option (.depmap) -->
+        <!-- Shuffle Rows Toggle -->
+        <div class="border border-[#E8E7E3] p-4 bg-white">
+          <label class="flex items-center space-x-2.5 cursor-pointer select-none">
+            <input
+              id="shuffle-rows-checkbox"
+              type="checkbox"
+              bind:checked={shuffleRows}
+              class="accent-[#1C1917] h-4 w-4 rounded-none cursor-pointer"
+            />
+            <span class="font-bold text-[#1C1917] text-xs">
+              Перемешать строки
+            </span>
+          </label>
+        </div>
+
+        <!-- Key Generation Option -->
         <div class="space-y-3 border border-[#E8E7E3] p-4 bg-white">
           <label class="flex items-start space-x-2.5 cursor-pointer select-none">
             <input
+              id="create-key-checkbox"
               type="checkbox"
               bind:checked={createKey}
               class="mt-0.5 accent-[#1C1917] h-4 w-4 rounded-none cursor-pointer"
             />
             <div>
               <div class="font-bold text-[#1C1917] text-xs">
-                Создать защищенный ключ восстановления (.depmap)
+                Создать ключ восстановления
               </div>
               <div class="text-[11px] text-[#78716C] mt-0.5 leading-relaxed">
-                Позволяет в будущем выполнить обратную персонализацию (деобезличивание) файла после разметки аналитиками или ML-моделями.
+                Позволяет в будущем восстановить исходные данные.
               </div>
             </div>
           </label>
@@ -330,7 +357,7 @@
                   for="key-path-input"
                   class="block text-[11px] font-mono text-[#57534E]"
                 >
-                  Путь для сохранения ключа (.depmap):
+                  Путь для сохранения ключа:
                 </label>
                 <div class="flex items-center gap-2">
                   <input
@@ -356,18 +383,15 @@
                   for="key-password-input"
                   class="block text-[11px] font-mono text-[#57534E]"
                 >
-                  Пароль шифрования ключа (необязательно):
+                  Пароль ключа:
                 </label>
                 <input
                   id="key-password-input"
                   type="password"
                   bind:value={keyPassword}
-                  placeholder="Оставьте пустым для надежного авто-ключа..."
+                  placeholder="Автогенерация при пустом поле"
                   class="w-full px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5]"
                 />
-                <div class="text-[10px] text-[#A8A29E]">
-                  Контейнер ключа шифруется по стандарту AES-256-GCM + PBKDF2 (100 000 итераций).
-                </div>
               </div>
             </div>
           {/if}

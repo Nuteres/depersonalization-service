@@ -23,29 +23,42 @@
     </div>
   </div>
 
-  <!-- Mode Switcher Tabs (Unified Right-Aligned Global Control) -->
-  <div class="flex items-center bg-[#F0EFEB] p-1 text-xs font-medium border border-[#E8E7E3] self-start sm:self-center">
+  <!-- Controls: Tabs + Audit Log Button -->
+  <div class="flex items-center gap-2 self-start sm:self-center">
+    <div class="flex items-center bg-[#F0EFEB] p-1 text-xs font-medium border border-[#E8E7E3]">
+      <button
+        id="mode-tab-depersonalize"
+        type="button"
+        onclick={() => appState.setMode('depersonalize')}
+        class={appState.currentAppMode === 'depersonalize'
+          ? 'px-3.5 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition flex items-center space-x-1.5 cursor-pointer'
+          : 'px-3.5 py-1.5 text-[#78716C] hover:text-[#1C1917] transition flex items-center space-x-1.5 cursor-pointer'}
+      >
+        <span class="w-2 h-2 rounded-full {appState.currentAppMode === 'depersonalize' ? 'bg-emerald-600' : 'bg-stone-400'}"></span>
+        <span>Деперсонализация ПД</span>
+      </button>
+      <button
+        id="mode-tab-restore"
+        type="button"
+        onclick={() => appState.setMode('restore')}
+        class={appState.currentAppMode === 'restore'
+          ? 'px-3.5 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition flex items-center space-x-1.5 cursor-pointer'
+          : 'px-3.5 py-1.5 text-[#78716C] hover:text-[#1C1917] transition flex items-center space-x-1.5 cursor-pointer'}
+      >
+        <span class="w-2 h-2 rounded-full {appState.currentAppMode === 'restore' ? 'bg-emerald-600' : 'bg-stone-400'}"></span>
+        <span>Восстановление данных</span>
+      </button>
+    </div>
+
     <button
-      id="mode-tab-depersonalize"
+      id="btn-open-audit"
       type="button"
-      onclick={() => appState.setMode('depersonalize')}
-      class={appState.currentAppMode === 'depersonalize'
-        ? 'px-3.5 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition flex items-center space-x-1.5 cursor-pointer'
-        : 'px-3.5 py-1.5 text-[#78716C] hover:text-[#1C1917] transition flex items-center space-x-1.5 cursor-pointer'}
+      onclick={() => appState.openAuditModal()}
+      class="px-3 py-2 bg-[#F0EFEB] hover:bg-white text-[#1C1917] hover:shadow-xs border border-[#E8E7E3] text-xs font-medium transition cursor-pointer flex items-center gap-1.5"
+      title="Журнал операций"
     >
-      <span class="w-2 h-2 rounded-full {appState.currentAppMode === 'depersonalize' ? 'bg-emerald-600' : 'bg-stone-400'}"></span>
-      <span>Деперсонализация ПД</span>
-    </button>
-    <button
-      id="mode-tab-restore"
-      type="button"
-      onclick={() => appState.setMode('restore')}
-      class={appState.currentAppMode === 'restore'
-        ? 'px-3.5 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition flex items-center space-x-1.5 cursor-pointer'
-        : 'px-3.5 py-1.5 text-[#78716C] hover:text-[#1C1917] transition flex items-center space-x-1.5 cursor-pointer'}
-    >
-      <span class="w-2 h-2 rounded-full {appState.currentAppMode === 'restore' ? 'bg-emerald-600' : 'bg-stone-400'}"></span>
-      <span>Восстановление данных</span>
+      <span class="text-xs">📜</span>
+      <span>Журнал</span>
     </button>
   </div>
 </header>

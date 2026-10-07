@@ -6,6 +6,7 @@
   import ProgressModal from './lib/components/common/ProgressModal.svelte';
   import SuccessModal from './lib/components/common/SuccessModal.svelte';
   import Toast from './lib/components/common/Toast.svelte';
+  import AuditModal from './lib/components/common/AuditModal.svelte';
   import { appState } from './lib/stores/appState.svelte';
   import { restoreState } from './lib/stores/restoreState.svelte';
   import { GetAppInfo, EventsOn, OnFileDrop } from './lib/api/wails';
@@ -104,5 +105,6 @@
 
   <ProgressModal />
   <SuccessModal />
+  <AuditModal />
   <Toast />
 </div>

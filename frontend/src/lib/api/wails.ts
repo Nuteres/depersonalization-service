@@ -1,5 +1,6 @@
 import type {
   AppInfo,
+  AuditRecord,
   FileInfo,
   KeyFileInfo,
   PreviewRow,
@@ -15,7 +16,16 @@ interface WailsAppBinding {
   GetTableRows?: (path: string, offset: number, limit: number, salt: string, disabledCols: number[]) => Promise<PreviewRow[]>;
   GetSheetRows?: (path: string, sheetName: string, offset: number, limit: number, salt: string, disabledCols: number[]) => Promise<PreviewRow[]>;
   ProcessFile?: (path: string, salt: string) => Promise<ProcessResult>;
-  ProcessFileTo?: (path: string, outPath: string, salt: string, disabledCols: number[], createKey: boolean, keyPassword: string, keyPath: string) => Promise<ProcessResult>;
+  ProcessFileTo?: (
+    path: string,
+    outPath: string,
+    salt: string,
+    disabledCols: number[],
+    createKey: boolean,
+    keyPassword: string,
+    keyPath: string,
+    shuffleRows?: boolean
+  ) => Promise<ProcessResult>;
   ProcessFileWithSheets?: (
     path: string,
     outPath: string,
@@ -24,8 +34,12 @@ interface WailsAppBinding {
     disabledBySheet: Record<string, number[]>,
     createKey: boolean,
     keyPassword: string,
-    keyPath: string
+    keyPath: string,
+    shuffleRows?: boolean
   ) => Promise<ProcessResult>;
+  GetAuditRecords?: (limit: number) => Promise<AuditRecord[]>;
+  ExportAuditLog?: (destPath: string) => Promise<void>;
+  SaveAuditFileDialog?: (defaultName: string) => Promise<string>;
   CancelCurrentOperation?: () => Promise<void>;
   SelectFile?: () => Promise<string>;
   SaveFileDialog?: (defaultName: string) => Promise<string>;
@@ -222,7 +236,8 @@ export async function ProcessFileWithSheets(
   disabledBySheet: Record<string, number[]>,
   createKey: boolean,
   keyPassword: string,
-  keyPath: string
+  keyPath: string,
+  shuffleRows: boolean = false
 ): Promise<ProcessResult> {
   const app = getApp();
   if (app?.ProcessFileWithSheets) {
@@ -234,11 +249,12 @@ export async function ProcessFileWithSheets(
       disabledBySheet,
       createKey,
       keyPassword,
-      keyPath
+      keyPath,
+      shuffleRows
     );
   }
   if (app?.ProcessFileTo) {
-    return await app.ProcessFileTo(path, outPath, salt, disabledCols, createKey, keyPassword, keyPath);
+    return await app.ProcessFileTo(path, outPath, salt, disabledCols, createKey, keyPassword, keyPath, shuffleRows);
   }
   const defaultKeyPath = keyPath || `${outPath || path}.depmap`;
   return {
@@ -249,7 +265,9 @@ export async function ProcessFileWithSheets(
     rowsCount: 2,
     entitiesCount: 6,
     durationMs: 55,
-    message: 'Файл успешно обезличен (Dev Mode)'
+    message: 'Файл успешно обезличен (Dev Mode)',
+    effectivePassword: createKey && !keyPassword ? 'auto-key-xyz123' : keyPassword || undefined,
+    keyPasswordGenerated: createKey && !keyPassword
   };
 }
 
@@ -384,6 +402,46 @@ export async function OpenContainingFolder(targetPath: string): Promise<void> {
   } else {
     console.info('[Wails Dev] OpenContainingFolder:', targetPath);
   }
+}
+
+export async function GetAuditRecords(limit: number = 50): Promise<AuditRecord[]> {
+  const app = getApp();
+  if (app?.GetAuditRecords) {
+    return await app.GetAuditRecords(limit);
+  }
+  return [
+    {
+      timestamp: new Date().toISOString(),
+      username: 'operator',
+      hostname: 'dev-workstation',
+      operation: 'depersonalize',
+      source_file: 'clients_sample.xlsx',
+      source_hash: 'a1b2c3d4e5f6',
+      result_file: 'clients_sample_anonymized.xlsx',
+      result_hash: 'f6e5d4c3b2a1',
+      records_count: 1420,
+      entities: ['fio', 'phone', 'snils'],
+      key_created: true,
+      status: 'success'
+    }
+  ];
+}
+
+export async function ExportAuditLog(destPath: string): Promise<boolean> {
+  const app = getApp();
+  if (app?.ExportAuditLog) {
+    await app.ExportAuditLog(destPath);
+    return true;
+  }
+  return true;
+}
+
+export async function SaveAuditFileDialog(defaultName: string = ''): Promise<string> {
+  const app = getApp();
+  if (app?.SaveAuditFileDialog) {
+    return await app.SaveAuditFileDialog(defaultName);
+  }
+  return `/dev/mock/${defaultName || 'audit.jsonl'}`;
 }
 
 export function EventsOn(eventName: string, callback: AnyFunction): () => void {
