@@ -15,7 +15,7 @@
 
   const badgeText = $derived.by(() => {
     if (isInspecting) return 'Проверка...';
-    return isValid ? '✔ Валиден' : '⚠ Ошибка / Пароль';
+    return isValid ? '✔ Готов' : '.DEPMAP';
   });
 
   const badgeClass = $derived.by(() => {
@@ -23,14 +23,14 @@
       return 'text-[10px] px-1.5 py-0.5 font-medium bg-amber-50 text-amber-700 border border-amber-200';
     }
     return isValid
-      ? 'text-[10px] px-1.5 py-0.5 font-medium bg-emerald-50 text-emerald-700 border border-emerald-200'
-      : 'text-[10px] px-1.5 py-0.5 font-medium bg-rose-50 text-rose-700 border border-rose-200';
+      ? 'text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.5'
+      : 'text-[10px] bg-[#FAF9F5] text-[#78716C] border border-[#E8E7E3] px-1.5 py-0.5';
   });
 </script>
 
-<div id="restore-key-info" class="p-3 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono space-y-1.5">
+<div id="restore-key-info" class="p-3 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono space-y-1">
   <div class="flex items-center justify-between">
-    <span class="font-bold text-[#1C1917] truncate max-w-[170px]" id="restore-key-name" title={keyFileName}>
+    <span class="font-bold text-[#1C1917] truncate max-w-[180px]" id="restore-key-name" title={keyFileName}>
       {keyFileName}
     </span>
     <span id="restore-key-status-badge" class={badgeClass}>
@@ -42,23 +42,20 @@
     {keyPath}
   </div>
 
-  {#if keyInfo && keyInfo.valid}
-    <div class="text-[11px] text-[#57534E]" id="restore-key-meta">
-      Исходный: {keyInfo.originalFileName || 'данные'} ▪ Записей: {keyInfo.recordsCount.toLocaleString('ru-RU')} ▪ {keyInfo.createdAt}
-    </div>
-  {:else}
-    <div id="restore-key-error" class="text-[11px] text-rose-700 bg-rose-50 p-1.5 border border-rose-200">
-      {keyInfo?.error || 'Неверный формат ключа или требуется пароль расшифровки'}
-    </div>
-  {/if}
-
-  <div class="pt-1 text-right">
+  <div class="flex items-center justify-between pt-1">
+    <span class="text-[11px] text-[#57534E]" id="restore-key-meta">
+      {#if isValid && keyInfo}
+        {keyInfo.recordsCount.toLocaleString('ru-RU')} записей
+      {:else}
+        Зашифрован
+      {/if}
+    </span>
     <button
       type="button"
       onclick={onReselect}
       class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer"
     >
-      Сменить ключ...
+      Сменить ключ
     </button>
   </div>
 </div>

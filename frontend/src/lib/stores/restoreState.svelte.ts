@@ -37,6 +37,17 @@ class RestoreState {
     }, 300);
   }
 
+  async inspectKeyNow(pwd?: string): Promise<boolean> {
+    if (pwd !== undefined) {
+      this.password = pwd;
+    }
+    if (this._pwdDebounce) {
+      clearTimeout(this._pwdDebounce);
+      this._pwdDebounce = null;
+    }
+    return await this.inspectKey();
+  }
+
   async loadDataFile(path: string): Promise<boolean> {
     if (!path) return false;
     const ext = path.split('.').pop()?.toLowerCase() || '';

@@ -58,6 +58,13 @@
       };
     }
     if (restoreState.keyInfo && !restoreState.keyInfo.valid) {
+      if (!restoreState.password) {
+        return {
+          dotClass: 'w-2 h-2 rounded-full bg-amber-500',
+          text: 'Шаг 3: введите пароль ключа',
+          textClass: 'text-[#78716C]'
+        };
+      }
       return {
         dotClass: 'w-2 h-2 rounded-full bg-rose-500',
         text: 'Ошибка: неверный пароль ключа',
@@ -288,12 +295,11 @@
       <div>
         <div class="flex items-center justify-between text-xs text-[#78716C] mb-3 font-mono">
           <span class="font-bold text-[#1C1917]">ШАГ 3. ПАРОЛЬ КЛЮЧА</span>
-          <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-1.5 py-0.5">ОПЦИОНАЛЬНО</span>
         </div>
 
         <div class="space-y-3">
           <p class="text-xs text-[#78716C]">
-            Если при деперсонализации для ключа был задан пароль, введите его для расшифровки:
+            Введите пароль для расшифровки ключа:
           </p>
           <div>
             <input
@@ -302,11 +308,14 @@
               placeholder="Пароль защиты ключа..."
               value={restoreState.password}
               oninput={(e) => restoreState.setPassword((e.target as HTMLInputElement).value)}
+              onkeydown={async (e) => {
+                if (e.key === 'Enter') {
+                  await restoreState.inspectKeyNow();
+                  if (isReady) executeRestore();
+                }
+              }}
               class="w-full px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5]"
             />
-          </div>
-          <div class="text-[11px] text-[#A8A29E]">
-            Если пароль не задавался, оставьте поле пустым (применится авто-ключ приложения).
           </div>
         </div>
       </div>
