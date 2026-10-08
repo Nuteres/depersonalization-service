@@ -16,6 +16,8 @@ import (
 	"dep_service/internal/domain"
 	"dep_service/internal/service/keymanager"
 	"dep_service/internal/service/restorer"
+	"dep_service/pkg/audit"
+	"dep_service/pkg/depmap"
 )
 
 func TestInspectKeyFileInvalid(t *testing.T) {
@@ -589,3 +591,107 @@ func readZipMember(data []byte, name string) (string, error) {
 	}
 	return "", errors.New("file not found in zip archive")
 }
+
+func TestRestorer_AuditLogging(t *testing.T) {
+	tmpDir := t.TempDir()
+	auditPath := filepath.Join(tmpDir, "audit.jsonl")
+	al, err := audit.NewLogger(auditPath)
+	if err != nil {
+		t.Fatalf("failed to create audit logger: %v", err)
+	}
+
+	km := keymanager.New()
+	rest := restorer.New(km)
+	rest.SetAuditLogger(al)
+
+	// Create test file and key
+	inPath := filepath.Join(tmpDir, "test_anon.csv")
+	restPath := filepath.Join(tmpDir, "test_restored.csv")
+	keyPath := filepath.Join(tmpDir, "test.depmap")
+
+	if err := os.WriteFile(inPath, []byte("ФИО\nАноним1\n"), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	dm := depmap.New("test.csv")
+	dm.Put("Аноним1", "Иванов Иван")
+	if err := dm.SaveFile(keyPath, "secret123"); err != nil {
+		t.Fatalf("failed to save key: %v", err)
+	}
+
+	// 1. Success case
+	res, err := rest.Restore(context.Background(), domain.RestoreOptions{
+		InputPath:  inPath,
+		KeyPath:    keyPath,
+		Password:   "secret123",
+		OutputPath: restPath,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Restore failed: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected restore success")
+	}
+
+	records, err := al.ReadRecent(10)
+	if err != nil {
+		t.Fatalf("ReadRecent failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 audit record, got %d", len(records))
+	}
+	r0 := records[0]
+	if r0.Operation != "restore" {
+		t.Errorf("expected operation 'restore', got %q", r0.Operation)
+	}
+	if r0.Status != "success" {
+		t.Errorf("expected status 'success', got %q", r0.Status)
+	}
+	if r0.SourceHash == "" || r0.ResultHash == "" {
+		t.Errorf("expected non-empty source and result hashes")
+	}
+	if r0.RecordsCount != 1 {
+		t.Errorf("expected RecordsCount=1, got %d", r0.RecordsCount)
+	}
+
+	// 2. Error case (wrong password)
+	_, _ = rest.Restore(context.Background(), domain.RestoreOptions{
+		InputPath:  inPath,
+		KeyPath:    keyPath,
+		Password:   "wrong-password",
+		OutputPath: restPath,
+	}, nil)
+
+	records, err = al.ReadRecent(10)
+	if err != nil {
+		t.Fatalf("ReadRecent failed: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 audit records, got %d", len(records))
+	}
+	if records[0].Status != "error" || records[0].Error == "" {
+		t.Errorf("expected newest record to be error, got %+v", records[0])
+	}
+
+	// 3. Cancel case
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _ = rest.Restore(ctx, domain.RestoreOptions{
+		InputPath:  inPath,
+		KeyPath:    keyPath,
+		Password:   "secret123",
+		OutputPath: restPath,
+	}, nil)
+
+	records, err = al.ReadRecent(10)
+	if err != nil {
+		t.Fatalf("ReadRecent failed: %v", err)
+	}
+	if len(records) != 3 {
+		t.Fatalf("expected 3 audit records, got %d", len(records))
+	}
+	if records[0].Status != "canceled" {
+		t.Errorf("expected newest record to be canceled, got %+v", records[0])
+	}
+}
+

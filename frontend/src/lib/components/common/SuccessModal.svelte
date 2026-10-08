@@ -68,6 +68,22 @@
       console.error('Failed to copy to clipboard:', err);
     }
   }
+
+  async function copyPassword() {
+    const pwd =
+      appState.successResult && 'effectivePassword' in appState.successResult
+        ? appState.successResult.effectivePassword
+        : undefined;
+    if (!pwd) return;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(pwd);
+        appState.showToast('Пароль скопирован в буфер!', 'success');
+      }
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+    }
+  }
 </script>
 
 {#if appState.showSuccessModal && appState.successResult}
@@ -137,7 +153,7 @@
           <div class="flex items-center justify-between gap-2">
             <span class="text-[11px] font-mono font-bold text-[#1C1917] uppercase tracking-wider flex items-center space-x-1">
               <span>🔑</span>
-              <span>Ключ восстановления (.depmap):</span>
+              <span>Ключ восстановления:</span>
             </span>
             <button
               type="button"
@@ -155,6 +171,31 @@
           </div>
           <div class="text-[11px] text-[#78716C] leading-normal font-sans">
             Сохраните этот файл в безопасном месте. Без него обратная персонализация будет невозможна.
+          </div>
+        </div>
+      {/if}
+
+      <!-- Generated Key Password Card -->
+      {#if !isRestore && appState.successResult && 'keyPasswordGenerated' in appState.successResult && appState.successResult.keyPasswordGenerated && appState.successResult.effectivePassword}
+        <div class="border border-[#E8E7E3] bg-[#FAF9F5] p-3 space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[11px] font-mono font-bold text-[#1C1917] uppercase tracking-wider flex items-center space-x-1">
+              <span>🔒</span>
+              <span>Пароль ключа:</span>
+            </span>
+            <button
+              id="copy-key-password"
+              type="button"
+              onclick={copyPassword}
+              class="text-[11px] text-[#1C1917] hover:underline font-mono font-semibold cursor-pointer shrink-0"
+            >
+              📋 Скопировать
+            </button>
+          </div>
+          <div
+            class="text-xs font-mono font-bold text-[#1C1917] select-all leading-relaxed bg-white p-2 border border-[#E8E7E3] tracking-wider"
+          >
+            <code>{appState.successResult.effectivePassword}</code>
           </div>
         </div>
       {/if}

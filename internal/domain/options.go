@@ -10,6 +10,7 @@ type ProcessOptions struct {
 	CreateKey       bool             `json:"createKey"`
 	KeyPassword     string           `json:"keyPassword"`
 	KeyPath         string           `json:"keyPath"`
+	ShuffleRows     bool             `json:"shuffleRows"`
 }
 
 // RestoreOptions specifies options for restoring a previously anonymized file using a .depmap key.

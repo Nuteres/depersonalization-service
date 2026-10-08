@@ -155,61 +155,135 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 	}
 
 	rowCount := 0
+	shouldShuffle := isShuffleRows(options)
 
-	// Write already-buffered data rows
-	for i := headerIdx + 1; i < len(initialRows); i++ {
-		record := initialRows[i]
-		outRow := make([]string, len(record))
-		for j, val := range record {
-			var ct ColumnType
-			col1Based := j + 1
-			if j < len(colTypes) && !disabledMap[col1Based] {
-				ct = colTypes[j]
+	if shouldShuffle {
+		// Collect all anonymized data rows into memory for shuffling
+		var allDataRows [][]string
+
+		// 1. Buffered data rows
+		for i := headerIdx + 1; i < len(initialRows); i++ {
+			record := initialRows[i]
+			outRow := make([]string, len(record))
+			for j, val := range record {
+				var ct ColumnType
+				col1Based := j + 1
+				if j < len(colTypes) && !disabledMap[col1Based] {
+					ct = colTypes[j]
+				}
+				outRow[j] = AnonymizeCell(h.Anon, ct, val, dateRange)
 			}
-			outRow[j] = AnonymizeCell(h.Anon, ct, val, dateRange)
+			allDataRows = append(allDataRows, outRow)
 		}
-		if err := csvWriter.Write(outRow); err != nil {
-			return fmt.Errorf("failed writing csv row: %w", err)
+
+		// 2. Stream remaining data rows into buffer
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
+			record, err := csvReader.Read()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				return fmt.Errorf("failed reading csv row: %w", err)
+			}
+
+			outRow := make([]string, len(record))
+			for i, val := range record {
+				var colType ColumnType
+				col1Based := i + 1
+				if i < len(colTypes) && !disabledMap[col1Based] {
+					colType = colTypes[i]
+				}
+				outRow[i] = AnonymizeCell(h.Anon, colType, val, dateRange)
+			}
+			allDataRows = append(allDataRows, outRow)
 		}
-		rowCount++
-		if progressFn != nil && rowCount%50 == 0 {
+
+		// Shuffle data rows using Fisher-Yates algorithm seeded by salt
+		ShuffleRows(h.Anon, allDataRows)
+
+		// Write shuffled data rows
+		for _, outRow := range allDataRows {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
+			if err := csvWriter.Write(outRow); err != nil {
+				return fmt.Errorf("failed writing csv row: %w", err)
+			}
+
+			rowCount++
+			if progressFn != nil && rowCount%50 == 0 {
+				progressFn(rowCount)
+			}
+		}
+
+		if progressFn != nil && rowCount%50 != 0 {
 			progressFn(rowCount)
 		}
-	}
-
-	// Stream remaining data rows from file
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		record, err := csvReader.Read()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
+	} else {
+		// Write already-buffered data rows directly (streaming mode)
+		for i := headerIdx + 1; i < len(initialRows); i++ {
+			record := initialRows[i]
+			outRow := make([]string, len(record))
+			for j, val := range record {
+				var ct ColumnType
+				col1Based := j + 1
+				if j < len(colTypes) && !disabledMap[col1Based] {
+					ct = colTypes[j]
+				}
+				outRow[j] = AnonymizeCell(h.Anon, ct, val, dateRange)
 			}
-			return fmt.Errorf("failed reading csv row: %w", err)
-		}
-
-		outRow := make([]string, len(record))
-		for i, val := range record {
-			var colType ColumnType
-			col1Based := i + 1
-			if i < len(colTypes) && !disabledMap[col1Based] {
-				colType = colTypes[i]
+			if err := csvWriter.Write(outRow); err != nil {
+				return fmt.Errorf("failed writing csv row: %w", err)
 			}
-			outRow[i] = AnonymizeCell(h.Anon, colType, val, dateRange)
+			rowCount++
+			if progressFn != nil && rowCount%50 == 0 {
+				progressFn(rowCount)
+			}
 		}
 
-		if err := csvWriter.Write(outRow); err != nil {
-			return fmt.Errorf("failed writing csv row: %w", err)
-		}
+		// Stream remaining data rows from file
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
 
-		rowCount++
-		if progressFn != nil && rowCount%50 == 0 {
-			progressFn(rowCount)
+			record, err := csvReader.Read()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				return fmt.Errorf("failed reading csv row: %w", err)
+			}
+
+			outRow := make([]string, len(record))
+			for i, val := range record {
+				var colType ColumnType
+				col1Based := i + 1
+				if i < len(colTypes) && !disabledMap[col1Based] {
+					colType = colTypes[i]
+				}
+				outRow[i] = AnonymizeCell(h.Anon, colType, val, dateRange)
+			}
+
+			if err := csvWriter.Write(outRow); err != nil {
+				return fmt.Errorf("failed writing csv row: %w", err)
+			}
+
+			rowCount++
+			if progressFn != nil && rowCount%50 == 0 {
+				progressFn(rowCount)
+			}
 		}
 	}
 

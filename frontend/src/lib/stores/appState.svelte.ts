@@ -41,6 +41,7 @@ class AppState {
   showProgressModal = $state<boolean>(false);
   successResult = $state<SuccessResult | null>(null);
   showSuccessModal = $state<boolean>(false);
+  showAuditModal = $state<boolean>(false);
   toast = $state<ToastMessage | null>(null);
   appInfo = $state<AppInfo | null>(null);
 
@@ -127,6 +128,14 @@ class AppState {
 
   closeSuccessModal(): void {
     this.showSuccessModal = false;
+  }
+
+  openAuditModal(): void {
+    this.showAuditModal = true;
+  }
+
+  closeAuditModal(): void {
+    this.showAuditModal = false;
   }
 
   reset(): void {

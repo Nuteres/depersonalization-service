@@ -88,7 +88,7 @@ func main() {
 
 	manifestXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="1.4.2.0" processorArchitecture="*" name="Depersonalizer" type="win32"/>
+  <assemblyIdentity version="1.6.0.0" processorArchitecture="*" name="Depersonalizer" type="win32"/>
   <description>Деперсонализация ПД (152-ФЗ)</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>

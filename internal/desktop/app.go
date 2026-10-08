@@ -14,6 +14,7 @@ import (
 	"dep_service/internal/service/processor"
 	"dep_service/internal/service/restorer"
 	"dep_service/internal/version"
+	"dep_service/pkg/audit"
 )
 
 // DesktopApp is the presentation adapter struct bound to the Wails runtime.
@@ -24,6 +25,7 @@ type DesktopApp struct {
 	proc     *processor.Processor
 	rest     *restorer.Restorer
 	km       *keymanager.KeyManager
+	audit    *audit.AuditLogger
 	cancelMu sync.Mutex
 	cancel   context.CancelFunc
 }
@@ -35,6 +37,7 @@ func New(
 	proc *processor.Processor,
 	rest *restorer.Restorer,
 	km *keymanager.KeyManager,
+	al ...*audit.AuditLogger,
 ) *DesktopApp {
 	if km == nil {
 		km = keymanager.New()
@@ -45,18 +48,34 @@ func New(
 	if prev == nil {
 		prev = preview.New()
 	}
+	var auditLog *audit.AuditLogger
+	if len(al) > 0 && al[0] != nil {
+		auditLog = al[0]
+	} else {
+		auditLog, _ = audit.DefaultLogger()
+	}
+
 	if proc == nil {
 		proc = processor.New(km, insp)
 	}
+	if auditLog != nil {
+		proc.SetAuditLogger(auditLog)
+	}
+
 	if rest == nil {
 		rest = restorer.New(km)
 	}
+	if auditLog != nil {
+		rest.SetAuditLogger(auditLog)
+	}
+
 	return &DesktopApp{
-		insp: insp,
-		prev: prev,
-		proc: proc,
-		rest: rest,
-		km:   km,
+		insp:  insp,
+		prev:  prev,
+		proc:  proc,
+		rest:  rest,
+		km:    km,
+		audit: auditLog,
 	}
 }
 
@@ -110,8 +129,8 @@ func (a *DesktopApp) ProcessFile(path, salt string) (*domain.ProcessResult, erro
 }
 
 // ProcessFileTo processes the input file and writes to outPath.
-func (a *DesktopApp) ProcessFileTo(path, outPath, salt string, disabledCols []int, createKey bool, keyPassword, keyPath string) (*domain.ProcessResult, error) {
-	return a.ProcessFileWithSheets(path, outPath, salt, disabledCols, nil, createKey, keyPassword, keyPath)
+func (a *DesktopApp) ProcessFileTo(path, outPath, salt string, disabledCols []int, createKey bool, keyPassword, keyPath string, shuffleRows ...bool) (*domain.ProcessResult, error) {
+	return a.ProcessFileWithSheets(path, outPath, salt, disabledCols, nil, createKey, keyPassword, keyPath, shuffleRows...)
 }
 
 // ProcessFileWithSheets processes the input file with per-sheet disabled column options.
@@ -124,6 +143,7 @@ func (a *DesktopApp) ProcessFileWithSheets(
 	createKey bool,
 	keyPassword string,
 	keyPath string,
+	shuffleRows ...bool,
 ) (*domain.ProcessResult, error) {
 	ctx := a.ctx
 	if ctx == nil {
@@ -140,6 +160,11 @@ func (a *DesktopApp) ProcessFileWithSheets(
 		cancel()
 	}()
 
+	doShuffle := false
+	if len(shuffleRows) > 0 {
+		doShuffle = shuffleRows[0]
+	}
+
 	reporter := newProcessProgressReporter(a.ctx)
 	opts := domain.ProcessOptions{
 		InputPath:       path,
@@ -150,6 +175,7 @@ func (a *DesktopApp) ProcessFileWithSheets(
 		CreateKey:       createKey,
 		KeyPassword:     keyPassword,
 		KeyPath:         keyPath,
+		ShuffleRows:     doShuffle,
 	}
 
 	return a.proc.Process(opCtx, opts, reporter)
@@ -205,3 +231,28 @@ func (a *DesktopApp) RestoreFileTo(inputPath, keyPath, password, destPath string
 
 	return a.rest.Restore(opCtx, opts, reporter)
 }
+
+// GetAuditRecords returns the recent audit records up to limit (newest first).
+func (a *DesktopApp) GetAuditRecords(limit int) ([]audit.AuditRecord, error) {
+	if a.audit == nil {
+		var err error
+		a.audit, err = audit.DefaultLogger()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return a.audit.ReadRecent(limit)
+}
+
+// ExportAuditLog exports the entire audit log to destPath.
+func (a *DesktopApp) ExportAuditLog(destPath string) error {
+	if a.audit == nil {
+		var err error
+		a.audit, err = audit.DefaultLogger()
+		if err != nil {
+			return err
+		}
+	}
+	return a.audit.ExportTo(destPath)
+}
+

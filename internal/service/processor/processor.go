@@ -13,6 +13,7 @@ import (
 	"dep_service/internal/service/inspector"
 	"dep_service/internal/service/keymanager"
 	"dep_service/pkg/anonymizer"
+	"dep_service/pkg/audit"
 	"dep_service/pkg/depmap"
 	"dep_service/pkg/formats"
 )
@@ -21,6 +22,7 @@ import (
 type Processor struct {
 	km        *keymanager.KeyManager
 	inspector *inspector.Inspector
+	audit     *audit.AuditLogger
 }
 
 // ProcessorService is an alias to Processor for architectural consistency.
@@ -39,16 +41,74 @@ func New(km *keymanager.KeyManager, insp ...*inspector.Inspector) *Processor {
 	if km == nil {
 		km = keymanager.New()
 	}
+	al, _ := audit.DefaultLogger()
 	return &Processor{
 		km:        km,
 		inspector: in,
+		audit:     al,
 	}
+}
+
+// SetAuditLogger sets the audit logger for the processor.
+func (p *Processor) SetAuditLogger(l *audit.AuditLogger) {
+	p.audit = l
+}
+
+// AuditLogger returns the current audit logger.
+func (p *Processor) AuditLogger() *audit.AuditLogger {
+	return p.audit
 }
 
 // Process processes the input file according to options and reports progress via reporter.
 // It supports streaming anonymization, graceful context cancellation, Windows-safe cleanup,
 // and optional .depmap key container generation.
-func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, reporter domain.ProgressReporter) (*domain.ProcessResult, error) {
+func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, reporter domain.ProgressReporter) (res *domain.ProcessResult, err error) {
+	var (
+		sourceHash string
+		resultHash string
+		totalRows  int
+		entities   []string
+		keyCreated bool
+		outPath    = opts.OutputPath
+	)
+
+	if strings.TrimSpace(opts.InputPath) != "" {
+		sourceHash, _ = audit.ComputeFileSHA256(opts.InputPath)
+	}
+
+	defer func() {
+		if p.audit == nil {
+			return
+		}
+		status := "success"
+		errMsg := ""
+		if err != nil {
+			if errors.Is(err, context.Canceled) || (ctx != nil && ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled)) {
+				status = "canceled"
+			} else {
+				status = "error"
+			}
+			errMsg = err.Error()
+		} else {
+			if outPath != "" {
+				resultHash, _ = audit.ComputeFileSHA256(outPath)
+			}
+		}
+
+		_ = p.audit.Log(audit.AuditRecord{
+			Operation:    "depersonalize",
+			SourceFile:   opts.InputPath,
+			SourceHash:   sourceHash,
+			ResultFile:   outPath,
+			ResultHash:   resultHash,
+			RecordsCount: totalRows,
+			Entities:     entities,
+			KeyCreated:   keyCreated,
+			Status:       status,
+			Error:        errMsg,
+		})
+	}()
+
 	if ctx != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -78,7 +138,6 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 		return nil, fmt.Errorf("%w: %s", domain.ErrUnsupportedFormat, ext)
 	}
 
-	outPath := opts.OutputPath
 	if strings.TrimSpace(outPath) == "" {
 		dir := filepath.Dir(opts.InputPath)
 		base := strings.TrimSuffix(filepath.Base(opts.InputPath), filepath.Ext(opts.InputPath))
@@ -91,7 +150,11 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 
 	salt := opts.Salt
 	if strings.TrimSpace(salt) == "" {
-		salt = "152fz-secure-salt"
+		generatedSalt, err := anonymizer.GenerateSalt(16)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate random salt: %w", err)
+		}
+		salt = generatedSalt
 	}
 
 	keyPath := opts.KeyPath
@@ -108,16 +171,28 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	}
 
 	// Pre-inspect input file for accurate progress estimation and entity metadata
-	var totalRows int
 	var entitiesCount int
 	var info *domain.FileInfo
 	if p.inspector != nil {
 		info, _ = p.inspector.Inspect(ctx, opts.InputPath)
 		if info != nil {
+			seen := make(map[string]bool)
+			addEntity := func(t string) {
+				if t != "" && !seen[t] {
+					seen[t] = true
+					entities = append(entities, t)
+				}
+			}
+			for _, e := range info.Entities {
+				addEntity(e.Type)
+			}
 			if len(info.Sheets) > 1 {
 				for _, s := range info.Sheets {
 					totalRows += s.RowCount
 					entitiesCount += len(s.Entities)
+					for _, e := range s.Entities {
+						addEntity(e.Type)
+					}
 				}
 			} else {
 				totalRows = info.RowCount
@@ -147,6 +222,7 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 		"disabled_columns":          opts.DisabledCols,
 		"disabled_columns_by_sheet": opts.DisabledBySheet,
 		"progress_callback":         progressCallback,
+		"shuffle_rows":              opts.ShuffleRows,
 	}
 
 	if ext == ".docx" || ext == ".odt" || ext == ".pdf" {
@@ -245,13 +321,18 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	}
 
 	// Key generation
+	var effectivePassword string
+	var keyPasswordGenerated bool
 	if opts.CreateKey {
 		if ctx.Err() != nil {
 			cleanup()
 			return nil, ctx.Err()
 		}
+		isAuto := strings.TrimSpace(opts.KeyPassword) == ""
+		var savedPwd string
 		if directDepMap != nil {
-			if err := directDepMap.SaveFile(keyPath, opts.KeyPassword); err != nil {
+			savedPwd, err = directDepMap.SaveFileWithAutoPassword(keyPath, opts.KeyPassword)
+			if err != nil {
 				cleanup()
 				return nil, fmt.Errorf("failed to save key file: %w", err)
 			}
@@ -261,11 +342,15 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 				cleanup()
 				return nil, fmt.Errorf("failed to extract key mappings: %w", err)
 			}
-			if err := dm.SaveFile(keyPath, opts.KeyPassword); err != nil {
+			savedPwd, err = dm.SaveFileWithAutoPassword(keyPath, opts.KeyPassword)
+			if err != nil {
 				cleanup()
 				return nil, fmt.Errorf("failed to save key file: %w", err)
 			}
 		}
+		effectivePassword = savedPwd
+		keyPasswordGenerated = isAuto
+		keyCreated = true
 	}
 
 	if ctx.Err() != nil {
@@ -279,14 +364,16 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 
 	durationMs := time.Since(startTime).Milliseconds()
 
-	res := &domain.ProcessResult{
-		Success:       true,
-		InputPath:     opts.InputPath,
-		OutputPath:    outPath,
-		RowsCount:     totalRows,
-		EntitiesCount: entitiesCount,
-		DurationMs:    durationMs,
-		Message:       fmt.Sprintf("Файл успешно сохранен: %s (%d мс)", filepath.Base(outPath), durationMs),
+	res = &domain.ProcessResult{
+		Success:              true,
+		InputPath:            opts.InputPath,
+		OutputPath:           outPath,
+		RowsCount:            totalRows,
+		EntitiesCount:        entitiesCount,
+		DurationMs:           durationMs,
+		Message:              fmt.Sprintf("Файл успешно сохранен: %s (%d мс)", filepath.Base(outPath), durationMs),
+		EffectivePassword:    effectivePassword,
+		KeyPasswordGenerated: keyPasswordGenerated,
 	}
 	if opts.CreateKey {
 		res.KeyPath = keyPath

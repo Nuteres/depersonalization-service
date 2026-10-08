@@ -103,6 +103,24 @@ export interface ProcessResult {
   durationMs: number;
   message: string;
   error?: string;
+  effectivePassword?: string;
+  keyPasswordGenerated?: boolean;
+}
+
+export interface AuditRecord {
+  timestamp: string;
+  username: string;
+  hostname: string;
+  operation: string;
+  source_file: string;
+  source_hash: string;
+  result_file: string;
+  result_hash: string;
+  records_count: number;
+  entities?: string[];
+  key_created: boolean;
+  status: 'success' | 'canceled' | 'error';
+  error?: string;
 }
 
 export interface KeyFileInfo {
