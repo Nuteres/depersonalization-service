@@ -6,9 +6,10 @@
     keyPath: string;
     isInspecting?: boolean;
     onReselect: () => void;
+    onClear?: () => void;
   }
 
-  let { keyInfo, keyPath, isInspecting = false, onReselect }: Props = $props();
+  let { keyInfo, keyPath, isInspecting = false, onReselect, onClear }: Props = $props();
 
   const keyFileName = $derived(keyPath.split('/').pop()?.split('\\').pop() || 'key.depmap');
   const isValid = $derived(!!keyInfo?.valid);
@@ -30,12 +31,28 @@
 
 <div id="restore-key-info" class="p-3 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono space-y-1">
   <div class="flex items-center justify-between">
-    <span class="font-bold text-[#1C1917] truncate max-w-[180px]" id="restore-key-name" title={keyFileName}>
+    <span class="font-bold text-[#1C1917] truncate max-w-[170px]" id="restore-key-name" title={keyFileName}>
       {keyFileName}
     </span>
-    <span id="restore-key-status-badge" class={badgeClass}>
-      {badgeText}
-    </span>
+    <div class="flex items-center gap-1.5 shrink-0">
+      <span id="restore-key-status-badge" class={badgeClass}>
+        {badgeText}
+      </span>
+      {#if onClear}
+        <button
+          type="button"
+          id="btn-remove-key-file"
+          onclick={onClear}
+          class="text-[#A8A29E] hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition cursor-pointer"
+          title="Удалить прикрепленный ключ"
+          aria-label="Удалить прикрепленный ключ"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      {/if}
+    </div>
   </div>
 
   <div class="text-[11px] text-[#78716C] truncate" id="restore-key-path" title={keyPath}>
@@ -50,12 +67,26 @@
         Зашифрован
       {/if}
     </span>
-    <button
-      type="button"
-      onclick={onReselect}
-      class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer"
-    >
-      Сменить ключ
-    </button>
+    <div class="flex items-center gap-2">
+      <button
+        type="button"
+        id="btn-reselect-key"
+        onclick={onReselect}
+        class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer"
+      >
+        Сменить
+      </button>
+      {#if onClear}
+        <span class="text-[#D6D3D1]">|</span>
+        <button
+          type="button"
+          id="btn-clear-key-text"
+          onclick={onClear}
+          class="text-[11px] text-[#78716C] hover:text-rose-600 hover:underline cursor-pointer"
+        >
+          Удалить
+        </button>
+      {/if}
+    </div>
   </div>
 </div>

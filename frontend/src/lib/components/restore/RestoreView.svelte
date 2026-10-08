@@ -196,12 +196,26 @@
       {:else}
         <div id="restore-data-info" class="p-3 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono space-y-1">
           <div class="flex items-center justify-between">
-            <span class="font-bold text-[#1C1917] truncate max-w-[180px]" id="restore-data-name" title={dataFileName}>
+            <span class="font-bold text-[#1C1917] truncate max-w-[170px]" id="restore-data-name" title={dataFileName}>
               {dataFileName}
             </span>
-            <span class="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.5" id="restore-data-ext">
-              {dataFileExt}
-            </span>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <span class="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.5" id="restore-data-ext">
+                {dataFileExt}
+              </span>
+              <button
+                type="button"
+                id="btn-remove-data-file"
+                onclick={() => restoreState.clearDataFile()}
+                class="text-[#A8A29E] hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition cursor-pointer"
+                title="Удалить прикрепленный файл"
+                aria-label="Удалить прикрепленный файл"
+              >
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
           <div class="text-[11px] text-[#78716C] truncate" id="restore-data-path" title={restoreState.dataPath}>
             {restoreState.dataPath}
@@ -210,13 +224,24 @@
             <span class="text-[11px] text-[#57534E]" id="restore-data-size">
               {dataStatsText}
             </span>
-            <button
-              type="button"
-              onclick={() => restoreState.selectDataFile()}
-              class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer"
-            >
-              Сменить файл
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                onclick={() => restoreState.selectDataFile()}
+                class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer"
+              >
+                Сменить
+              </button>
+              <span class="text-[#D6D3D1]">|</span>
+              <button
+                type="button"
+                id="btn-clear-data-text"
+                onclick={() => restoreState.clearDataFile()}
+                class="text-[11px] text-[#78716C] hover:text-rose-600 hover:underline cursor-pointer"
+              >
+                Удалить
+              </button>
+            </div>
           </div>
         </div>
       {/if}
@@ -264,6 +289,7 @@
           keyPath={restoreState.keyPath}
           isInspecting={restoreState.isInspectingKey}
           onReselect={() => restoreState.selectKeyFile()}
+          onClear={() => restoreState.clearKeyFile()}
         />
       {/if}
     </div>

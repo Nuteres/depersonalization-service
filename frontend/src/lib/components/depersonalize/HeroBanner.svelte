@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appState } from '../../stores/appState.svelte';
-  import { selectAndLoadFile, loadFile } from '../../services/fileLoader';
+  import { selectAndLoadFile, loadFile, clearCurrentFile } from '../../services/fileLoader';
 
   interface Props {
     onOpenSaveModal: () => void;
@@ -215,6 +215,17 @@
       >
         <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">📁</span>
         <span>Сменить файл...</span>
+      </button>
+
+      <button
+        id="btn-close-file-hero"
+        type="button"
+        onclick={clearCurrentFile}
+        class="px-3 py-2 bg-white border border-[#E8E7E3] hover:border-rose-400 hover:text-rose-600 text-[#78716C] text-xs font-semibold shadow-xs transition flex items-center gap-1.5 active:scale-[0.99] cursor-pointer"
+        title="Удалить прикрепленный файл"
+      >
+        <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">✕</span>
+        <span>Удалить</span>
       </button>
 
       <button

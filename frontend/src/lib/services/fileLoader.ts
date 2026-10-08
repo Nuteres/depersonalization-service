@@ -55,3 +55,12 @@ export async function selectAndLoadFile(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Resets current file state and table state, returning to empty dropzone.
+ */
+export function clearCurrentFile(): void {
+  appState.reset();
+  tableState.reset();
+}
+

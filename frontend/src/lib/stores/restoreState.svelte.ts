@@ -20,9 +20,21 @@ class RestoreState {
     this.dataInfo = info;
   }
 
-  setKeyFile(path: string): void {
-    this.keyPath = path;
+  clearDataFile(): void {
+    this.dataPath = '';
+    this.dataInfo = null;
+    this.isLoadingData = false;
+  }
+
+  clearKeyFile(): void {
+    if (this._pwdDebounce) {
+      clearTimeout(this._pwdDebounce);
+      this._pwdDebounce = null;
+    }
+    this.keyPath = '';
     this.keyInfo = null;
+    this.password = '';
+    this.isInspectingKey = false;
   }
 
   setPassword(pwd: string): void {
