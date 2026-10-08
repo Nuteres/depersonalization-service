@@ -136,27 +136,19 @@
   }
 </script>
 
-<div id="restoration-view" class="flex-1 flex flex-col gap-8 pb-12">
-  <!-- Hero / Summary Banner -->
-  <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
-    <div class="flex-1">
-      <div class="flex items-center space-x-2 text-xs font-mono text-[#78716C] uppercase mb-1">
-        <span>Режим обратной персонализации</span>
-        <span>▪</span>
-        <span>152-ФЗ</span>
-      </div>
+<div id="restoration-view" class="flex-1 flex flex-col gap-6 pb-12">
+  <!-- Header Banner -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
       <h2 class="text-2xl font-bold tracking-tight text-[#1C1917]">
         Восстановление исходных данных
       </h2>
-      <p class="text-sm text-[#78716C] mt-1 max-w-2xl">
-        Восстановите исходные персональные данные (ФИО, СНИЛС, паспорта, контакты) в обработанных аналитиками или ML-моделями таблицах с помощью защищённого ключа <span class="font-mono text-xs bg-[#E8E7E3] px-1.5 py-0.5 text-[#1C1917]">.depmap</span>.
-      </p>
     </div>
 
-    <!-- Live Step Status in Hero -->
+    <!-- Live Step Status -->
     <div
       id="restore-hero-status"
-      class="flex items-center space-x-2 text-xs font-mono px-4 py-2.5 bg-[#FAF9F5] border border-[#E8E7E3] self-start md:self-end"
+      class="flex items-center space-x-2 text-xs font-mono px-4 py-2 bg-[#FAF9F5] border border-[#E8E7E3]"
     >
       <span id="restore-status-dot" class={statusInfo.dotClass}></span>
       <span id="restore-status-text" class={statusInfo.textClass}>{statusInfo.text}</span>
@@ -166,128 +158,114 @@
   <!-- 3-Step Selection Grid -->
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Step 1: Data File -->
-    <div class="bg-white border border-[#E8E7E3] p-5 flex flex-col justify-between shadow-xs">
-      <div>
-        <div class="flex items-center justify-between text-xs text-[#78716C] mb-3 font-mono">
-          <span class="font-bold text-[#1C1917]">ШАГ 1. ФАЙЛ С ДАННЫМИ</span>
-          <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-1.5 py-0.5">XLSX / ODS / DOCX / ODT / CSV</span>
-        </div>
+    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs">
+      <div class="flex items-center justify-between text-xs text-[#78716C] mb-3 font-mono">
+        <span class="font-bold text-[#1C1917]">ШАГ 1. ФАЙЛ С ДАННЫМИ</span>
+        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-1.5 py-0.5">XLSX / ODS / DOCX / ODT / CSV</span>
+      </div>
 
-        {#if !restoreState.dataPath}
-          <div
-            id="restore-data-dropzone"
-            class="border border-dashed border-[#D6D3D1] hover:border-[#1C1917] p-5 text-center transition cursor-pointer bg-[#FAF9F5]"
-            role="button"
-            tabindex="0"
-            onclick={() => restoreState.selectDataFile()}
-            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') restoreState.selectDataFile(); }}
-            ondragover={(e) => e.preventDefault()}
-            ondrop={(e) => {
-              e.preventDefault();
-              const files = e.dataTransfer?.files;
-              if (files && files.length > 0 && files[0]) {
-                const path = (files[0] as any)?.path;
-                if (path && (path.includes('/') || path.includes('\\'))) {
-                  restoreState.loadDataFile(path);
-                }
+      {#if !restoreState.dataPath}
+        <div
+          id="restore-data-dropzone"
+          class="border border-dashed border-[#D6D3D1] hover:border-[#1C1917] p-5 text-center transition cursor-pointer bg-[#FAF9F5]"
+          role="button"
+          tabindex="0"
+          onclick={() => restoreState.selectDataFile()}
+          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') restoreState.selectDataFile(); }}
+          ondragover={(e) => e.preventDefault()}
+          ondrop={(e) => {
+            e.preventDefault();
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0 && files[0]) {
+              const path = (files[0] as any)?.path;
+              if (path && (path.includes('/') || path.includes('\\'))) {
+                restoreState.loadDataFile(path);
               }
-            }}
+            }
+          }}
+        >
+          <div class="text-2xl mb-1">📄</div>
+          <div class="font-semibold text-xs text-[#1C1917]">Выберите файл с данными</div>
+          <button
+            type="button"
+            class="mt-3 px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] shadow-xs cursor-pointer"
           >
-            <div class="text-2xl mb-1">📄</div>
-            <div class="font-semibold text-xs text-[#1C1917]">Выберите файл с данными</div>
-            <div class="text-[11px] text-[#78716C] mt-1">.xlsx, .ods, .docx, .odt, .csv с обработанными данными</div>
+            Выбрать файл
+          </button>
+        </div>
+      {:else}
+        <div id="restore-data-info" class="p-3 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-[#1C1917] truncate max-w-[180px]" id="restore-data-name" title={dataFileName}>
+              {dataFileName}
+            </span>
+            <span class="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.5" id="restore-data-ext">
+              {dataFileExt}
+            </span>
+          </div>
+          <div class="text-[11px] text-[#78716C] truncate" id="restore-data-path" title={restoreState.dataPath}>
+            {restoreState.dataPath}
+          </div>
+          <div class="flex items-center justify-between pt-1">
+            <span class="text-[11px] text-[#57534E]" id="restore-data-size">
+              {dataStatsText}
+            </span>
             <button
               type="button"
-              class="mt-3 px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] shadow-xs cursor-pointer"
+              onclick={() => restoreState.selectDataFile()}
+              class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer"
             >
-              Выбрать файл данных
+              Сменить файл
             </button>
           </div>
-        {:else}
-          <div id="restore-data-info" class="p-3 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono space-y-1">
-            <div class="flex items-center justify-between">
-              <span class="font-bold text-[#1C1917] truncate max-w-[180px]" id="restore-data-name" title={dataFileName}>
-                {dataFileName}
-              </span>
-              <span class="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.5" id="restore-data-ext">
-                {dataFileExt}
-              </span>
-            </div>
-            <div class="text-[11px] text-[#78716C] truncate" id="restore-data-path" title={restoreState.dataPath}>
-              {restoreState.dataPath}
-            </div>
-            <div class="flex items-center justify-between pt-1">
-              <span class="text-[11px] text-[#57534E]" id="restore-data-size">
-                {dataStatsText}
-              </span>
-              <button
-                type="button"
-                onclick={() => restoreState.selectDataFile()}
-                class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer"
-              >
-                Сменить файл
-              </button>
-            </div>
-          </div>
-        {/if}
-      </div>
-
-      <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-[11px] text-[#78716C]">
-        Новые колонки (Score, Сегмент и др.), добавленные подрядчиком, будут сохранены.
-      </div>
+        </div>
+      {/if}
     </div>
 
     <!-- Step 2: Key File -->
-    <div class="bg-white border border-[#E8E7E3] p-5 flex flex-col justify-between shadow-xs">
-      <div>
-        <div class="flex items-center justify-between text-xs text-[#78716C] mb-3 font-mono">
-          <span class="font-bold text-[#1C1917]">ШАГ 2. ФАЙЛ-КЛЮЧ</span>
-          <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-1.5 py-0.5">.DEPMAP</span>
-        </div>
+    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs">
+      <div class="flex items-center justify-between text-xs text-[#78716C] mb-3 font-mono">
+        <span class="font-bold text-[#1C1917]">ШАГ 2. ФАЙЛ-КЛЮЧ</span>
+        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-1.5 py-0.5">.DEPMAP</span>
+      </div>
 
-        {#if !restoreState.keyPath}
-          <div
-            id="restore-key-dropzone"
-            class="border border-dashed border-[#D6D3D1] hover:border-[#1C1917] p-5 text-center transition cursor-pointer bg-[#FAF9F5]"
-            role="button"
-            tabindex="0"
-            onclick={() => restoreState.selectKeyFile()}
-            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') restoreState.selectKeyFile(); }}
-            ondragover={(e) => e.preventDefault()}
-            ondrop={(e) => {
-              e.preventDefault();
-              const files = e.dataTransfer?.files;
-              if (files && files.length > 0 && files[0]) {
-                const path = (files[0] as any)?.path;
-                if (path && (path.includes('/') || path.includes('\\'))) {
-                  restoreState.loadKeyFile(path);
-                }
+      {#if !restoreState.keyPath}
+        <div
+          id="restore-key-dropzone"
+          class="border border-dashed border-[#D6D3D1] hover:border-[#1C1917] p-5 text-center transition cursor-pointer bg-[#FAF9F5]"
+          role="button"
+          tabindex="0"
+          onclick={() => restoreState.selectKeyFile()}
+          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') restoreState.selectKeyFile(); }}
+          ondragover={(e) => e.preventDefault()}
+          ondrop={(e) => {
+            e.preventDefault();
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0 && files[0]) {
+              const path = (files[0] as any)?.path;
+              if (path && (path.includes('/') || path.includes('\\'))) {
+                restoreState.loadKeyFile(path);
               }
-            }}
+            }
+          }}
+        >
+          <div class="text-2xl mb-1">🔑</div>
+          <div class="font-semibold text-xs text-[#1C1917]">Выберите файл-ключ</div>
+          <button
+            type="button"
+            class="mt-3 px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] shadow-xs cursor-pointer"
           >
-            <div class="text-2xl mb-1">🔑</div>
-            <div class="font-semibold text-xs text-[#1C1917]">Выберите файл-ключ</div>
-            <div class="text-[11px] text-[#78716C] mt-1">.depmap, сохраненный при деперсонализации</div>
-            <button
-              type="button"
-              class="mt-3 px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] shadow-xs cursor-pointer"
-            >
-              Выбрать ключ (.depmap)
-            </button>
-          </div>
-        {:else}
-          <KeyInfoCard
-            keyInfo={restoreState.keyInfo}
-            keyPath={restoreState.keyPath}
-            isInspecting={restoreState.isInspectingKey}
-            onReselect={() => restoreState.selectKeyFile()}
-          />
-        {/if}
-      </div>
-
-      <div class="mt-4 pt-3 border-t border-[#F0EFEB] text-[11px] text-[#78716C]">
-        AES-256-GCM шифрование с контролем целостности и защитой от подделки.
-      </div>
+            Выбрать ключ
+          </button>
+        </div>
+      {:else}
+        <KeyInfoCard
+          keyInfo={restoreState.keyInfo}
+          keyPath={restoreState.keyPath}
+          isInspecting={restoreState.isInspectingKey}
+          onReselect={() => restoreState.selectKeyFile()}
+        />
+      {/if}
     </div>
 
     <!-- Step 3: Password & Summary -->
@@ -331,22 +309,6 @@
           <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">🔓</span>
           <span>Восстановить данные</span>
         </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Restoration Guidelines Card -->
-  <div class="bg-white border border-[#E8E7E3] p-6 shadow-xs">
-    <div class="flex items-start space-x-3.5">
-      <span class="text-xl">🛡️</span>
-      <div class="text-xs text-[#78716C] space-y-1 leading-relaxed">
-        <div class="font-semibold text-sm text-[#1C1917]">Как работает обратная персонализация</div>
-        <p>
-          Программа сканирует строки таблицы и сопоставляет деперсонализированные значения с зашифрованным ключом <span class="font-mono text-[#1C1917]">.depmap</span>, возвращая исходные персональные данные (ФИО, СНИЛС, паспорта, телефоны).
-        </p>
-        <p>
-          Все формулы, стили оформления ячеек и любые новые столбцы, добавленные подрядчиками (скоринги, сегменты, расчетные метрики), остаются в сохранности.
-        </p>
       </div>
     </div>
   </div>
