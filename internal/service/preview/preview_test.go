@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/xuri/excelize/v2"
+	"golang.org/x/text/encoding/charmap"
 
 	"dep_service/internal/domain"
 	"dep_service/internal/service/preview"
@@ -239,6 +240,39 @@ func TestGetCSVRows_DelimiterDetection(t *testing.T) {
 	}
 	if len(rowsTab[0].Before) != 3 {
 		t.Fatalf("expected 3 columns, got %d", len(rowsTab[0].Before))
+	}
+}
+
+func TestGetSheetRows_Windows1251(t *testing.T) {
+	tempDir := t.TempDir()
+	csvContent := "ФИО,Телефон,Город\nИванов Иван Иванович,+79991234567,Москва\n"
+	win1251Bytes, err := charmap.Windows1251.NewEncoder().Bytes([]byte(csvContent))
+	if err != nil {
+		t.Fatalf("failed to encode windows-1251: %v", err)
+	}
+	csvPath := filepath.Join(tempDir, "win1251_preview.csv")
+	if err := os.WriteFile(csvPath, win1251Bytes, 0644); err != nil {
+		t.Fatalf("failed to write csv: %v", err)
+	}
+
+	svc := preview.New()
+	rows, err := svc.GetSheetRows(context.Background(), csvPath, "", 0, 10, "salt-test", nil)
+	if err != nil {
+		t.Fatalf("failed to get sheet rows for Windows-1251: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	// Verify Before row has Russian Cyrillic decoded from Windows-1251 without question marks
+	if rows[0].Before[0] != "Иванов Иван Иванович" {
+		t.Errorf("expected original 'Иванов Иван Иванович', got %q", rows[0].Before[0])
+	}
+	if rows[0].Before[2] != "Москва" {
+		t.Errorf("expected original 'Москва', got %q", rows[0].Before[2])
+	}
+	// Verify After row has anonymized Russian FIO without question marks
+	if strings.Contains(rows[0].After[0], "?") || strings.Contains(rows[0].After[0], "\ufffd") {
+		t.Errorf("anonymized FIO contains question marks: %q", rows[0].After[0])
 	}
 }
 

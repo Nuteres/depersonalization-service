@@ -1,8 +1,6 @@
 package keymanager
 
 import (
-	"bufio"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +11,7 @@ import (
 
 	"dep_service/internal/domain"
 	"dep_service/pkg/depmap"
+	"dep_service/pkg/formats"
 )
 
 // KeyManager handles .depmap key container operations: inspection, creation, and mapping extraction.
@@ -105,24 +104,6 @@ func (km *KeyManager) CreateContainer(keyPath, password, origFileName string, ma
 	return dm.SaveFile(keyPath, password)
 }
 
-func detectCSVDelimiter(r *bufio.Reader) rune {
-	comma := ','
-	peekBytes, _ := r.Peek(2048)
-	peekStr := strings.TrimPrefix(string(peekBytes), "\ufeff")
-	firstLine := peekStr
-	if idx := strings.IndexAny(peekStr, "\r\n"); idx != -1 {
-		firstLine = peekStr[:idx]
-	}
-	semiCount := strings.Count(firstLine, ";")
-	tabCount := strings.Count(firstLine, "\t")
-	commaCount := strings.Count(firstLine, ",")
-	if semiCount > commaCount && semiCount >= tabCount {
-		comma = ';'
-	} else if tabCount > commaCount && tabCount > semiCount {
-		comma = '\t'
-	}
-	return comma
-}
 
 func extractCSVMappings(inputPath, outputPath string, dm *depmap.DepMap) error {
 	inFile, err := os.Open(inputPath)
@@ -137,21 +118,15 @@ func extractCSVMappings(inputPath, outputPath string, dm *depmap.DepMap) error {
 	}
 	defer outFile.Close()
 
-	inBuf := bufio.NewReader(inFile)
-	outBuf := bufio.NewReader(outFile)
+	inReader, _, err := formats.NewEncodingAwareCSVReader(inFile, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open input csv reader: %w", err)
+	}
 
-	inComma := detectCSVDelimiter(inBuf)
-	outComma := detectCSVDelimiter(outBuf)
-
-	inReader := csv.NewReader(inBuf)
-	inReader.Comma = inComma
-	inReader.FieldsPerRecord = -1
-	inReader.LazyQuotes = true
-
-	outReader := csv.NewReader(outBuf)
-	outReader.Comma = outComma
-	outReader.FieldsPerRecord = -1
-	outReader.LazyQuotes = true
+	outReader, _, err := formats.NewEncodingAwareCSVReader(outFile, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open output csv reader: %w", err)
+	}
 
 	for {
 		inRec, inErr := inReader.Read()

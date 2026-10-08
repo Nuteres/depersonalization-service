@@ -384,7 +384,7 @@ func TestDesktopApp_ProcessFileWithSheets_ShuffleRows(t *testing.T) {
 		t.Fatalf("failed reading output: %v", err)
 	}
 
-	reader := csv.NewReader(strings.NewReader(string(outData)))
+	reader := csv.NewReader(strings.NewReader(strings.TrimPrefix(string(outData), "\ufeff")))
 	rows, err := reader.ReadAll()
 	if err != nil {
 		t.Fatalf("failed reading csv: %v", err)

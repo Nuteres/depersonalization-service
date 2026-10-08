@@ -38,51 +38,33 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		ctx = context.Background()
 	}
 
-	bufReader := bufio.NewReader(r)
-
-	// Determine delimiter
-	comma := ','
-	hasExplicitDelimiter := false
+	var explicitDelim rune
 	if options != nil {
 		if delim, ok := options["delimiter"].(rune); ok {
-			comma = delim
-			hasExplicitDelimiter = true
+			explicitDelim = delim
 		} else if delimStr, ok := options["delimiter"].(string); ok && len(delimStr) > 0 {
-			comma = []rune(delimStr)[0]
-			hasExplicitDelimiter = true
+			explicitDelim = []rune(delimStr)[0]
 		} else if c, ok := options["comma"].(rune); ok {
-			comma = c
-			hasExplicitDelimiter = true
+			explicitDelim = c
 		}
 	}
 
-	// Auto-detect delimiter if not explicitly specified (e.g. ';' or '\t')
-	if !hasExplicitDelimiter {
-		peekBytes, err := bufReader.Peek(2048)
-		if err == nil || errors.Is(err, io.EOF) {
-			peekStr := strings.TrimPrefix(string(peekBytes), "\ufeff")
-			firstLine := peekStr
-			if idx := strings.IndexAny(peekStr, "\r\n"); idx != -1 {
-				firstLine = peekStr[:idx]
-			}
-			semiCount := strings.Count(firstLine, ";")
-			tabCount := strings.Count(firstLine, "\t")
-			commaCount := strings.Count(firstLine, ",")
-			if semiCount > commaCount && semiCount >= tabCount {
-				comma = ';'
-			} else if tabCount > commaCount && tabCount > semiCount {
-				comma = '\t'
-			}
-		}
+	csvReader, comma, err := NewEncodingAwareCSVReader(r, explicitDelim)
+	if err != nil {
+		return fmt.Errorf("failed to initialize csv reader: %w", err)
 	}
-
-	csvReader := csv.NewReader(bufReader)
-	csvReader.Comma = comma
-	csvReader.FieldsPerRecord = -1
-	csvReader.LazyQuotes = true
 
 	bufWriter := bufio.NewWriter(w)
 	defer bufWriter.Flush()
+
+	// Write UTF-8 BOM if requested (e.g. by desktop processor for spreadsheet compatibility)
+	if options != nil {
+		if writeBOM, ok := options["write_bom"].(bool); ok && writeBOM {
+			if err := WriteUTF8BOM(bufWriter); err != nil {
+				return fmt.Errorf("failed to write UTF-8 BOM: %w", err)
+			}
+		}
+	}
 
 	csvWriter := csv.NewWriter(bufWriter)
 	csvWriter.Comma = comma

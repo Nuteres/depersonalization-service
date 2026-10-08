@@ -1,11 +1,9 @@
 package inspector
 
 import (
-	"bufio"
 	"bytes"
 	"compress/zlib"
 	"context"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
@@ -153,29 +151,10 @@ func inspectCSV(ctx context.Context, path string) (*domain.FileInfo, error) {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
 
-	bufReader := bufio.NewReader(file)
-
-	// Auto-detect delimiter
-	comma := ','
-	peekBytes, _ := bufReader.Peek(2048)
-	peekStr := strings.TrimPrefix(string(peekBytes), "\ufeff")
-	firstLine := peekStr
-	if idx := strings.IndexAny(peekStr, "\r\n"); idx != -1 {
-		firstLine = peekStr[:idx]
+	csvReader, _, err := formats.NewEncodingAwareCSVReader(file, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open csv reader: %w", err)
 	}
-	semiCount := strings.Count(firstLine, ";")
-	tabCount := strings.Count(firstLine, "\t")
-	commaCount := strings.Count(firstLine, ",")
-	if semiCount > commaCount && semiCount >= tabCount {
-		comma = ';'
-	} else if tabCount > commaCount && tabCount > semiCount {
-		comma = '\t'
-	}
-
-	csvReader := csv.NewReader(bufReader)
-	csvReader.Comma = comma
-	csvReader.FieldsPerRecord = -1
-	csvReader.LazyQuotes = true
 
 	var sample [][]string
 	for len(sample) < 40 {

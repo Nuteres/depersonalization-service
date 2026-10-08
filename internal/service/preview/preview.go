@@ -1,9 +1,7 @@
 package preview
 
 import (
-	"bufio"
 	"context"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
@@ -206,24 +204,6 @@ func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, o
 	return result, nil
 }
 
-func detectCSVDelimiter(r *bufio.Reader) rune {
-	comma := ','
-	peekBytes, _ := r.Peek(2048)
-	peekStr := strings.TrimPrefix(string(peekBytes), "\ufeff")
-	firstLine := peekStr
-	if idx := strings.IndexAny(peekStr, "\r\n"); idx != -1 {
-		firstLine = peekStr[:idx]
-	}
-	semiCount := strings.Count(firstLine, ";")
-	tabCount := strings.Count(firstLine, "\t")
-	commaCount := strings.Count(firstLine, ",")
-	if semiCount > commaCount && semiCount >= tabCount {
-		comma = ';'
-	} else if tabCount > commaCount && tabCount > semiCount {
-		comma = '\t'
-	}
-	return comma
-}
 
 func getCSVRows(ctx context.Context, path string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
 	if ctx != nil && ctx.Err() != nil {
@@ -236,13 +216,10 @@ func getCSVRows(ctx context.Context, path string, offset, limit int, salt string
 	}
 	defer file.Close()
 
-	bufReader := bufio.NewReader(file)
-	comma := detectCSVDelimiter(bufReader)
-
-	csvReader := csv.NewReader(bufReader)
-	csvReader.Comma = comma
-	csvReader.FieldsPerRecord = -1
-	csvReader.LazyQuotes = true
+	csvReader, comma, err := formats.NewEncodingAwareCSVReader(file, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open csv reader: %w", err)
+	}
 
 	var sample [][]string
 	for len(sample) < 40 {
@@ -278,11 +255,10 @@ func getCSVRows(ctx context.Context, path string, offset, limit int, salt string
 	if err != nil {
 		return nil, fmt.Errorf("failed to seek csv file: %w", err)
 	}
-	bufReader.Reset(file)
-	csvReader = csv.NewReader(bufReader)
-	csvReader.Comma = comma
-	csvReader.FieldsPerRecord = -1
-	csvReader.LazyQuotes = true
+	csvReader, _, err = formats.NewEncodingAwareCSVReader(file, comma)
+	if err != nil {
+		return nil, fmt.Errorf("failed to recreate csv reader: %w", err)
+	}
 
 	targetSkip := headerIdx + 1 + offset
 	currentIdx := 0

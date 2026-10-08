@@ -186,7 +186,7 @@ func TestProcessor_Process_CSV_ProgressReporting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read output file: %v", err)
 	}
-	reader := csv.NewReader(strings.NewReader(string(outBytes)))
+	reader := csv.NewReader(strings.NewReader(strings.TrimPrefix(string(outBytes), "\ufeff")))
 	rows, err := reader.ReadAll()
 	if err != nil {
 		t.Fatalf("failed to parse output csv: %v", err)
@@ -790,7 +790,7 @@ func TestProcessor_ShuffleRows(t *testing.T) {
 		t.Fatalf("failed reading output: %v", err)
 	}
 
-	reader := csv.NewReader(strings.NewReader(string(outData)))
+	reader := csv.NewReader(strings.NewReader(strings.TrimPrefix(string(outData), "\ufeff")))
 	rows, err := reader.ReadAll()
 	if err != nil {
 		t.Fatalf("failed reading output csv: %v", err)

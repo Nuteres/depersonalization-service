@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/xuri/excelize/v2"
+	"golang.org/x/text/encoding/charmap"
 
 	"dep_service/internal/domain"
 	"dep_service/internal/service/inspector"
@@ -145,6 +146,38 @@ func TestInspectCSV_SemicolonDelimiter(t *testing.T) {
 
 	if len(info.Headers) != 3 {
 		t.Errorf("expected 3 headers for semicolon CSV, got %d (%v)", len(info.Headers), info.Headers)
+	}
+}
+
+func TestInspectCSV_Windows1251(t *testing.T) {
+	tmpDir := t.TempDir()
+	csvContent := "ФИО,СНИЛС,ИНН,Department\nИванов Иван Иванович,112-233-445 95,500100732259,IT\n"
+	win1251Bytes, err := charmap.Windows1251.NewEncoder().Bytes([]byte(csvContent))
+	if err != nil {
+		t.Fatalf("failed to encode windows-1251: %v", err)
+	}
+	csvPath := filepath.Join(tmpDir, "win1251_inspect.csv")
+	if err := os.WriteFile(csvPath, win1251Bytes, 0644); err != nil {
+		t.Fatalf("failed to write csv: %v", err)
+	}
+
+	svc := inspector.New()
+	info, err := svc.Inspect(context.Background(), csvPath)
+	if err != nil {
+		t.Fatalf("failed to inspect Windows-1251 CSV: %v", err)
+	}
+
+	if len(info.Headers) != 4 {
+		t.Fatalf("expected 4 headers, got %d (%v)", len(info.Headers), info.Headers)
+	}
+	if info.Headers[0] != "ФИО" {
+		t.Errorf("expected header 'ФИО', got %q", info.Headers[0])
+	}
+	if info.Headers[3] != "Department" {
+		t.Errorf("expected header 'Department', got %q", info.Headers[3])
+	}
+	if len(info.Entities) < 3 {
+		t.Errorf("expected at least 3 detected entities from Windows-1251 CSV, got %d", len(info.Entities))
 	}
 }
 

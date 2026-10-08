@@ -102,7 +102,7 @@ func TestRestorer_Restore_CSV_Roundtrip(t *testing.T) {
 		t.Fatalf("failed to read restored file: %v", err)
 	}
 
-	if strings.TrimSpace(string(restoredBytes)) != strings.TrimSpace(origContent) {
+	if strings.TrimSpace(strings.TrimPrefix(string(restoredBytes), "\ufeff")) != strings.TrimSpace(origContent) {
 		t.Errorf("restored content mismatch:\nGot:\n%s\nExpected:\n%s", string(restoredBytes), origContent)
 	}
 }
@@ -143,7 +143,7 @@ func TestRestorer_Restore_TSV_Roundtrip(t *testing.T) {
 		t.Errorf("expected 2 restored cells, got %d", res.RestoredCells)
 	}
 	content, _ := os.ReadFile(restoredTSVPath)
-	if strings.TrimSpace(string(content)) != strings.TrimSpace(origContent) {
+	if strings.TrimSpace(strings.TrimPrefix(string(content), "\ufeff")) != strings.TrimSpace(origContent) {
 		t.Errorf("content mismatch: got %q, want %q", string(content), origContent)
 	}
 }

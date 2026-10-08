@@ -271,6 +271,7 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	switch ext {
 	case ".csv", ".tsv":
 		handler := formats.NewCSVHandler(anon)
+		options["write_bom"] = true
 		err = handler.Process(ctx, inFile, outFile, options)
 	case ".xlsx", ".xlsm", ".xltx", ".xltm":
 		handler := formats.NewExcelHandler(anon)

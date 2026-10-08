@@ -166,7 +166,7 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 		}
 		defer outFile.Close()
 
-		restoredCount, err = formats.RestoreCSV(ctx, inFile, outFile, dm)
+		restoredCount, err = formats.RestoreCSV(ctx, inFile, outFile, dm, true)
 		if err != nil {
 			_ = outFile.Close()
 			_ = os.Remove(destPath)
