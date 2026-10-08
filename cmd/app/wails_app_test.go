@@ -443,7 +443,7 @@ func TestApp_ProcessFileTo_DisabledColumns(t *testing.T) {
 
 	app := NewApp()
 	// Disable column 2 (СНИЛС)
-	res, err := app.ProcessFileTo(csvPath, outPath, "test-salt", []int{2}, false, "", "")
+	res, err := app.ProcessFileTo(csvPath, outPath, "test-salt", []int{2}, false, "", "", false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo failed: %v", err)
 	}
@@ -484,7 +484,7 @@ func TestApp_ProcessWithKeyGeneration(t *testing.T) {
 	app := NewApp()
 
 	// 1. Process with custom keyPath and password
-	res, err := app.ProcessFileTo(csvPath, outPath, "test-salt", nil, true, "secret123", keyPath)
+	res, err := app.ProcessFileTo(csvPath, outPath, "test-salt", nil, true, "secret123", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo with key gen failed: %v", err)
 	}
@@ -526,7 +526,7 @@ func TestApp_ProcessWithKeyGeneration(t *testing.T) {
 
 	// 2. Process with empty keyPath and empty password (default key path & default master key)
 	outPath2 := filepath.Join(tmpDir, "auto_key_out.csv")
-	res2, err := app.ProcessFileTo(csvPath, outPath2, "test-salt", nil, true, "", "")
+	res2, err := app.ProcessFileTo(csvPath, outPath2, "test-salt", nil, true, "", "", false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo with default key gen failed: %v", err)
 	}
@@ -564,7 +564,7 @@ func TestApp_RestoreWorkflow(t *testing.T) {
 		}
 
 		// Process with key generation
-		procRes, err := app.ProcessFileTo(csvPath, anonPath, "salt-workflow", nil, true, "pass123", keyPath)
+		procRes, err := app.ProcessFileTo(csvPath, anonPath, "salt-workflow", nil, true, "pass123", keyPath, false)
 		if err != nil {
 			t.Fatalf("ProcessFileTo failed: %v", err)
 		}
@@ -655,7 +655,7 @@ func TestApp_RestoreWorkflow(t *testing.T) {
 		_ = xl.Close()
 
 		// Process with key generation (default key path & password)
-		procRes, err := app.ProcessFileTo(xlsxPath, anonPath, "salt-excel", nil, true, "", "")
+		procRes, err := app.ProcessFileTo(xlsxPath, anonPath, "salt-excel", nil, true, "", "", false)
 		if err != nil {
 			t.Fatalf("ProcessFileTo on xlsx failed: %v", err)
 		}
@@ -900,7 +900,7 @@ func TestApp_MultiSheetExcel(t *testing.T) {
 		sheet1: {2}, // column 2: СНИЛС
 	}
 
-	procRes, err := app.ProcessFileWithSheets(xlsxPath, anonPath, "multi-salt", nil, disabledBySheet, true, "pass-multi", keyPath)
+	procRes, err := app.ProcessFileWithSheets(xlsxPath, anonPath, "multi-salt", nil, disabledBySheet, true, "pass-multi", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileWithSheets failed: %v", err)
 	}
@@ -1142,7 +1142,7 @@ func TestApp_ExpandedFormats_ODS(t *testing.T) {
 	}
 
 	// 2. ProcessFileTo (ODS -> ODS) with key generation
-	procRes, err := app.ProcessFileTo(odsPath, anonODSPath, "test-salt", nil, true, "pass123", keyPath)
+	procRes, err := app.ProcessFileTo(odsPath, anonODSPath, "test-salt", nil, true, "pass123", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo on ods failed: %v", err)
 	}
@@ -1173,7 +1173,7 @@ func TestApp_ExpandedFormats_ODS(t *testing.T) {
 	}
 
 	// 4. Export ODS to XLSX
-	exportRes, err := app.ProcessFileTo(odsPath, exportXLSXPath, "test-salt", nil, false, "", "")
+	exportRes, err := app.ProcessFileTo(odsPath, exportXLSXPath, "test-salt", nil, false, "", "", false)
 	if err != nil {
 		t.Fatalf("export ODS to XLSX failed: %v", err)
 	}
@@ -1224,7 +1224,7 @@ func TestApp_ExpandedFormats_DOCX(t *testing.T) {
 	}
 
 	// 2. ProcessFileTo with key generation
-	procRes, err := app.ProcessFileTo(docxPath, anonDocxPath, "docx-salt", nil, true, "secret", keyPath)
+	procRes, err := app.ProcessFileTo(docxPath, anonDocxPath, "docx-salt", nil, true, "secret", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo on docx failed: %v", err)
 	}
@@ -1286,7 +1286,7 @@ func TestApp_ExpandedFormats_ODT(t *testing.T) {
 	}
 
 	// 2. ProcessFileTo with key generation
-	procRes, err := app.ProcessFileTo(odtPath, anonOdtPath, "odt-salt", nil, true, "pass", keyPath)
+	procRes, err := app.ProcessFileTo(odtPath, anonOdtPath, "odt-salt", nil, true, "pass", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo on odt failed: %v", err)
 	}
@@ -1347,7 +1347,7 @@ func TestApp_ExpandedFormats_TextDisabledEntities(t *testing.T) {
 	}
 
 	// Disable FIO entity
-	procRes, err := app.ProcessFileTo(docxPath, anonDocxPath, "salt", []int{fioColIdx}, false, "", "")
+	procRes, err := app.ProcessFileTo(docxPath, anonDocxPath, "salt", []int{fioColIdx}, false, "", "", false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo with disabled entity failed: %v", err)
 	}

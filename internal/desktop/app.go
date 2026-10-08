@@ -125,12 +125,18 @@ func (a *DesktopApp) GetSheetRows(path, sheetName string, offset, limit int, sal
 
 // ProcessFile processes the input file with default output path and options.
 func (a *DesktopApp) ProcessFile(path, salt string) (*domain.ProcessResult, error) {
-	return a.ProcessFileTo(path, "", salt, nil, false, "", "")
+	return a.ProcessFileTo(path, "", salt, nil, false, "", "", false)
 }
 
 // ProcessFileTo processes the input file and writes to outPath.
-func (a *DesktopApp) ProcessFileTo(path, outPath, salt string, disabledCols []int, createKey bool, keyPassword, keyPath string, shuffleRows ...bool) (*domain.ProcessResult, error) {
-	return a.ProcessFileWithSheets(path, outPath, salt, disabledCols, nil, createKey, keyPassword, keyPath, shuffleRows...)
+func (a *DesktopApp) ProcessFileTo(
+	path, outPath, salt string,
+	disabledCols []int,
+	createKey bool,
+	keyPassword, keyPath string,
+	shuffleRows bool,
+) (*domain.ProcessResult, error) {
+	return a.ProcessFileWithSheets(path, outPath, salt, disabledCols, nil, createKey, keyPassword, keyPath, shuffleRows)
 }
 
 // ProcessFileWithSheets processes the input file with per-sheet disabled column options.
@@ -143,7 +149,7 @@ func (a *DesktopApp) ProcessFileWithSheets(
 	createKey bool,
 	keyPassword string,
 	keyPath string,
-	shuffleRows ...bool,
+	shuffleRows bool,
 ) (*domain.ProcessResult, error) {
 	ctx := a.ctx
 	if ctx == nil {
@@ -160,11 +166,6 @@ func (a *DesktopApp) ProcessFileWithSheets(
 		cancel()
 	}()
 
-	doShuffle := false
-	if len(shuffleRows) > 0 {
-		doShuffle = shuffleRows[0]
-	}
-
 	reporter := newProcessProgressReporter(a.ctx)
 	opts := domain.ProcessOptions{
 		InputPath:       path,
@@ -175,7 +176,7 @@ func (a *DesktopApp) ProcessFileWithSheets(
 		CreateKey:       createKey,
 		KeyPassword:     keyPassword,
 		KeyPath:         keyPath,
-		ShuffleRows:     doShuffle,
+		ShuffleRows:     shuffleRows,
 	}
 
 	return a.proc.Process(opCtx, opts, reporter)

@@ -209,11 +209,21 @@ export async function ProcessFileTo(
   disabledCols: number[],
   createKey: boolean,
   keyPassword: string,
-  keyPath: string
+  keyPath: string,
+  shuffleRows: boolean = false
 ): Promise<ProcessResult> {
   const app = getApp();
   if (app?.ProcessFileTo) {
-    return await app.ProcessFileTo(path, outPath, salt, disabledCols, createKey, keyPassword, keyPath);
+    return await app.ProcessFileTo(
+      path,
+      outPath,
+      salt,
+      disabledCols,
+      createKey,
+      keyPassword,
+      keyPath,
+      Boolean(shuffleRows)
+    );
   }
   const defaultKeyPath = keyPath || `${outPath || path}.depmap`;
   return {
@@ -250,11 +260,20 @@ export async function ProcessFileWithSheets(
       createKey,
       keyPassword,
       keyPath,
-      shuffleRows
+      Boolean(shuffleRows)
     );
   }
   if (app?.ProcessFileTo) {
-    return await app.ProcessFileTo(path, outPath, salt, disabledCols, createKey, keyPassword, keyPath, shuffleRows);
+    return await app.ProcessFileTo(
+      path,
+      outPath,
+      salt,
+      disabledCols,
+      createKey,
+      keyPassword,
+      keyPath,
+      Boolean(shuffleRows)
+    );
   }
   const defaultKeyPath = keyPath || `${outPath || path}.depmap`;
   return {

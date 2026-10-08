@@ -3,9 +3,11 @@ package desktop_test
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -109,7 +111,7 @@ func TestDesktopApp_ProcessAndRestore(t *testing.T) {
 	app := newTestApp()
 
 	// Process with key creation
-	procRes, err := app.ProcessFileTo(csvPath, outPath, "test-salt", nil, true, "secret123", keyPath)
+	procRes, err := app.ProcessFileTo(csvPath, outPath, "test-salt", nil, true, "secret123", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo failed: %v", err)
 	}
@@ -192,7 +194,7 @@ func TestDesktopApp_Cancellation(t *testing.T) {
 		app.CancelCurrentOperation()
 	}()
 
-	_, procErr = app.ProcessFileTo(csvPath, outPath, "test-salt", nil, false, "", "")
+	_, procErr = app.ProcessFileTo(csvPath, outPath, "test-salt", nil, false, "", "", false)
 	wg.Wait()
 
 	if procErr == nil {
@@ -289,7 +291,7 @@ func TestDesktopApp_AuditIntegration(t *testing.T) {
 	}
 
 	// 1. Process
-	procRes, err := app.ProcessFileTo(csvPath, outPath, "audit-salt", nil, true, "secret", keyPath)
+	procRes, err := app.ProcessFileTo(csvPath, outPath, "audit-salt", nil, true, "secret", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo failed: %v", err)
 	}
@@ -411,6 +413,43 @@ func TestDesktopApp_ProcessFileWithSheets_ShuffleRows(t *testing.T) {
 	}
 	if sequential {
 		t.Errorf("expected shuffled IDs, got sequential: %v", shuffledIDs)
+	}
+}
+
+func TestDesktopApp_WailsArgumentTypes(t *testing.T) {
+	appType := reflect.TypeOf(&desktop.DesktopApp{})
+
+	// Test ProcessFileWithSheets: 9th arg must be bool for Wails JSON unmarshaling
+	m, ok := appType.MethodByName("ProcessFileWithSheets")
+	if !ok {
+		t.Fatalf("ProcessFileWithSheets not found on DesktopApp")
+	}
+	if m.Type.NumIn() != 10 {
+		t.Fatalf("expected 10 inputs (including receiver), got %d", m.Type.NumIn())
+	}
+	lastParam := m.Type.In(9)
+	if lastParam.Kind() != reflect.Bool {
+		t.Errorf("expected 9th parameter to be bool for Wails RPC compatibility, got %v", lastParam)
+	}
+
+	// Verify json.Unmarshal into the parameter type succeeds when passed a boolean JSON value
+	rawJSON := []byte("false")
+	val := reflect.New(lastParam).Interface()
+	if err := json.Unmarshal(rawJSON, val); err != nil {
+		t.Errorf("failed to unmarshal JSON bool into method parameter type: %v", err)
+	}
+
+	// Test ProcessFileTo: 8th arg must be bool
+	mTo, ok := appType.MethodByName("ProcessFileTo")
+	if !ok {
+		t.Fatalf("ProcessFileTo not found on DesktopApp")
+	}
+	if mTo.Type.NumIn() != 9 {
+		t.Fatalf("expected 9 inputs (including receiver), got %d", mTo.Type.NumIn())
+	}
+	lastParamTo := mTo.Type.In(8)
+	if lastParamTo.Kind() != reflect.Bool {
+		t.Errorf("expected last parameter of ProcessFileTo to be bool, got %v", lastParamTo)
 	}
 }
 
