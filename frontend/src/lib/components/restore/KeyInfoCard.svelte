@@ -29,37 +29,42 @@
   });
 </script>
 
-<div id="restore-key-info" class="p-3 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono space-y-1">
-  <div class="flex items-center justify-between">
-    <span class="font-bold text-[#1C1917] truncate max-w-[170px]" id="restore-key-name" title={keyFileName}>
-      {keyFileName}
-    </span>
-    <div class="flex items-center gap-1.5 shrink-0">
-      <span id="restore-key-status-badge" class={badgeClass}>
-        {badgeText}
-      </span>
-      {#if onClear}
-        <button
-          type="button"
-          id="btn-remove-key-file"
-          onclick={onClear}
-          class="text-[#A8A29E] hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition cursor-pointer"
-          title="Удалить прикрепленный ключ"
-          aria-label="Удалить прикрепленный ключ"
-        >
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      {/if}
+<div id="restore-key-info" class="flex-1 flex flex-col justify-between p-4 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono">
+  <div>
+    <div class="flex items-start justify-between gap-2 mb-2">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="text-base shrink-0 select-none">🔑</span>
+        <span class="font-bold text-[#1C1917] truncate" id="restore-key-name" title={keyFileName}>
+          {keyFileName}
+        </span>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <span id="restore-key-status-badge" class={badgeClass}>
+          {badgeText}
+        </span>
+        {#if onClear}
+          <button
+            type="button"
+            id="btn-remove-key-file"
+            onclick={onClear}
+            class="text-[#A8A29E] hover:text-rose-600 hover:bg-rose-50 p-1 rounded transition cursor-pointer"
+            title="Удалить прикрепленный ключ"
+            aria-label="Удалить прикрепленный ключ"
+          >
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        {/if}
+      </div>
+    </div>
+
+    <div class="text-[11px] text-[#78716C] break-all line-clamp-2 mb-2 font-sans" id="restore-key-path" title={keyPath}>
+      {keyPath}
     </div>
   </div>
 
-  <div class="text-[11px] text-[#78716C] truncate" id="restore-key-path" title={keyPath}>
-    {keyPath}
-  </div>
-
-  <div class="flex items-center justify-between pt-1">
+  <div class="pt-3 border-t border-[#E8E7E3] flex items-center justify-between">
     <span class="text-[11px] text-[#57534E]" id="restore-key-meta">
       {#if isValid && keyInfo}
         {keyInfo.recordsCount.toLocaleString('ru-RU')} записей

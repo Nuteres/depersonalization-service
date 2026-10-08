@@ -28,6 +28,16 @@
     !!(restoreState.dataPath && restoreState.keyInfo && restoreState.keyInfo.valid)
   );
 
+  let showPassword = $state(false);
+
+  const isPasswordError = $derived(
+    !!(restoreState.keyPath && restoreState.keyInfo && !restoreState.keyInfo.valid && restoreState.password)
+  );
+
+  const isKeyValid = $derived(
+    !!(restoreState.keyInfo && restoreState.keyInfo.valid)
+  );
+
   const statusInfo = $derived.by(() => {
     if (isReady) {
       return {
@@ -156,158 +166,179 @@
   </div>
 
   <!-- 3-Step Selection Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
     <!-- Step 1: Data File -->
-    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs">
-      <div class="flex items-center justify-between text-xs text-[#78716C] mb-3 font-mono">
-        <span class="font-bold text-[#1C1917]">ШАГ 1. ФАЙЛ С ДАННЫМИ</span>
-        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-1.5 py-0.5">XLSX / ODS / DOCX / ODT / CSV</span>
+    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col h-full min-h-[250px]">
+      <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 font-mono h-6 shrink-0">
+        <span class="font-bold text-[#1C1917]">ШАГ 1. ФАЙЛ ДАННЫХ</span>
+        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C]">XLSX, CSV, DOCX</span>
       </div>
 
-      {#if !restoreState.dataPath}
-        <div
-          id="restore-data-dropzone"
-          class="border border-dashed border-[#D6D3D1] hover:border-[#1C1917] p-5 text-center transition cursor-pointer bg-[#FAF9F5]"
-          role="button"
-          tabindex="0"
-          onclick={() => restoreState.selectDataFile()}
-          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') restoreState.selectDataFile(); }}
-          ondragover={(e) => e.preventDefault()}
-          ondrop={(e) => {
-            e.preventDefault();
-            const files = e.dataTransfer?.files;
-            if (files && files.length > 0 && files[0]) {
-              const path = (files[0] as any)?.path;
-              if (path && (path.includes('/') || path.includes('\\'))) {
-                restoreState.loadDataFile(path);
+      <div class="flex-1 flex flex-col">
+        {#if !restoreState.dataPath}
+          <div
+            id="restore-data-dropzone"
+            class="flex-1 flex flex-col items-center justify-center p-6 text-center border border-dashed border-[#D6D3D1] hover:border-[#1C1917] bg-[#FAF9F5] hover:bg-stone-50 transition cursor-pointer select-none group"
+            role="button"
+            tabindex="0"
+            onclick={() => restoreState.selectDataFile()}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') restoreState.selectDataFile(); }}
+            ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }}
+            ondrop={(e) => {
+              e.preventDefault();
+              const files = e.dataTransfer?.files;
+              if (files && files.length > 0 && files[0]) {
+                const path = (files[0] as any)?.path;
+                if (path && (path.includes('/') || path.includes('\\'))) {
+                  restoreState.loadDataFile(path);
+                }
               }
-            }
-          }}
-        >
-          <div class="text-2xl mb-1">📄</div>
-          <div class="font-semibold text-xs text-[#1C1917]">Выберите файл с данными</div>
-          <button
-            type="button"
-            class="mt-3 px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] shadow-xs cursor-pointer"
+            }}
           >
-            Выбрать файл
-          </button>
-        </div>
-      {:else}
-        <div id="restore-data-info" class="p-3 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono space-y-1">
-          <div class="flex items-center justify-between">
-            <span class="font-bold text-[#1C1917] truncate max-w-[170px]" id="restore-data-name" title={dataFileName}>
-              {dataFileName}
-            </span>
-            <div class="flex items-center gap-1.5 shrink-0">
-              <span class="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.5" id="restore-data-ext">
-                {dataFileExt}
+            <div class="text-3xl mb-1.5 select-none transition group-hover:scale-105">📄</div>
+            <div class="font-semibold text-xs text-[#1C1917]">Выберите файл с данными</div>
+            <div class="text-[11px] text-[#A8A29E] mt-0.5 mb-3">или перетащите сюда</div>
+            <button
+              type="button"
+              onclick={(e) => {
+                e.stopPropagation();
+                restoreState.selectDataFile();
+              }}
+              class="px-3.5 py-1.5 bg-white border border-[#E8E7E3] group-hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] shadow-2xs hover:shadow-xs transition cursor-pointer"
+            >
+              Выбрать файл
+            </button>
+          </div>
+        {:else}
+          <div id="restore-data-info" class="flex-1 flex flex-col justify-between p-4 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono">
+            <div>
+              <div class="flex items-start justify-between gap-2 mb-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-base shrink-0 select-none">📄</span>
+                  <span class="font-bold text-[#1C1917] truncate" id="restore-data-name" title={dataFileName}>
+                    {dataFileName}
+                  </span>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span class="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5" id="restore-data-ext">
+                    {dataFileExt}
+                  </span>
+                  <button
+                    type="button"
+                    id="btn-remove-data-file"
+                    onclick={() => restoreState.clearDataFile()}
+                    class="text-[#A8A29E] hover:text-rose-600 hover:bg-rose-50 p-1 rounded transition cursor-pointer"
+                    title="Удалить прикрепленный файл"
+                    aria-label="Удалить прикрепленный файл"
+                  >
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="text-[11px] text-[#78716C] break-all line-clamp-2 mb-2 font-sans" id="restore-data-path" title={restoreState.dataPath}>
+                {restoreState.dataPath}
+              </div>
+            </div>
+
+            <div class="pt-3 border-t border-[#E8E7E3] flex items-center justify-between">
+              <span class="text-[11px] text-[#57534E]" id="restore-data-size">
+                {dataStatsText}
               </span>
-              <button
-                type="button"
-                id="btn-remove-data-file"
-                onclick={() => restoreState.clearDataFile()}
-                class="text-[#A8A29E] hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded transition cursor-pointer"
-                title="Удалить прикрепленный файл"
-                aria-label="Удалить прикрепленный файл"
-              >
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  onclick={() => restoreState.selectDataFile()}
+                  class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer"
+                >
+                  Сменить
+                </button>
+                <span class="text-[#D6D3D1]">|</span>
+                <button
+                  type="button"
+                  id="btn-clear-data-text"
+                  onclick={() => restoreState.clearDataFile()}
+                  class="text-[11px] text-[#78716C] hover:text-rose-600 hover:underline cursor-pointer"
+                >
+                  Удалить
+                </button>
+              </div>
             </div>
           </div>
-          <div class="text-[11px] text-[#78716C] truncate" id="restore-data-path" title={restoreState.dataPath}>
-            {restoreState.dataPath}
-          </div>
-          <div class="flex items-center justify-between pt-1">
-            <span class="text-[11px] text-[#57534E]" id="restore-data-size">
-              {dataStatsText}
-            </span>
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                onclick={() => restoreState.selectDataFile()}
-                class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer"
-              >
-                Сменить
-              </button>
-              <span class="text-[#D6D3D1]">|</span>
-              <button
-                type="button"
-                id="btn-clear-data-text"
-                onclick={() => restoreState.clearDataFile()}
-                class="text-[11px] text-[#78716C] hover:text-rose-600 hover:underline cursor-pointer"
-              >
-                Удалить
-              </button>
-            </div>
-          </div>
-        </div>
-      {/if}
+        {/if}
+      </div>
     </div>
 
     <!-- Step 2: Key File -->
-    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs">
-      <div class="flex items-center justify-between text-xs text-[#78716C] mb-3 font-mono">
+    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col h-full min-h-[250px]">
+      <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 font-mono h-6 shrink-0">
         <span class="font-bold text-[#1C1917]">ШАГ 2. ФАЙЛ-КЛЮЧ</span>
-        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-1.5 py-0.5">.DEPMAP</span>
+        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C]">.DEPMAP</span>
       </div>
 
-      {#if !restoreState.keyPath}
-        <div
-          id="restore-key-dropzone"
-          class="border border-dashed border-[#D6D3D1] hover:border-[#1C1917] p-5 text-center transition cursor-pointer bg-[#FAF9F5]"
-          role="button"
-          tabindex="0"
-          onclick={() => restoreState.selectKeyFile()}
-          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') restoreState.selectKeyFile(); }}
-          ondragover={(e) => e.preventDefault()}
-          ondrop={(e) => {
-            e.preventDefault();
-            const files = e.dataTransfer?.files;
-            if (files && files.length > 0 && files[0]) {
-              const path = (files[0] as any)?.path;
-              if (path && (path.includes('/') || path.includes('\\'))) {
-                restoreState.loadKeyFile(path);
+      <div class="flex-1 flex flex-col">
+        {#if !restoreState.keyPath}
+          <div
+            id="restore-key-dropzone"
+            class="flex-1 flex flex-col items-center justify-center p-6 text-center border border-dashed border-[#D6D3D1] hover:border-[#1C1917] bg-[#FAF9F5] hover:bg-stone-50 transition cursor-pointer select-none group"
+            role="button"
+            tabindex="0"
+            onclick={() => restoreState.selectKeyFile()}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') restoreState.selectKeyFile(); }}
+            ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }}
+            ondrop={(e) => {
+              e.preventDefault();
+              const files = e.dataTransfer?.files;
+              if (files && files.length > 0 && files[0]) {
+                const path = (files[0] as any)?.path;
+                if (path && (path.includes('/') || path.includes('\\'))) {
+                  restoreState.loadKeyFile(path);
+                }
               }
-            }
-          }}
-        >
-          <div class="text-2xl mb-1">🔑</div>
-          <div class="font-semibold text-xs text-[#1C1917]">Выберите файл-ключ</div>
-          <button
-            type="button"
-            class="mt-3 px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] shadow-xs cursor-pointer"
+            }}
           >
-            Выбрать ключ
-          </button>
-        </div>
-      {:else}
-        <KeyInfoCard
-          keyInfo={restoreState.keyInfo}
-          keyPath={restoreState.keyPath}
-          isInspecting={restoreState.isInspectingKey}
-          onReselect={() => restoreState.selectKeyFile()}
-          onClear={() => restoreState.clearKeyFile()}
-        />
-      {/if}
+            <div class="text-3xl mb-1.5 select-none transition group-hover:scale-105">🔑</div>
+            <div class="font-semibold text-xs text-[#1C1917]">Выберите файл-ключ</div>
+            <div class="text-[11px] text-[#A8A29E] mt-0.5 mb-3">или перетащите сюда</div>
+            <button
+              type="button"
+              onclick={(e) => {
+                e.stopPropagation();
+                restoreState.selectKeyFile();
+              }}
+              class="px-3.5 py-1.5 bg-white border border-[#E8E7E3] group-hover:border-[#1C1917] text-xs font-semibold text-[#1C1917] shadow-2xs hover:shadow-xs transition cursor-pointer"
+            >
+              Выбрать ключ
+            </button>
+          </div>
+        {:else}
+          <KeyInfoCard
+            keyInfo={restoreState.keyInfo}
+            keyPath={restoreState.keyPath}
+            isInspecting={restoreState.isInspectingKey}
+            onReselect={() => restoreState.selectKeyFile()}
+            onClear={() => restoreState.clearKeyFile()}
+          />
+        {/if}
+      </div>
     </div>
 
-    <!-- Step 3: Password & Summary -->
-    <div class="bg-white border border-[#E8E7E3] p-5 flex flex-col justify-between shadow-xs">
-      <div>
-        <div class="flex items-center justify-between text-xs text-[#78716C] mb-3 font-mono">
-          <span class="font-bold text-[#1C1917]">ШАГ 3. ПАРОЛЬ КЛЮЧА</span>
-        </div>
+    <!-- Step 3: Password & Action -->
+    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col h-full min-h-[250px]">
+      <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 font-mono h-6 shrink-0">
+        <span class="font-bold text-[#1C1917]">ШАГ 3. ПАРОЛЬ КЛЮЧА</span>
+        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C]">AES-256</span>
+      </div>
 
-        <div class="space-y-3">
-          <p class="text-xs text-[#78716C]">
-            Введите пароль для расшифровки ключа:
-          </p>
-          <div>
+      <div class="flex-1 flex flex-col justify-between p-4 bg-[#FAF9F5] border border-[#E8E7E3] text-xs">
+        <div>
+          <label for="restore-key-password" class="block text-xs font-semibold text-[#1C1917] mb-2 font-mono">
+            Пароль для расшифровки ключа:
+          </label>
+          <div class="relative">
             <input
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               id="restore-key-password"
               placeholder="Пароль защиты ключа..."
               value={restoreState.password}
@@ -318,23 +349,59 @@
                   if (isReady) executeRestore();
                 }
               }}
-              class="w-full px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5]"
+              class="w-full pl-3 pr-8 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-white shadow-2xs transition"
             />
+            {#if restoreState.password}
+              <button
+                type="button"
+                onclick={() => showPassword = !showPassword}
+                class="absolute right-2 top-1/2 -translate-y-1/2 text-[#78716C] hover:text-[#1C1917] p-1 transition cursor-pointer"
+                title={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+              >
+                {#if showPassword}
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                  </svg>
+                {:else}
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                {/if}
+              </button>
+            {/if}
           </div>
-        </div>
-      </div>
 
-      <div class="mt-6 pt-4 border-t border-[#F0EFEB]">
-        <button
-          id="btn-restore-start"
-          type="button"
-          onclick={executeRestore}
-          disabled={!isReady}
-          class="w-full bg-[#1C1917] disabled:bg-stone-300 disabled:cursor-not-allowed hover:bg-[#292524] text-white text-xs font-semibold py-3 transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-sm cursor-pointer"
-        >
-          <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">🔓</span>
-          <span>Восстановить данные</span>
-        </button>
+          {#if isPasswordError}
+            <p class="text-[11px] text-rose-600 font-mono mt-1.5 flex items-center gap-1">
+              <span>⚠</span>
+              <span>Неверный пароль ключа</span>
+            </p>
+          {:else if isKeyValid}
+            <p class="text-[11px] text-emerald-700 font-mono mt-1.5 flex items-center gap-1">
+              <span>✔</span>
+              <span>Ключ готов к восстановлению</span>
+            </p>
+          {:else}
+            <p class="text-[11px] text-[#A8A29E] mt-1.5 font-sans">
+              {restoreState.keyPath ? 'Введите пароль для расшифровки' : 'Сначала укажите файл и ключ'}
+            </p>
+          {/if}
+        </div>
+
+        <div class="pt-3 border-t border-[#E8E7E3]">
+          <button
+            id="btn-restore-start"
+            type="button"
+            onclick={executeRestore}
+            disabled={!isReady}
+            class="w-full bg-[#1C1917] disabled:bg-[#E8E7E3] disabled:text-[#A8A29E] disabled:cursor-not-allowed hover:bg-[#292524] text-white text-xs font-semibold py-2.5 transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-2xs cursor-pointer"
+          >
+            <span class="text-xs select-none">🔓</span>
+            <span>Восстановить данные</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
