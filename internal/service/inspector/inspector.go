@@ -117,19 +117,19 @@ func columnTypeDetails(colType formats.ColumnType) (typeName, desc, action strin
 	case formats.ColPassport:
 		return "PASSPORT", "Серия и номер гражданина РФ", "Случайная серия/номер"
 	case formats.ColPhone:
-		return "PHONE", "Мобильные операторы РФ", "Псевдонимный номер"
+		return "PHONE", "Мобильные операторы РФ", "Синтетический номер"
 	case formats.ColCard:
 		return "BANK_CARD", "Банковские карты", "Карта МИР (Luhn)"
 	case formats.ColDate:
 		return "DATE", "Даты и периоды", "Смещение ±30 дней"
 	case formats.ColEmail:
-		return "EMAIL", "Корпоративная и личная почта", "Псевдонимный адрес"
+		return "EMAIL", "Корпоративная и личная почта", "Синтетический email"
 	case formats.ColAddress:
 		return "ADDRESS", "Адреса проживания и регистрации", "Синтетический адрес"
 	case formats.ColGrade:
 		return "GRADE", "Грейды и квалификационные разряды", "Синтетический грейд"
 	case formats.ColEmployeeID:
-		return "EMPLOYEE_ID", "Табельные номера сотрудников", "Псевдонимный номер"
+		return "EMPLOYEE_ID", "Табельные номера сотрудников", "Синтетический номер"
 	default:
 		return "UNKNOWN", "Обычное поле", "Без изменений"
 	}
@@ -762,7 +762,7 @@ func textEntityDetails(t string) (desc, action string) {
 	case "PASSPORT":
 		return "Серия и номер гражданина РФ", "Случайная серия/номер"
 	case "PHONE":
-		return "Мобильные операторы РФ", "Псевдонимный номер"
+		return "Мобильные операторы РФ", "Синтетический номер"
 	case "INN":
 		return "ИНН физлица (алгоритм ФНС)", "Контрольная сумма ФНС"
 	case "BANK_CARD":
@@ -770,13 +770,13 @@ func textEntityDetails(t string) (desc, action string) {
 	case "DATE":
 		return "Даты и периоды", "Смещение ±30 дней"
 	case "EMAIL":
-		return "Корпоративная и личная почта", "Псевдонимный адрес"
+		return "Корпоративная и личная почта", "Синтетический email"
 	case "ADDRESS":
 		return "Адреса проживания и регистрации", "Синтетический адрес"
 	case "GRADE":
 		return "Грейды и квалификационные разряды", "Синтетический грейд"
 	case "EMPLOYEE_ID":
-		return "Табельные номера сотрудников", "Псевдонимный номер"
+		return "Табельные номера сотрудников", "Синтетический номер"
 	default:
 		return "Персональные данные", "Обезличивание"
 	}

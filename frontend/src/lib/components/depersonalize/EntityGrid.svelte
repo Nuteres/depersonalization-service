@@ -53,7 +53,7 @@
       <div id="entity-cards-header" class="flex items-center justify-between mb-3">
         <div class="flex items-center space-x-2">
           <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">Обнаруженные категории ПДн</span>
-          <span class="hidden sm:inline text-[11px] text-[#78716C]">(нажмите на карточку или переключатель для отмены деперсонализации)</span>
+          <span class="hidden sm:inline text-[11px] text-[#78716C]">(нажмите на карточку, чтобы исключить из обработки)</span>
         </div>
         <span id="entity-count-badge" class="text-xs font-mono text-[#78716C]">
           {activeCount} из {totalCount} активных
@@ -115,7 +115,7 @@
                     e.stopPropagation();
                     toggle(ent.columnIndex);
                   }}
-                  title={isDisabled ? 'Включить деперсонализацию' : 'Отключить деперсонализацию'}
+                  title={isDisabled ? 'Включить в обработку' : 'Исключить из обработки'}
                   class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {isDisabled
                     ? 'bg-stone-300'
                     : appState.processingMode === 'delete'
@@ -142,7 +142,7 @@
                   ? 'text-[#9F1239] bg-[#FFF1F2]'
                   : 'text-[#065F46] bg-[#ECFDF5]'}"
             >
-              {isDisabled ? '○ Исходные данные без изменений' : (appState.processingMode === 'delete' ? '➜ Удаление (очистка)' : `➜ ${ent.action}`)}
+              {isDisabled ? '○ Исходные данные без изменений' : (appState.processingMode === 'delete' ? '➜ Удаление' : `➜ ${ent.action}`)}
             </div>
           </div>
         {/each}
