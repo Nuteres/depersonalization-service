@@ -178,27 +178,38 @@
     }
   });
 
-  async function handleModeChange(mode: ProcessingMode) {
-    if (appState.processingMode === mode) return;
-    appState.setProcessingMode(mode);
-    if (appState.currentFilePath) {
-      try {
-        const count = Math.max(10, Math.min(tableState.previewRows.length, 50));
-        const updatedRows = await GetSheetRows(
-          appState.currentFilePath,
-          sheetName,
-          0,
-          count,
-          appState.currentSalt,
-          disabledCols,
-          mode
-        );
-        if (updatedRows && updatedRows.length > 0) {
-          tableState.setPreviewRows(updatedRows);
-        }
-      } catch (err) {
-        console.error('Failed to refresh preview rows on mode change:', err);
+  let lastObservedMode = $state(appState.processingMode);
+
+  $effect(() => {
+    const currentMode = appState.processingMode;
+    if (currentMode !== lastObservedMode) {
+      lastObservedMode = currentMode;
+      if (appState.currentFilePath) {
+        untrack(() => {
+          refreshPreviewRows(currentMode);
+        });
       }
+    }
+  });
+
+  async function refreshPreviewRows(mode: ProcessingMode) {
+    if (!appState.currentFilePath) return;
+    try {
+      const count = Math.max(10, Math.min(tableState.previewRows.length, 50));
+      const updatedRows = await GetSheetRows(
+        appState.currentFilePath,
+        sheetName,
+        0,
+        count,
+        appState.currentSalt,
+        disabledCols,
+        mode
+      );
+      if (updatedRows && updatedRows.length > 0) {
+        tableState.setPreviewRows(updatedRows);
+      }
+    } catch (err) {
+      console.error('Failed to refresh preview rows on mode change:', err);
     }
   }
 
@@ -292,31 +303,6 @@
       </div>
 
       <div class="flex items-center space-x-3">
-        <!-- Mode Switcher: [ Замена | Удаление ] -->
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-medium text-[#78716C]">Режим:</span>
-          <div class="flex items-center bg-[#F0EFEB] p-0.5 border border-[#E8E7E3] text-xs">
-            <button
-              type="button"
-              onclick={() => handleModeChange('replace')}
-              class={appState.processingMode === 'replace'
-                ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
-                : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
-            >
-              Замена
-            </button>
-            <button
-              type="button"
-              onclick={() => handleModeChange('delete')}
-              class={appState.processingMode === 'delete'
-                ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
-                : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
-            >
-              Удаление
-            </button>
-          </div>
-        </div>
-
         <!-- Expand Button -->
         <button
           id="btn-expand-preview"
@@ -524,31 +510,6 @@
           </div>
 
           <div class="flex items-center space-x-3 shrink-0">
-            <!-- Mode Switcher inside Modal: [ Замена | Удаление ] -->
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-medium text-[#78716C]">Режим:</span>
-              <div class="flex items-center bg-[#F0EFEB] p-0.5 border border-[#E8E7E3] text-xs">
-                <button
-                  type="button"
-                  onclick={() => handleModeChange('replace')}
-                  class={appState.processingMode === 'replace'
-                    ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
-                    : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
-                >
-                  Замена
-                </button>
-                <button
-                  type="button"
-                  onclick={() => handleModeChange('delete')}
-                  class={appState.processingMode === 'delete'
-                    ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
-                    : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
-                >
-                  Удаление
-                </button>
-              </div>
-            </div>
-
             <!-- Toggle Before vs After inside Modal -->
             <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
               <button
