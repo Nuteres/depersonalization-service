@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/depmap"
 )
@@ -344,3 +345,69 @@ func TestODT_EdgeCases(t *testing.T) {
 		t.Errorf("expected error on cancelled context in restore")
 	}
 }
+
+func TestODT_ModeDelete_Restore(t *testing.T) {
+	raw := createTestODTArchive(t)
+	anon := anonymizer.New("test-salt-odt-mode-delete")
+	h := NewODTHandler(anon)
+
+	outBuf := new(bytes.Buffer)
+	opts := map[string]interface{}{
+		"mode": domain.ModeDelete,
+	}
+	dm, err := h.Process(context.Background(), bytes.NewReader(raw), int64(len(raw)), outBuf, opts)
+	if err != nil {
+		t.Fatalf("Process with ModeDelete failed: %v", err)
+	}
+
+	if dm.Mode != "delete" {
+		t.Errorf("expected dm.Mode 'delete', got %q", dm.Mode)
+	}
+	if len(dm.OrdinalMappings) == 0 {
+		t.Fatalf("expected non-empty OrdinalMappings in delete mode")
+	}
+
+	anonBytes := outBuf.Bytes()
+	azr, err := zip.NewReader(bytes.NewReader(anonBytes), int64(len(anonBytes)))
+	if err != nil {
+		t.Fatalf("failed to open anonymized zip: %v", err)
+	}
+	contentData, err := readODTEntry(azr, "content.xml")
+	if err != nil {
+		t.Fatalf("failed to read content.xml: %v", err)
+	}
+	contentStr := string(contentData)
+	if !strings.Contains(contentStr, DeletionMarker) {
+		t.Errorf("expected DeletionMarker %q in content.xml", DeletionMarker)
+	}
+	if strings.Contains(contentStr, "Иванов Иван Иванович") {
+		t.Errorf("content.xml still contains original FIO")
+	}
+
+	// Reverse Restoration
+	restoredBuf := new(bytes.Buffer)
+	count, err := RestoreODT(context.Background(), bytes.NewReader(anonBytes), int64(len(anonBytes)), restoredBuf, dm)
+	if err != nil {
+		t.Fatalf("RestoreODT failed: %v", err)
+	}
+	if count < 3 {
+		t.Errorf("expected at least 3 restored entities, got %d", count)
+	}
+
+	rzr, err := zip.NewReader(bytes.NewReader(restoredBuf.Bytes()), int64(restoredBuf.Len()))
+	if err != nil {
+		t.Fatalf("failed to open restored zip: %v", err)
+	}
+	restoredContent, err := readODTEntry(rzr, "content.xml")
+	if err != nil {
+		t.Fatalf("failed to read restored content.xml: %v", err)
+	}
+	restoredContentStr := string(restoredContent)
+	if !strings.Contains(restoredContentStr, "Иванов Иван Иванович") {
+		t.Errorf("restored content missing original FIO: %s", restoredContentStr)
+	}
+	if !strings.Contains(restoredContentStr, "+7 916 123-45-67") {
+		t.Errorf("restored content missing original Phone: %s", restoredContentStr)
+	}
+}
+

@@ -1009,6 +1009,30 @@ func TestDOCXHandler_ModeDelete(t *testing.T) {
 	if !strings.Contains(anonXML, formats.DeletionMarker) {
 		t.Errorf("document does not contain DeletionMarker %q", formats.DeletionMarker)
 	}
+
+	// Test Reverse Restoration with RestoreDOCX
+	var restoredBuf bytes.Buffer
+	restoredCount, err := formats.RestoreDOCX(context.Background(), bytes.NewReader(outBuf.Bytes()), int64(outBuf.Len()), &restoredBuf, dm)
+	if err != nil {
+		t.Fatalf("RestoreDOCX failed: %v", err)
+	}
+	if restoredCount != 2 {
+		t.Errorf("expected 2 restored entities, got %d", restoredCount)
+	}
+
+	restoredXML, err := readZipFile(restoredBuf.Bytes(), "word/document.xml")
+	if err != nil {
+		t.Fatalf("failed to read restored document.xml: %v", err)
+	}
+	if !strings.Contains(restoredXML, "Иванов Иван Иванович") {
+		t.Errorf("restored document missing original FIO: %s", restoredXML)
+	}
+	if !strings.Contains(restoredXML, "+7 999 123-45-67") {
+		t.Errorf("restored document missing original phone: %s", restoredXML)
+	}
+	if strings.Contains(restoredXML, formats.DeletionMarker) {
+		t.Errorf("restored document still contains DeletionMarker %q", formats.DeletionMarker)
+	}
 }
 
 

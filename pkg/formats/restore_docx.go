@@ -81,6 +81,7 @@ func RestoreDOCX(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm
 
 	restoredCount := 0
 	updatedXMLs := make(map[string][]byte)
+	ordinalIdx := 0
 
 	for _, f := range zr.File {
 		select {
@@ -113,16 +114,34 @@ func RestoreDOCX(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm
 
 		for _, p := range paras {
 			for _, n := range p.nodes {
-				newText, count := replaceTokensSinglePass(n.text, pairs)
-				if count > 0 {
-					restoredCount += count
+				curText := n.text
+				totalNodeRestored := 0
+
+				if len(dm.OrdinalMappings) > 0 && strings.Contains(curText, DeletionMarker) {
+					newText, count := replaceOrdinalMarkers(curText, DeletionMarker, dm.OrdinalMappings, &ordinalIdx)
+					if count > 0 {
+						curText = newText
+						totalNodeRestored += count
+					}
+				}
+
+				if len(pairs) > 0 {
+					newText, count := replaceTokensSinglePass(curText, pairs)
+					if count > 0 {
+						curText = newText
+						totalNodeRestored += count
+					}
+				}
+
+				if totalNodeRestored > 0 {
+					restoredCount += totalNodeRestored
 
 					var replBytes []byte
-					if newText == "" {
+					if curText == "" {
 						replBytes = []byte("<w:t></w:t>")
 					} else {
 						var escBuf bytes.Buffer
-						_ = xml.EscapeText(&escBuf, []byte(newText))
+						_ = xml.EscapeText(&escBuf, []byte(curText))
 						replBytes = []byte(fmt.Sprintf(`<w:t xml:space="preserve">%s</w:t>`, escBuf.String()))
 					}
 
@@ -245,5 +264,33 @@ func replaceTokensSinglePass(text string, pairs []synthOrigPair) (string, int) {
 	b.WriteString(text[lastIdx:])
 
 	return b.String(), restored
+}
+
+// replaceOrdinalMarkers sequentially substitutes occurrences of marker with elements from ordinals.
+func replaceOrdinalMarkers(text string, marker string, ordinals []string, ordinalIdx *int) (string, int) {
+	if len(marker) == 0 || !strings.Contains(text, marker) || ordinalIdx == nil {
+		return text, 0
+	}
+	var b strings.Builder
+	b.Grow(len(text))
+	start := 0
+	replaced := 0
+	for {
+		idx := strings.Index(text[start:], marker)
+		if idx == -1 {
+			break
+		}
+		b.WriteString(text[start : start+idx])
+		if *ordinalIdx < len(ordinals) {
+			b.WriteString(ordinals[*ordinalIdx])
+			*ordinalIdx++
+			replaced++
+		} else {
+			b.WriteString(marker)
+		}
+		start += idx + len(marker)
+	}
+	b.WriteString(text[start:])
+	return b.String(), replaced
 }
 

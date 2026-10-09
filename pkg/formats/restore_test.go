@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"dep_service/internal/domain"
+	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/depmap"
 	"dep_service/pkg/formats"
 )
@@ -350,3 +353,257 @@ func TestRestore_EdgeCases(t *testing.T) {
 		t.Error("expected error for non-existent excel file")
 	}
 }
+
+func TestRestoreExcel_HeaderAwareColumnShift(t *testing.T) {
+	tmpDir := t.TempDir()
+	origPath := filepath.Join(tmpDir, "original.xlsx")
+	anonPath := filepath.Join(tmpDir, "anonymized.xlsx")
+	aiModifiedPath := filepath.Join(tmpDir, "ai_modified.xlsx")
+	restoredPath := filepath.Join(tmpDir, "restored.xlsx")
+
+	// 1. Create original workbook with headers: ID, FIO, Phone
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	_ = f.SetCellValue(sheet, "A1", "ID")
+	_ = f.SetCellValue(sheet, "B1", "ФИО")
+	_ = f.SetCellValue(sheet, "C1", "Телефон")
+	_ = f.SetCellValue(sheet, "A2", "1")
+	_ = f.SetCellValue(sheet, "B2", "Иванов Иван Иванович")
+	_ = f.SetCellValue(sheet, "C2", "+7 999 123-45-67")
+	if err := f.SaveAs(origPath); err != nil {
+		t.Fatalf("failed to save original xlsx: %v", err)
+	}
+	f.Close()
+
+	// 2. Anonymize with ModeDelete and CreateKey=true -> yields anonymized.xlsx and key.depmap
+	anon := anonymizer.New("salt-test")
+	handler := formats.NewExcelHandler(anon)
+	dm := depmap.New("original.xlsx")
+
+	var anonBuf bytes.Buffer
+	origBytes, err := os.ReadFile(origPath)
+	if err != nil {
+		t.Fatalf("failed to read original xlsx: %v", err)
+	}
+	err = handler.Process(context.Background(), bytes.NewReader(origBytes), &anonBuf, map[string]interface{}{
+		"mode":   domain.ModeDelete,
+		"depmap": dm,
+	})
+	if err != nil {
+		t.Fatalf("handler.Process failed: %v", err)
+	}
+
+	if err := os.WriteFile(anonPath, anonBuf.Bytes(), 0644); err != nil {
+		t.Fatalf("failed to write anonymized xlsx: %v", err)
+	}
+
+	// 3. Simulate AI model: Insert 2 new columns between ID and FIO (e.g. AI_Score, AI_Category)
+	aiFile := excelize.NewFile()
+	aiFile.SetSheetName("Sheet1", sheet)
+	_ = aiFile.SetCellValue(sheet, "A1", "ID")
+	_ = aiFile.SetCellValue(sheet, "B1", "AI_Score")
+	_ = aiFile.SetCellValue(sheet, "C1", "AI_Category")
+	_ = aiFile.SetCellValue(sheet, "D1", "ФИО")
+	_ = aiFile.SetCellValue(sheet, "E1", "Телефон")
+
+	_ = aiFile.SetCellValue(sheet, "A2", "1")
+	_ = aiFile.SetCellValue(sheet, "B2", "0.95")
+	_ = aiFile.SetCellValue(sheet, "C2", "VIP")
+	_ = aiFile.SetCellValue(sheet, "D2", formats.DeletionMarker)
+	_ = aiFile.SetCellValue(sheet, "E2", formats.DeletionMarker)
+
+	if err := aiFile.SaveAs(aiModifiedPath); err != nil {
+		t.Fatalf("failed to save ai modified xlsx: %v", err)
+	}
+	aiFile.Close()
+
+	// 4. Run RestoreExcel on the modified file using key.depmap
+	ctx := context.Background()
+	restoredCount, err := formats.RestoreExcel(ctx, aiModifiedPath, restoredPath, dm, nil)
+	if err != nil {
+		t.Fatalf("RestoreExcel failed: %v", err)
+	}
+
+	// 5. Verify:
+	//    - Restore count matches expected (2)
+	//    - FIO and Phone are restored to original values
+	//    - AI_Score and AI_Category remain intact with AI values
+	if restoredCount != 2 {
+		t.Errorf("expected 2 restored cells, got %d", restoredCount)
+	}
+
+	rf, err := excelize.OpenFile(restoredPath)
+	if err != nil {
+		t.Fatalf("failed to open restored xlsx: %v", err)
+	}
+	defer rf.Close()
+
+	idVal, _ := rf.GetCellValue(sheet, "A2")
+	if idVal != "1" {
+		t.Errorf("expected ID '1', got %q", idVal)
+	}
+
+	aiScoreVal, _ := rf.GetCellValue(sheet, "B2")
+	if aiScoreVal != "0.95" {
+		t.Errorf("expected AI_Score untouched '0.95', got %q", aiScoreVal)
+	}
+
+	aiCatVal, _ := rf.GetCellValue(sheet, "C2")
+	if aiCatVal != "VIP" {
+		t.Errorf("expected AI_Category untouched 'VIP', got %q", aiCatVal)
+	}
+
+	fioVal, _ := rf.GetCellValue(sheet, "D2")
+	if fioVal != "Иванов Иван Иванович" {
+		t.Errorf("expected FIO restored 'Иванов Иван Иванович', got %q", fioVal)
+	}
+
+	phoneVal, _ := rf.GetCellValue(sheet, "E2")
+	if phoneVal != "+7 999 123-45-67" {
+		t.Errorf("expected Phone restored '+7 999 123-45-67', got %q", phoneVal)
+	}
+}
+
+func TestRestoreCSV_HeaderAwareColumnShift(t *testing.T) {
+	origCSV := "ID,ФИО,Телефон\n1,Иванов Иван Иванович,+7 999 123-45-67\n"
+
+	anon := anonymizer.New("salt-test-csv")
+	handler := formats.NewCSVHandler(anon)
+	dm := depmap.New("clients.csv")
+
+	var anonBuf bytes.Buffer
+	err := handler.Process(context.Background(), strings.NewReader(origCSV), &anonBuf, map[string]interface{}{
+		"mode":   domain.ModeDelete,
+		"depmap": dm,
+	})
+	if err != nil {
+		t.Fatalf("handler.Process failed: %v", err)
+	}
+
+	// Simulate AI model inserting columns between ID and ФИО
+	aiCSV := "ID,AI_Score,AI_Category,ФИО,Телефон\n" +
+		"1,0.95,VIP," + formats.DeletionMarker + "," + formats.DeletionMarker + "\n"
+
+	var restoredBuf bytes.Buffer
+	ctx := context.Background()
+	restoredCount, err := formats.RestoreCSV(ctx, strings.NewReader(aiCSV), &restoredBuf, dm)
+	if err != nil {
+		t.Fatalf("RestoreCSV failed: %v", err)
+	}
+
+	if restoredCount != 2 {
+		t.Errorf("expected 2 restored cells, got %d", restoredCount)
+	}
+
+	reader := csv.NewReader(&restoredBuf)
+	rows, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("failed to read restored csv: %v", err)
+	}
+
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+
+	if rows[1][0] != "1" {
+		t.Errorf("expected ID '1', got %q", rows[1][0])
+	}
+	if rows[1][1] != "0.95" {
+		t.Errorf("expected AI_Score untouched '0.95', got %q", rows[1][1])
+	}
+	if rows[1][2] != "VIP" {
+		t.Errorf("expected AI_Category untouched 'VIP', got %q", rows[1][2])
+	}
+	if rows[1][3] != "Иванов Иван Иванович" {
+		t.Errorf("expected FIO restored 'Иванов Иван Иванович', got %q", rows[1][3])
+	}
+	if rows[1][4] != "+7 999 123-45-67" {
+		t.Errorf("expected Phone restored '+7 999 123-45-67', got %q", rows[1][4])
+	}
+}
+
+func TestRestoreExcel_ModeReplace_HeaderAwareAIColumnProtected(t *testing.T) {
+	tmpDir := t.TempDir()
+	origPath := filepath.Join(tmpDir, "orig_replace.xlsx")
+	aiModifiedPath := filepath.Join(tmpDir, "ai_replace.xlsx")
+	restoredPath := filepath.Join(tmpDir, "restored_replace.xlsx")
+
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	_ = f.SetCellValue(sheet, "A1", "ID")
+	_ = f.SetCellValue(sheet, "B1", "ФИО")
+	_ = f.SetCellValue(sheet, "A2", "1")
+	_ = f.SetCellValue(sheet, "B2", "Иванов Иван Иванович")
+	if err := f.SaveAs(origPath); err != nil {
+		t.Fatalf("failed to save original xlsx: %v", err)
+	}
+	f.Close()
+
+	anon := anonymizer.New("salt-replace")
+	handler := formats.NewExcelHandler(anon)
+	dm := depmap.New("orig_replace.xlsx")
+
+	var anonBuf bytes.Buffer
+	origBytes, err := os.ReadFile(origPath)
+	if err != nil {
+		t.Fatalf("failed to read original xlsx: %v", err)
+	}
+	err = handler.Process(context.Background(), bytes.NewReader(origBytes), &anonBuf, map[string]interface{}{
+		"mode":   domain.ModeReplace,
+		"depmap": dm,
+	})
+	if err != nil {
+		t.Fatalf("handler.Process failed: %v", err)
+	}
+
+	anonExcel, err := excelize.OpenReader(&anonBuf)
+	if err != nil {
+		t.Fatalf("failed to open anon excel: %v", err)
+	}
+	synthFIO, _ := anonExcel.GetCellValue(sheet, "B2")
+	anonExcel.Close()
+
+	// Simulate AI adding column "AI_Comment" that happens to contain the exact synthetic FIO string!
+	aiFile := excelize.NewFile()
+	aiFile.SetSheetName("Sheet1", sheet)
+	_ = aiFile.SetCellValue(sheet, "A1", "ID")
+	_ = aiFile.SetCellValue(sheet, "B1", "AI_Comment")
+	_ = aiFile.SetCellValue(sheet, "C1", "ФИО")
+
+	_ = aiFile.SetCellValue(sheet, "A2", "1")
+	_ = aiFile.SetCellValue(sheet, "B2", synthFIO) // Should NOT be replaced!
+	_ = aiFile.SetCellValue(sheet, "C2", synthFIO) // Should be replaced!
+
+	if err := aiFile.SaveAs(aiModifiedPath); err != nil {
+		t.Fatalf("failed to save ai modified xlsx: %v", err)
+	}
+	aiFile.Close()
+
+	ctx := context.Background()
+	restoredCount, err := formats.RestoreExcel(ctx, aiModifiedPath, restoredPath, dm, nil)
+	if err != nil {
+		t.Fatalf("RestoreExcel failed: %v", err)
+	}
+
+	if restoredCount != 1 {
+		t.Errorf("expected exactly 1 restored cell, got %d", restoredCount)
+	}
+
+	rf, err := excelize.OpenFile(restoredPath)
+	if err != nil {
+		t.Fatalf("failed to open restored xlsx: %v", err)
+	}
+	defer rf.Close()
+
+	aiCommentVal, _ := rf.GetCellValue(sheet, "B2")
+	if aiCommentVal != synthFIO {
+		t.Errorf("expected AI_Comment untouched %q, got %q", synthFIO, aiCommentVal)
+	}
+
+	fioVal, _ := rf.GetCellValue(sheet, "C2")
+	if fioVal != "Иванов Иван Иванович" {
+		t.Errorf("expected FIO restored 'Иванов Иван Иванович', got %q", fioVal)
+	}
+}
+
+

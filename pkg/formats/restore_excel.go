@@ -100,11 +100,42 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 		val  string
 	}
 
+	isDeleteMode := dm.Mode == "delete" || len(dm.CellMappings) > 0
+	targetHeadersMap := make(map[string]bool)
+	if len(dm.TargetHeaders) > 0 {
+		for _, h := range dm.TargetHeaders {
+			targetHeadersMap[strings.TrimSpace(h)] = true
+		}
+	}
+	hasHeaderAwareness := isDeleteMode || len(dm.TargetHeaders) > 0
+
 	for _, sheetName := range sheetList {
 		select {
 		case <-ctx.Done():
 			return restoredCount, ctx.Err()
 		default:
+		}
+
+		// Sample initial rows to detect headers
+		sampleRows, err := xl.Rows(sheetName)
+		if err != nil {
+			return restoredCount, fmt.Errorf("failed to read rows from sheet %s: %w", sheetName, err)
+		}
+		var sample [][]string
+		sampleLimit := 40
+		for sampleRows.Next() && len(sample) < sampleLimit {
+			cols, err := sampleRows.Columns()
+			if err != nil {
+				break
+			}
+			sample = append(sample, cols)
+		}
+		_ = sampleRows.Close()
+
+		headerRowIndex := -1
+		var headers []string
+		if len(sample) > 0 {
+			headerRowIndex, headers = FindHeaderRow(sample)
 		}
 
 		rows, err := xl.Rows(sheetName)
@@ -132,24 +163,75 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 				return restoredCount, fmt.Errorf("failed to read columns in sheet %s row %d: %w", sheetName, rowNum, err)
 			}
 
+			if hasHeaderAwareness && len(sample) > 1 && headerRowIndex >= 0 && rowNum <= headerRowIndex+1 {
+				reportProgress(false)
+				continue
+			}
+
 			for colIdx, val := range cols {
 				if len(val) == 0 {
 					continue
 				}
 
-				if orig, ok := dm.Get(val); ok {
-					coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
-					if err == nil {
-						changes = append(changes, cellChange{cell: coord, val: orig})
-					}
-				} else {
-					trimmed := strings.TrimSpace(val)
-					trimmed = strings.TrimPrefix(trimmed, "\ufeff")
-					if trimmed != val {
-						if orig, ok := dm.Get(trimmed); ok {
+				var headerName string
+				if colIdx < len(headers) {
+					headerName = strings.TrimSpace(headers[colIdx])
+				}
+
+				if isDeleteMode {
+					if orig, ok := dm.GetCell(sheetName, headerName, rowNum); ok {
+						trimmed := strings.TrimSpace(strings.TrimPrefix(val, "\ufeff"))
+						if trimmed == DeletionMarker {
 							coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
 							if err == nil {
 								changes = append(changes, cellChange{cell: coord, val: orig})
+							}
+							continue
+						}
+					}
+					if len(dm.Mapping) > 0 && (len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName]) {
+						if orig, ok := dm.Get(val); ok {
+							coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
+							if err == nil {
+								changes = append(changes, cellChange{cell: coord, val: orig})
+							}
+						}
+					}
+				} else if len(dm.TargetHeaders) > 0 {
+					if targetHeadersMap[headerName] {
+						if orig, ok := dm.Get(val); ok {
+							coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
+							if err == nil {
+								changes = append(changes, cellChange{cell: coord, val: orig})
+							}
+						} else {
+							trimmed := strings.TrimSpace(val)
+							trimmed = strings.TrimPrefix(trimmed, "\ufeff")
+							if trimmed != val {
+								if orig, ok := dm.Get(trimmed); ok {
+									coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
+									if err == nil {
+										changes = append(changes, cellChange{cell: coord, val: orig})
+									}
+								}
+							}
+						}
+					}
+				} else {
+					if orig, ok := dm.Get(val); ok {
+						coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
+						if err == nil {
+							changes = append(changes, cellChange{cell: coord, val: orig})
+						}
+					} else {
+						trimmed := strings.TrimSpace(val)
+						trimmed = strings.TrimPrefix(trimmed, "\ufeff")
+						if trimmed != val {
+							if orig, ok := dm.Get(trimmed); ok {
+								coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
+								if err == nil {
+									changes = append(changes, cellChange{cell: coord, val: orig})
+								}
 							}
 						}
 					}

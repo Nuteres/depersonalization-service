@@ -59,6 +59,16 @@ func RestoreODS(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 	var replacements []textReplacement
 	restoredCount := 0
 
+	isDeleteMode := dm.Mode == "delete" || len(dm.CellMappings) > 0
+	targetHeadersMap := make(map[string]bool)
+	if len(dm.TargetHeaders) > 0 {
+		for _, h := range dm.TargetHeaders {
+			targetHeadersMap[strings.TrimSpace(h)] = true
+		}
+	}
+
+	hasHeaderAwareness := isDeleteMode || len(dm.TargetHeaders) > 0
+
 	for _, sheet := range doc.sheets {
 		select {
 		case <-ctx.Done():
@@ -66,19 +76,93 @@ func RestoreODS(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 		default:
 		}
 
-		for _, row := range sheet.rows {
+		sampleLimit := len(sheet.rows)
+		if sampleLimit > 40 {
+			sampleLimit = 40
+		}
+		sampleRows := make([][]string, sampleLimit)
+		for rIdx := 0; rIdx < sampleLimit; rIdx++ {
+			sampleRows[rIdx] = rowToStrings(sheet.rows[rIdx])
+		}
+
+		headerRowIndex := -1
+		var headers []string
+		if len(sampleRows) > 0 {
+			headerRowIndex, headers = FindHeaderRow(sampleRows)
+		}
+
+		for rIdx, row := range sheet.rows {
+			physicalRow := rIdx + 1
+			if hasHeaderAwareness && len(sheet.rows) > 1 && headerRowIndex >= 0 && physicalRow <= headerRowIndex+1 {
+				continue
+			}
+
 			for _, cell := range row.cells {
 				val := cell.fullText
 				if len(val) == 0 {
 					continue
 				}
 
-				orig, ok := dm.LookupOriginal(val)
-				if !ok {
-					trimmed := strings.TrimSpace(val)
-					trimmed = strings.TrimPrefix(trimmed, "\ufeff")
-					if trimmed != val {
-						orig, ok = dm.LookupOriginal(trimmed)
+				var headerName string
+				if cell.colIdx < len(headers) {
+					headerName = strings.TrimSpace(headers[cell.colIdx])
+				}
+
+				var orig string
+				ok := false
+
+				if isDeleteMode {
+					if o, found := dm.GetCell(sheet.name, headerName, physicalRow); found {
+						trimmed := strings.TrimSpace(strings.TrimPrefix(val, "\ufeff"))
+						if trimmed == DeletionMarker {
+							orig = o
+							ok = true
+						}
+					}
+					if !ok && len(dm.Mapping) > 0 && (len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName]) {
+						if o, found := dm.LookupOriginal(val); found {
+							orig = o
+							ok = true
+						} else {
+							trimmed := strings.TrimSpace(val)
+							trimmed = strings.TrimPrefix(trimmed, "\ufeff")
+							if trimmed != val {
+								if o, found := dm.LookupOriginal(trimmed); found {
+									orig = o
+									ok = true
+								}
+							}
+						}
+					}
+				} else if len(dm.TargetHeaders) > 0 {
+					if targetHeadersMap[headerName] {
+						if o, found := dm.LookupOriginal(val); found {
+							orig = o
+							ok = true
+						} else {
+							trimmed := strings.TrimSpace(val)
+							trimmed = strings.TrimPrefix(trimmed, "\ufeff")
+							if trimmed != val {
+								if o, found := dm.LookupOriginal(trimmed); found {
+									orig = o
+									ok = true
+								}
+							}
+						}
+					}
+				} else {
+					if o, found := dm.LookupOriginal(val); found {
+						orig = o
+						ok = true
+					} else {
+						trimmed := strings.TrimSpace(val)
+						trimmed = strings.TrimPrefix(trimmed, "\ufeff")
+						if trimmed != val {
+							if o, found := dm.LookupOriginal(trimmed); found {
+								orig = o
+								ok = true
+							}
+						}
 					}
 				}
 

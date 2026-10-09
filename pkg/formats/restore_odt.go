@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"dep_service/pkg/depmap"
 )
@@ -74,6 +75,7 @@ func RestoreODT(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 
 	restoredCount := 0
 	updatedXMLs := make(map[string][]byte)
+	ordinalIdx := 0
 
 	for _, f := range zr.File {
 		select {
@@ -106,12 +108,30 @@ func RestoreODT(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 
 		for _, p := range paras {
 			for _, n := range p.nodes {
-				newText, count := replaceTokensSinglePass(n.text, pairs)
-				if count > 0 {
-					restoredCount += count
+				curText := n.text
+				totalNodeRestored := 0
+
+				if len(dm.OrdinalMappings) > 0 && strings.Contains(curText, DeletionMarker) {
+					newText, count := replaceOrdinalMarkers(curText, DeletionMarker, dm.OrdinalMappings, &ordinalIdx)
+					if count > 0 {
+						curText = newText
+						totalNodeRestored += count
+					}
+				}
+
+				if len(pairs) > 0 {
+					newText, count := replaceTokensSinglePass(curText, pairs)
+					if count > 0 {
+						curText = newText
+						totalNodeRestored += count
+					}
+				}
+
+				if totalNodeRestored > 0 {
+					restoredCount += totalNodeRestored
 
 					var escBuf bytes.Buffer
-					_ = xml.EscapeText(&escBuf, []byte(newText))
+					_ = xml.EscapeText(&escBuf, []byte(curText))
 
 					replacements = append(replacements, textReplacement{
 						start:   int(n.startOffset),
