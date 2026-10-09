@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"dep_service/internal/domain"
-	"dep_service/pkg/formats"
 )
 
 func TestDomainModelsInitialization(t *testing.T) {
@@ -62,7 +61,7 @@ func TestDomainModelsInitialization(t *testing.T) {
 			},
 		},
 		ActiveSheet: "Sheet1",
-		TextSnippets: []formats.DocxTextSnippet{
+		TextSnippets: []domain.DocxTextSnippet{
 			{
 				Original:   "Текст до",
 				Anonymized: "Текст после",

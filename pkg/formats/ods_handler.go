@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/depmap"
 
@@ -189,7 +190,17 @@ func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 			origFileName = fn
 		}
 	}
-	dm := depmap.New(origFileName)
+	mode := getProcessingMode(options)
+	var dm *depmap.DepMap
+	if d, ok := options["depmap"].(*depmap.DepMap); ok {
+		dm = d
+	} else if d, ok := options["depMap"].(*depmap.DepMap); ok {
+		dm = d
+	}
+	if dm == nil {
+		dm = depmap.New(origFileName)
+	}
+	dm.Mode = string(mode)
 
 	var targetSheet string
 	if options != nil {
@@ -311,18 +322,28 @@ func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 					continue
 				}
 
-				synthetic := AnonymizeCell(h.Anon, colType, val, dateRange)
-				if synthetic == val {
+				newVal := ProcessCell(h.Anon, colType, val, mode, dateRange)
+				if newVal == val {
 					continue
 				}
 
-				dm.Put(synthetic, val)
+				var headerName string
+				if cell.colIdx < len(headers) {
+					headerName = headers[cell.colIdx]
+				}
+				dm.AddTargetHeader(headerName)
+				if mode == domain.ModeDelete {
+					physicalRow := rIdx + 1
+					dm.PutCell(sheet.name, headerName, physicalRow, val)
+				} else {
+					dm.Put(newVal, val)
+				}
 
 				// Queue replacement for paragraphs
 				if len(cell.paragraphs) > 0 {
 					p := cell.paragraphs[0]
 					var buf bytes.Buffer
-					xml.EscapeText(&buf, []byte(synthetic))
+					xml.EscapeText(&buf, []byte(newVal))
 					replacements = append(replacements, textReplacement{
 						start:   p.startOffset,
 						end:     p.endOffset,
@@ -346,7 +367,7 @@ func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 					if strings.Contains(tagStr, "office:string-value") {
 						oldAttr := extractAttrValue(cell.tagBytes, "office:string-value")
 						if oldAttr != "" {
-							newTag = updateAttrInTag(newTag, "office:string-value", oldAttr, synthetic)
+							newTag = updateAttrInTag(newTag, "office:string-value", oldAttr, newVal)
 							tagModified = true
 						}
 					}
@@ -843,7 +864,17 @@ func (h *ODSHandler) ProcessToXLSX(ctx context.Context, r io.ReaderAt, size int6
 			origFileName = fn
 		}
 	}
-	dm := depmap.New(origFileName)
+	mode := getProcessingMode(options)
+	var dm *depmap.DepMap
+	if d, ok := options["depmap"].(*depmap.DepMap); ok {
+		dm = d
+	} else if d, ok := options["depMap"].(*depmap.DepMap); ok {
+		dm = d
+	}
+	if dm == nil {
+		dm = depmap.New(origFileName)
+	}
+	dm.Mode = string(mode)
 
 	var targetSheet string
 	if options != nil {
@@ -955,11 +986,21 @@ func (h *ODSHandler) ProcessToXLSX(ctx context.Context, r io.ReaderAt, size int6
 					continue
 				}
 
-				anonymized := AnonymizeCell(h.Anon, colType, val, dateRange)
-				if anonymized != val && strings.TrimSpace(val) != "" {
-					dm.Put(anonymized, val)
+				newVal := ProcessCell(h.Anon, colType, val, mode, dateRange)
+				if newVal != val && strings.TrimSpace(val) != "" {
+					var headerName string
+					if cIdx < len(headers) {
+						headerName = headers[cIdx]
+					}
+					dm.AddTargetHeader(headerName)
+					if mode == domain.ModeDelete {
+						physicalRow := rIdx + 1
+						dm.PutCell(sheetName, headerName, physicalRow, val)
+					} else {
+						dm.Put(newVal, val)
+					}
 				}
-				rowCells[cIdx] = anonymized
+				rowCells[cIdx] = newVal
 			}
 
 			cellCoord, err := excelize.CoordinatesToCellName(1, rIdx+1)

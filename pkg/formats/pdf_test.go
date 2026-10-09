@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 )
 
@@ -447,3 +448,40 @@ func TestPDFHandler_SkipNonContentStreams(t *testing.T) {
 		t.Errorf("image stream binary bytes were modified or corrupted!")
 	}
 }
+
+func TestPDFHandler_ModeDelete(t *testing.T) {
+	anon := anonymizer.New("salt")
+	h := NewPDFHandler(anon)
+
+	rawContent := `BT
+/F1 12 Tf
+72 700 Td
+(Иванов Иван Иванович) Tj
+ET`
+
+	inputPDF := buildTestPDF(rawContent, false)
+
+	var out bytes.Buffer
+	err := h.Process(context.Background(), bytes.NewReader(inputPDF), &out, map[string]interface{}{
+		"mode": domain.ModeDelete,
+	})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	extractedStreams, err := extractAllStreamContents(out.Bytes())
+	if err != nil {
+		t.Fatalf("failed to extract streams: %v", err)
+	}
+
+	if strings.Contains(extractedStreams, "Иванов Иван Иванович") {
+		t.Errorf("FIO is still present in stream!")
+	}
+	if !strings.Contains(extractedStreams, DeletionMarker) {
+		t.Errorf("expected DeletionMarker %q in stream, got %s", DeletionMarker, extractedStreams)
+	}
+	if strings.Contains(extractedStreams, BlackoutMarker) {
+		t.Errorf("expected generic blackout marker NOT to be used in ModeDelete")
+	}
+}
+

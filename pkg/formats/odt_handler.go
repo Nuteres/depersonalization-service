@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/depmap"
 )
@@ -407,6 +408,7 @@ func (h *ODTHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 	}
 
 	disabledTypes := getDisabledEntityTypes(options)
+	mode := getProcessingMode(options)
 
 	origName := "document.odt"
 	if options != nil {
@@ -414,7 +416,16 @@ func (h *ODTHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 			origName = s
 		}
 	}
-	dm := depmap.New(origName)
+	var dm *depmap.DepMap
+	if d, ok := options["depmap"].(*depmap.DepMap); ok {
+		dm = d
+	} else if d, ok := options["depMap"].(*depmap.DepMap); ok {
+		dm = d
+	}
+	if dm == nil {
+		dm = depmap.New(origName)
+	}
+	dm.Mode = string(mode)
 
 	updatedXMLs := make(map[string][]byte)
 
@@ -503,13 +514,19 @@ func (h *ODTHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 				}
 
 				origVal := string(paraRunes[rStart:rEnd])
-				synthVal := generateSynthetic(h.Anon, m.entityType, origVal)
-				dm.Put(synthVal, origVal)
+				var replVal string
+				if mode == domain.ModeDelete {
+					replVal = DeletionMarker
+					dm.PutOrdinal(origVal)
+				} else {
+					replVal = generateSynthetic(h.Anon, m.entityType, origVal)
+					dm.Put(replVal, origVal)
+				}
 
 				spans = append(spans, entityRuneSpan{
 					runeStart: rStart,
 					runeEnd:   rEnd,
-					synthetic: synthVal,
+					synthetic: replVal,
 				})
 			}
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/depmap"
 	"dep_service/pkg/detector"
@@ -957,6 +958,59 @@ func osReadFile(name string) ([]byte, error) {
 	defer importOS.Close()
 	return io.ReadAll(importOS)
 }
+
+func TestDOCXHandler_ModeDelete(t *testing.T) {
+	docXML := `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Договор подписал Иванов Иван Иванович, телефон +7 999 123-45-67.</w:t></w:r></w:p>
+  </w:body>
+</w:document>`
+
+	data := createTestDocx(docXML)
+	r := bytes.NewReader(data)
+
+	anon := anonymizer.New("test-salt-docx-delete")
+	h := formats.NewDOCXHandler(anon)
+
+	var outBuf bytes.Buffer
+	dm, err := h.Process(context.Background(), r, int64(len(data)), &outBuf, map[string]interface{}{
+		"mode": domain.ModeDelete,
+	})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	if dm.Mode != "delete" {
+		t.Errorf("expected dm.Mode 'delete', got %q", dm.Mode)
+	}
+
+	if len(dm.OrdinalMappings) != 2 {
+		t.Fatalf("expected 2 OrdinalMappings, got %d: %v", len(dm.OrdinalMappings), dm.OrdinalMappings)
+	}
+
+	if dm.OrdinalMappings[0] != "Иванов Иван Иванович" {
+		t.Errorf("expected first ordinal 'Иванов Иван Иванович', got %q", dm.OrdinalMappings[0])
+	}
+	if dm.OrdinalMappings[1] != "+7 999 123-45-67" {
+		t.Errorf("expected second ordinal '+7 999 123-45-67', got %q", dm.OrdinalMappings[1])
+	}
+
+	anonXML, err := readZipFile(outBuf.Bytes(), "word/document.xml")
+	if err != nil {
+		t.Fatalf("failed to read anonymized document.xml: %v", err)
+	}
+
+	if strings.Contains(anonXML, "Иванов Иван Иванович") {
+		t.Errorf("document still contains original FIO!")
+	}
+	if strings.Contains(anonXML, "+7 999 123-45-67") {
+		t.Errorf("document still contains original phone!")
+	}
+	if !strings.Contains(anonXML, formats.DeletionMarker) {
+		t.Errorf("document does not contain DeletionMarker %q", formats.DeletionMarker)
+	}
+}
+
 
 
 

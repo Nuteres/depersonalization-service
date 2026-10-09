@@ -11,6 +11,7 @@ import (
 	"github.com/TsubasaBE/go-xlsb"
 	"github.com/xuri/excelize/v2"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/depmap"
 )
@@ -194,7 +195,17 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 			origFileName = fn
 		}
 	}
-	dm := depmap.New(origFileName)
+	mode := getProcessingMode(options)
+	var dm *depmap.DepMap
+	if d, ok := options["depmap"].(*depmap.DepMap); ok {
+		dm = d
+	} else if d, ok := options["depMap"].(*depmap.DepMap); ok {
+		dm = d
+	}
+	if dm == nil {
+		dm = depmap.New(origFileName)
+	}
+	dm.Mode = string(mode)
 
 	outFile := excelize.NewFile()
 	defer outFile.Close()
@@ -306,13 +317,22 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 					if i < len(colTypes) && !disabledMap[col1Based] {
 						colType = colTypes[i]
 					}
-					anonVal := AnonymizeCell(h.Anon, colType, v, dateRange)
+					anonVal := ProcessCell(h.Anon, colType, v, mode, dateRange)
 					dataCells[i] = anonVal
 
 					if colType != ColUnknown && anonVal != v && strings.TrimSpace(v) != "" {
-						dm.Put(anonVal, v)
-						if strings.TrimSpace(anonVal) != anonVal {
-							dm.Put(strings.TrimSpace(anonVal), v)
+						var headerName string
+						if i < len(headers) {
+							headerName = headers[i]
+						}
+						dm.AddTargetHeader(headerName)
+						if mode == domain.ModeDelete {
+							dm.PutCell(sheetName, headerName, rowNum, v)
+						} else {
+							dm.Put(anonVal, v)
+							if strings.TrimSpace(anonVal) != anonVal {
+								dm.Put(strings.TrimSpace(anonVal), v)
+							}
 						}
 					}
 				}

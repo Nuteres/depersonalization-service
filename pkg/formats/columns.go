@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/detector"
 )
@@ -480,6 +481,33 @@ func AnonymizeCell(anon *anonymizer.Anonymizer, colType ColumnType, val string, 
 	default:
 		return val
 	}
+}
+
+// DeletionMarker is the standardized string marker used to replace sensitive personal data in ModeDelete.
+const DeletionMarker = "[УДАЛЕНО]"
+
+// ProcessCell processes a cell value according to colType and mode (replace or delete).
+func ProcessCell(anon *anonymizer.Anonymizer, colType ColumnType, val string, mode domain.ProcessingMode, dateRange int) string {
+	if strings.TrimSpace(val) == "" || colType == ColUnknown {
+		return val
+	}
+	if mode == domain.ModeDelete {
+		return DeletionMarker
+	}
+	return AnonymizeCell(anon, colType, val, dateRange)
+}
+
+func getProcessingMode(options map[string]interface{}) domain.ProcessingMode {
+	if options == nil {
+		return domain.ModeReplace
+	}
+	if m, ok := options["mode"].(domain.ProcessingMode); ok && m != "" {
+		return m
+	}
+	if s, ok := options["mode"].(string); ok && s != "" {
+		return domain.ProcessingMode(s)
+	}
+	return domain.ModeReplace
 }
 
 func getDateRange(options map[string]interface{}) int {

@@ -19,12 +19,20 @@ import (
 
 	"golang.org/x/text/encoding/charmap"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/detector"
 )
 
 // BlackoutMarker is the replacement string injected into redacted PDF content streams.
 const BlackoutMarker = "[ ПДн СКРЫТО ]"
+
+func getPDFMarker(mode domain.ProcessingMode) string {
+	if mode == domain.ModeDelete {
+		return " " + DeletionMarker + " "
+	}
+	return BlackoutMarker
+}
 
 // PDFHandler implements FormatHandler for PDF documents, performing physical text scrubbing
 // and vector blackout redaction rectangle overlay.
@@ -101,6 +109,7 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		return errors.New("invalid PDF: missing %PDF- header")
 	}
 
+	mode := getProcessingMode(options)
 	customTerms := extractCustomTerms(options)
 	disabledEntities := extractDisabledEntities(options)
 
@@ -149,7 +158,7 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		}
 
 		// Redact content stream
-		redactedStream, modified := redactContentStream(decompressed, customTerms, disabledEntities)
+		redactedStream, modified := redactContentStream(decompressed, customTerms, disabledEntities, mode)
 		if modified {
 			if obj.Compressed {
 				var buf bytes.Buffer
@@ -209,8 +218,8 @@ func extractCustomTerms(options map[string]interface{}) []string {
 }
 
 // redactContentStream scans a PDF content stream, scrubs sensitive text,
-// replaces it with BlackoutMarker, and appends blackout rectangle operators.
-func redactContentStream(data []byte, customTerms []string, disabledEntities map[string]bool) ([]byte, bool) {
+// replaces it with BlackoutMarker or DeletionMarker, and appends blackout rectangle operators.
+func redactContentStream(data []byte, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode) ([]byte, bool) {
 	// Skip streams that contain no text operators and no custom search terms
 	hasTextOps := bytes.Contains(data, []byte("BT")) || bytes.Contains(data, []byte("Tj")) || bytes.Contains(data, []byte("TJ"))
 	if !hasTextOps && len(customTerms) == 0 {
@@ -248,7 +257,7 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 					currentY = lineStartY
 				}
 
-				newRaw, boxes, didRedact := processTextString(decoded, currentFontSize, currentX, currentY, customTerms, disabledEntities)
+				newRaw, boxes, didRedact := processTextString(decoded, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode)
 				if didRedact {
 					modified = true
 					out.Write(newRaw)
@@ -271,7 +280,7 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 
 			op, _ := peekNextOperator(data, i)
 			if op == "Tj" || op == "'" || op == "\"" {
-				newRaw, boxes, didRedact := processTextString(decoded, currentFontSize, currentX, currentY, customTerms, disabledEntities)
+				newRaw, boxes, didRedact := processTextString(decoded, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode)
 				if didRedact {
 					modified = true
 					out.Write(newRaw)
@@ -294,7 +303,7 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 
 			op, _ := peekNextOperator(data, i)
 			if op == "TJ" {
-				newArr, boxes, didRedact := processTJArray(rawArr, currentFontSize, currentX, currentY, customTerms, disabledEntities)
+				newArr, boxes, didRedact := processTJArray(rawArr, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode)
 				if didRedact {
 					modified = true
 					out.Write(newArr)
@@ -410,7 +419,7 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 	res := out.Bytes()
 
 	// Defense-in-depth: scrub any remaining raw occurrences of sensitive strings
-	scrubbedRes, extraModified := scrubRemainingSensitiveText(res, customTerms, disabledEntities)
+	scrubbedRes, extraModified := scrubRemainingSensitiveText(res, customTerms, disabledEntities, mode)
 	if extraModified {
 		modified = true
 		res = scrubbedRes
@@ -426,8 +435,8 @@ type textMatch struct {
 }
 
 // processTextString searches for sensitive personal data in a text string,
-// calculates bounding boxes, and replaces matched text with BlackoutMarker.
-func processTextString(decoded []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool) ([]byte, []BoundingBox, bool) {
+// calculates bounding boxes, and replaces matched text with BlackoutMarker or DeletionMarker.
+func processTextString(decoded []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode) ([]byte, []BoundingBox, bool) {
 	text := decodeText(decoded)
 	matches := findSensitiveMatches(text, customTerms, disabledEntities)
 	if len(matches) == 0 {
@@ -443,6 +452,7 @@ func processTextString(decoded []byte, fontSize, curX, curY float64, customTerms
 	redactedText := text
 	runes := []rune(text)
 	charWidth := fontSize * 0.52
+	marker := getPDFMarker(mode)
 
 	for _, m := range matches {
 		runeStart := len([]rune(text[:m.start]))
@@ -462,7 +472,7 @@ func processTextString(decoded []byte, fontSize, curX, curY float64, customTerms
 		boxes = append(boxes, BoundingBox{X: bx, Y: by, W: bw, H: bh})
 
 		// Replace in string
-		redactedText = redactedText[:m.start] + BlackoutMarker + redactedText[m.end:]
+		redactedText = redactedText[:m.start] + marker + redactedText[m.end:]
 	}
 	_ = runes
 
@@ -482,7 +492,7 @@ func processTextString(decoded []byte, fontSize, curX, curY float64, customTerms
 }
 
 // processTJArray processes an array operand of a TJ operator.
-func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool) ([]byte, []BoundingBox, bool) {
+func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode) ([]byte, []BoundingBox, bool) {
 	// Parse array elements: either strings or numbers
 	var elements [][]byte
 	i := 1 // skip '['
@@ -521,7 +531,7 @@ func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []s
 	for _, elem := range elements {
 		if len(elem) > 0 && elem[0] == '(' {
 			_, decoded, _ := parseLiteralString(elem, 0)
-			newRaw, boxes, didRedact := processTextString(decoded, fontSize, arrX, curY, customTerms, disabledEntities)
+			newRaw, boxes, didRedact := processTextString(decoded, fontSize, arrX, curY, customTerms, disabledEntities, mode)
 			if didRedact {
 				modified = true
 				newElements = append(newElements, newRaw)
@@ -532,7 +542,7 @@ func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []s
 			arrX += float64(len([]rune(string(decoded)))) * charWidth
 		} else if len(elem) > 0 && elem[0] == '<' {
 			_, decoded, _ := parseHexString(elem, 0)
-			newRaw, boxes, didRedact := processTextString(decoded, fontSize, arrX, curY, customTerms, disabledEntities)
+			newRaw, boxes, didRedact := processTextString(decoded, fontSize, arrX, curY, customTerms, disabledEntities, mode)
 			if didRedact {
 				modified = true
 				newElements = append(newElements, newRaw)
@@ -730,7 +740,7 @@ func isFIOValid(s string) bool {
 
 // scrubRemainingSensitiveText performs defense-in-depth replacement of any
 // lingering sensitive strings across the decompressed stream.
-func scrubRemainingSensitiveText(stream []byte, customTerms []string, disabledEntities map[string]bool) ([]byte, bool) {
+func scrubRemainingSensitiveText(stream []byte, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode) ([]byte, bool) {
 	text := string(stream)
 	matches := findSensitiveMatches(text, customTerms, disabledEntities)
 	if len(matches) == 0 {
@@ -742,8 +752,9 @@ func scrubRemainingSensitiveText(stream []byte, customTerms []string, disabledEn
 	})
 
 	res := text
+	marker := getPDFMarker(mode)
 	for _, m := range matches {
-		res = res[:m.start] + BlackoutMarker + res[m.end:]
+		res = res[:m.start] + marker + res[m.end:]
 	}
 
 	return []byte(res), true

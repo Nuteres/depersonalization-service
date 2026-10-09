@@ -8,7 +8,9 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
+	"dep_service/pkg/depmap"
 	"dep_service/pkg/detector"
 	"dep_service/pkg/formats"
 )
@@ -442,3 +444,86 @@ func TestExcelHandler_DisabledColumnsBySheet(t *testing.T) {
 		t.Errorf("expected Sheet 2 FIO to be anonymized, got %q", s2Val)
 	}
 }
+
+func TestExcelHandler_ModeDelete(t *testing.T) {
+	anon := anonymizer.New("test-salt-excel-mode-delete")
+	handler := formats.NewExcelHandler(anon)
+
+	f := excelize.NewFile()
+	defer f.Close()
+
+	sheet := "Лист1"
+	f.SetSheetName("Sheet1", sheet)
+
+	_ = f.SetCellValue(sheet, "A1", "ID")
+	_ = f.SetCellValue(sheet, "B1", "ФИО")
+	_ = f.SetCellValue(sheet, "C1", "Телефон")
+
+	_ = f.SetCellValue(sheet, "A2", "1")
+	_ = f.SetCellValue(sheet, "B2", "Иванов Иван Иванович")
+	_ = f.SetCellValue(sheet, "C2", "+7 999 123-45-67")
+
+	var inBuf, outBuf bytes.Buffer
+	if err := f.Write(&inBuf); err != nil {
+		t.Fatalf("failed to write workbook: %v", err)
+	}
+
+	dm := depmap.New("test.xlsx")
+	options := map[string]interface{}{
+		"mode":   domain.ModeDelete,
+		"depmap": dm,
+	}
+
+	if err := handler.Process(context.Background(), &inBuf, &outBuf, options); err != nil {
+		t.Fatalf("handler.Process failed: %v", err)
+	}
+
+	outExcel, err := excelize.OpenReader(&outBuf)
+	if err != nil {
+		t.Fatalf("failed to open processed file: %v", err)
+	}
+	defer outExcel.Close()
+
+	idVal, _ := outExcel.GetCellValue(sheet, "A2")
+	if idVal != "1" {
+		t.Errorf("expected ID untouched '1', got %q", idVal)
+	}
+
+	fioVal, _ := outExcel.GetCellValue(sheet, "B2")
+	if fioVal != formats.DeletionMarker {
+		t.Errorf("expected FIO %q, got %q", formats.DeletionMarker, fioVal)
+	}
+
+	phoneVal, _ := outExcel.GetCellValue(sheet, "C2")
+	if phoneVal != formats.DeletionMarker {
+		t.Errorf("expected Phone %q, got %q", formats.DeletionMarker, phoneVal)
+	}
+
+	if dm.Mode != "delete" {
+		t.Errorf("expected dm.Mode 'delete', got %q", dm.Mode)
+	}
+
+	origFIO, ok := dm.GetCell(sheet, "ФИО", 2)
+	if !ok || origFIO != "Иванов Иван Иванович" {
+		t.Errorf("expected orig FIO in depmap, got %q (found: %v)", origFIO, ok)
+	}
+
+	origPhone, ok := dm.GetCell(sheet, "Телефон", 2)
+	if !ok || origPhone != "+7 999 123-45-67" {
+		t.Errorf("expected orig Phone in depmap, got %q (found: %v)", origPhone, ok)
+	}
+
+	foundFIOHeader, foundPhoneHeader := false, false
+	for _, h := range dm.TargetHeaders {
+		if h == "ФИО" {
+			foundFIOHeader = true
+		}
+		if h == "Телефон" {
+			foundPhoneHeader = true
+		}
+	}
+	if !foundFIOHeader || !foundPhoneHeader {
+		t.Errorf("expected TargetHeaders to have ФИО and Телефон, got %v", dm.TargetHeaders)
+	}
+}
+

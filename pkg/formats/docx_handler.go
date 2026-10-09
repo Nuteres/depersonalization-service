@@ -15,6 +15,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/depmap"
 	"dep_service/pkg/detector"
@@ -27,49 +28,25 @@ type EntityCount struct {
 }
 
 // DocxTextSnippet represents a single detected entity snippet.
-type DocxTextSnippet struct {
-	Original   string `json:"original"`
-	Anonymized string `json:"anonymized"`
-	Type       string `json:"type"`
-}
+type DocxTextSnippet = domain.DocxTextSnippet
 
 // TextParagraphSegment represents a piece of text inside a paragraph, indicating if it was anonymized.
-type TextParagraphSegment struct {
-	Text       string `json:"text"`
-	IsEntity   bool   `json:"isEntity"`
-	Type       string `json:"type,omitempty"`
-	Original   string `json:"original,omitempty"`
-	Anonymized string `json:"anonymized,omitempty"`
-}
+type TextParagraphSegment = domain.TextParagraphSegment
 
 // TextTableCellPreview represents a cell inside a table row for Word-like preview.
-type TextTableCellPreview struct {
-	Segments []TextParagraphSegment `json:"segments"`
-}
+type TextTableCellPreview = domain.TextTableCellPreview
 
 // TextTableRowPreview represents a table row for Word-like preview.
-type TextTableRowPreview struct {
-	Cells []TextTableCellPreview `json:"cells"`
-}
+type TextTableRowPreview = domain.TextTableRowPreview
 
 // TextTablePreview represents a structured table for Word-like preview.
-type TextTablePreview struct {
-	Rows []TextTableRowPreview `json:"rows"`
-}
+type TextTablePreview = domain.TextTablePreview
 
 // TextDocumentBlock represents either a top-level paragraph or a table in a document.
-type TextDocumentBlock struct {
-	Type     string                 `json:"type"` // "paragraph" or "table"
-	Index    int                    `json:"index"`
-	Segments []TextParagraphSegment `json:"segments,omitempty"`
-	Table    *TextTablePreview      `json:"table,omitempty"`
-}
+type TextDocumentBlock = domain.TextDocumentBlock
 
 // TextParagraphPreview holds the segmented text of a paragraph for inline Word-like document preview.
-type TextParagraphPreview struct {
-	Index    int                    `json:"index"`
-	Segments []TextParagraphSegment `json:"segments"`
-}
+type TextParagraphPreview = domain.TextParagraphPreview
 
 // DOCXHandler handles inspection and anonymization of Microsoft Word (.docx) documents.
 type DOCXHandler struct {
@@ -1029,6 +1006,7 @@ func (h *DOCXHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w 
 	}
 
 	disabledTypes := getDisabledEntityTypes(options)
+	mode := getProcessingMode(options)
 
 	origName := "document.docx"
 	if options != nil {
@@ -1036,7 +1014,16 @@ func (h *DOCXHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w 
 			origName = s
 		}
 	}
-	dm := depmap.New(origName)
+	var dm *depmap.DepMap
+	if d, ok := options["depmap"].(*depmap.DepMap); ok {
+		dm = d
+	} else if d, ok := options["depMap"].(*depmap.DepMap); ok {
+		dm = d
+	}
+	if dm == nil {
+		dm = depmap.New(origName)
+	}
+	dm.Mode = string(mode)
 
 	updatedXMLs := make(map[string][]byte)
 
@@ -1125,13 +1112,19 @@ func (h *DOCXHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w 
 				}
 
 				origVal := string(paraRunes[rStart:rEnd])
-				synthVal := generateSynthetic(h.Anon, m.entityType, origVal)
-				dm.Put(synthVal, origVal)
+				var replVal string
+				if mode == domain.ModeDelete {
+					replVal = DeletionMarker
+					dm.PutOrdinal(origVal)
+				} else {
+					replVal = generateSynthetic(h.Anon, m.entityType, origVal)
+					dm.Put(replVal, origVal)
+				}
 
 				spans = append(spans, entityRuneSpan{
 					runeStart: rStart,
 					runeEnd:   rEnd,
-					synthetic: synthVal,
+					synthetic: replVal,
 				})
 			}
 

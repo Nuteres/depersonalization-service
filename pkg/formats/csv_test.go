@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
+	"dep_service/pkg/depmap"
 	"dep_service/pkg/detector"
 	"dep_service/pkg/formats"
 )
@@ -327,5 +329,71 @@ func TestCSVHandler_ContextCancellation(t *testing.T) {
 	err := handler.Process(ctx, strings.NewReader(inputData), &w, nil)
 	if err == nil {
 		t.Fatal("expected context cancellation error, got nil")
+	}
+}
+
+func TestCSVHandler_ModeDelete(t *testing.T) {
+	anon := anonymizer.New("test-salt-csv-mode-delete")
+	handler := formats.NewCSVHandler(anon)
+
+	inputCSV := "ID,ФИО,Телефон\n1,Иванов Иван Иванович,+7 999 123-45-67\n"
+	inBuf := strings.NewReader(inputCSV)
+	var outBuf bytes.Buffer
+
+	dm := depmap.New("test.csv")
+	options := map[string]interface{}{
+		"mode":   domain.ModeDelete,
+		"depmap": dm,
+	}
+
+	if err := handler.Process(context.Background(), inBuf, &outBuf, options); err != nil {
+		t.Fatalf("handler.Process failed: %v", err)
+	}
+
+	r := csv.NewReader(bytes.NewReader(outBuf.Bytes()))
+	records, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("failed to read output csv: %v", err)
+	}
+
+	if len(records) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(records))
+	}
+
+	if records[1][0] != "1" {
+		t.Errorf("expected ID '1', got %q", records[1][0])
+	}
+	if records[1][1] != formats.DeletionMarker {
+		t.Errorf("expected FIO %q, got %q", formats.DeletionMarker, records[1][1])
+	}
+	if records[1][2] != formats.DeletionMarker {
+		t.Errorf("expected Phone %q, got %q", formats.DeletionMarker, records[1][2])
+	}
+
+	if dm.Mode != "delete" {
+		t.Errorf("expected dm.Mode 'delete', got %q", dm.Mode)
+	}
+
+	origFIO, ok := dm.GetCell("", "ФИО", 2)
+	if !ok || origFIO != "Иванов Иван Иванович" {
+		t.Errorf("expected orig FIO in depmap, got %q (found: %v)", origFIO, ok)
+	}
+
+	origPhone, ok := dm.GetCell("", "Телефон", 2)
+	if !ok || origPhone != "+7 999 123-45-67" {
+		t.Errorf("expected orig Phone in depmap, got %q (found: %v)", origPhone, ok)
+	}
+
+	foundFIO, foundPhone := false, false
+	for _, h := range dm.TargetHeaders {
+		if h == "ФИО" {
+			foundFIO = true
+		}
+		if h == "Телефон" {
+			foundPhone = true
+		}
+	}
+	if !foundFIO || !foundPhone {
+		t.Errorf("expected TargetHeaders to have ФИО and Телефон, got %v", dm.TargetHeaders)
 	}
 }

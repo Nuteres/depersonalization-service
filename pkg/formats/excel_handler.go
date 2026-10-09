@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/xuri/excelize/v2"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
+	"dep_service/pkg/depmap"
 )
 
 // ExcelHandler implements FormatHandler for Microsoft Excel (.xlsx) files using streaming.
@@ -71,6 +74,16 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 	defer outFile.Close()
 
 	dateRange := getDateRange(options)
+	mode := getProcessingMode(options)
+	var depMap *depmap.DepMap
+	if dm, ok := options["depmap"].(*depmap.DepMap); ok {
+		depMap = dm
+	} else if dm, ok := options["depMap"].(*depmap.DepMap); ok {
+		depMap = dm
+	}
+	if depMap != nil {
+		depMap.Mode = string(mode)
+	}
 
 	for sheetIdx, sheetName := range sheetList {
 		select {
@@ -173,7 +186,11 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 		}
 
 		shouldShuffle := isShuffleRows(options)
-		var pendingDataRows [][]interface{}
+		type pendingExcelRow struct {
+			dataCells []interface{}
+			origCells []string
+		}
+		var pendingDataRows []pendingExcelRow
 
 		rowNum := 1
 
@@ -226,10 +243,26 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 					if i < len(colTypes) && !disabledMap[col1Based] {
 						colType = colTypes[i]
 					}
-					dataCells[i] = AnonymizeCell(h.Anon, colType, v, dateRange)
+					newVal := ProcessCell(h.Anon, colType, v, mode, dateRange)
+					dataCells[i] = newVal
+
+					if colType != ColUnknown && strings.TrimSpace(v) != "" && depMap != nil {
+						var headerName string
+						if i < len(headers) {
+							headerName = headers[i]
+						}
+						depMap.AddTargetHeader(headerName)
+						if mode == domain.ModeDelete {
+							if !shouldShuffle {
+								depMap.PutCell(sheetName, headerName, rowNum, v)
+							}
+						} else {
+							depMap.Put(newVal, v)
+						}
+					}
 				}
 				if shouldShuffle {
-					pendingDataRows = append(pendingDataRows, dataCells)
+					pendingDataRows = append(pendingDataRows, pendingExcelRow{dataCells: dataCells, origCells: colValues})
 				} else {
 					if err := sw.SetRow(cellCoordinate, dataCells); err != nil {
 						_ = rows.Close()
@@ -256,7 +289,7 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 
 		if shouldShuffle && len(pendingDataRows) > 0 {
 			ShuffleRows(h.Anon, pendingDataRows)
-			for i, dataCells := range pendingDataRows {
+			for i, pr := range pendingDataRows {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -267,8 +300,24 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 				if err != nil {
 					return fmt.Errorf("failed to get cell coordinate for row %d: %w", targetRowNum, err)
 				}
-				if err := sw.SetRow(cellCoordinate, dataCells); err != nil {
+				if err := sw.SetRow(cellCoordinate, pr.dataCells); err != nil {
 					return fmt.Errorf("failed to write shuffled data row %d in sheet %s: %w", targetRowNum, sheetName, err)
+				}
+				if depMap != nil && mode == domain.ModeDelete {
+					for colIdx, v := range pr.origCells {
+						var colType ColumnType
+						col1Based := colIdx + 1
+						if colIdx < len(colTypes) && !disabledMap[col1Based] {
+							colType = colTypes[colIdx]
+						}
+						if colType != ColUnknown && strings.TrimSpace(v) != "" {
+							var headerName string
+							if colIdx < len(headers) {
+								headerName = headers[colIdx]
+							}
+							depMap.PutCell(sheetName, headerName, targetRowNum, v)
+						}
+					}
 				}
 				if progressFn != nil && (targetRowNum)%50 == 0 {
 					progressFn(targetRowNum)

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 )
 
@@ -208,4 +209,30 @@ func TestDetectColumnTypeWithSamples_AuthorRecordAndDWH(t *testing.T) {
 		t.Errorf("expected ColFIO for 'Инициатор (куратор) ГПХ', got %v", dwhFIO)
 	}
 }
+
+func TestProcessCell_ModeDelete(t *testing.T) {
+	anon := anonymizer.New("test-salt")
+	val := "Иванов Иван Иванович"
+
+	replaced := ProcessCell(anon, ColFIO, val, domain.ModeReplace, 30)
+	if replaced == val || replaced == DeletionMarker {
+		t.Fatalf("expected synthetic replacement, got %q", replaced)
+	}
+
+	deleted := ProcessCell(anon, ColFIO, val, domain.ModeDelete, 30)
+	if deleted != DeletionMarker {
+		t.Fatalf("expected %q, got %q", DeletionMarker, deleted)
+	}
+
+	empty := ProcessCell(anon, ColFIO, "", domain.ModeDelete, 30)
+	if empty != "" {
+		t.Fatalf("expected empty string for empty cell, got %q", empty)
+	}
+
+	unknown := ProcessCell(anon, ColUnknown, "Simple Text", domain.ModeDelete, 30)
+	if unknown != "Simple Text" {
+		t.Fatalf("expected untouched text for ColUnknown, got %q", unknown)
+	}
+}
+
 

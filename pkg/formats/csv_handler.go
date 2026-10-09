@@ -9,7 +9,9 @@ import (
 	"io"
 	"strings"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
+	"dep_service/pkg/depmap"
 )
 
 // CSVHandler implements FormatHandler for CSV and TSV files using buffered I/O.
@@ -71,6 +73,16 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 	defer csvWriter.Flush()
 
 	dateRange := getDateRange(options)
+	mode := getProcessingMode(options)
+	var depMap *depmap.DepMap
+	if dm, ok := options["depmap"].(*depmap.DepMap); ok {
+		depMap = dm
+	} else if dm, ok := options["depMap"].(*depmap.DepMap); ok {
+		depMap = dm
+	}
+	if depMap != nil {
+		depMap.Mode = string(mode)
+	}
 
 	var progressFn func(int)
 	if cb, ok := options["progress_callback"].(func(int)); ok {
@@ -140,8 +152,11 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 	shouldShuffle := isShuffleRows(options)
 
 	if shouldShuffle {
-		// Collect all anonymized data rows into memory for shuffling
-		var allDataRows [][]string
+		type pendingCSVRow struct {
+			outRow  []string
+			origRow []string
+		}
+		var allDataRows []pendingCSVRow
 
 		// 1. Buffered data rows
 		for i := headerIdx + 1; i < len(initialRows); i++ {
@@ -153,9 +168,21 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 				if j < len(colTypes) && !disabledMap[col1Based] {
 					ct = colTypes[j]
 				}
-				outRow[j] = AnonymizeCell(h.Anon, ct, val, dateRange)
+				newVal := ProcessCell(h.Anon, ct, val, mode, dateRange)
+				outRow[j] = newVal
+
+				if ct != ColUnknown && strings.TrimSpace(val) != "" && depMap != nil {
+					var headerName string
+					if j < len(headers) {
+						headerName = headers[j]
+					}
+					depMap.AddTargetHeader(headerName)
+					if mode != domain.ModeDelete {
+						depMap.Put(newVal, val)
+					}
+				}
 			}
-			allDataRows = append(allDataRows, outRow)
+			allDataRows = append(allDataRows, pendingCSVRow{outRow: outRow, origRow: record})
 		}
 
 		// 2. Stream remaining data rows into buffer
@@ -181,24 +208,54 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 				if i < len(colTypes) && !disabledMap[col1Based] {
 					colType = colTypes[i]
 				}
-				outRow[i] = AnonymizeCell(h.Anon, colType, val, dateRange)
+				newVal := ProcessCell(h.Anon, colType, val, mode, dateRange)
+				outRow[i] = newVal
+
+				if colType != ColUnknown && strings.TrimSpace(val) != "" && depMap != nil {
+					var headerName string
+					if i < len(headers) {
+						headerName = headers[i]
+					}
+					depMap.AddTargetHeader(headerName)
+					if mode != domain.ModeDelete {
+						depMap.Put(newVal, val)
+					}
+				}
 			}
-			allDataRows = append(allDataRows, outRow)
+			allDataRows = append(allDataRows, pendingCSVRow{outRow: outRow, origRow: record})
 		}
 
 		// Shuffle data rows using Fisher-Yates algorithm seeded by salt
 		ShuffleRows(h.Anon, allDataRows)
 
 		// Write shuffled data rows
-		for _, outRow := range allDataRows {
+		for idx, pr := range allDataRows {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			default:
 			}
 
-			if err := csvWriter.Write(outRow); err != nil {
+			if err := csvWriter.Write(pr.outRow); err != nil {
 				return fmt.Errorf("failed writing csv row: %w", err)
+			}
+
+			targetRowNum := headerIdx + 2 + idx
+			if depMap != nil && mode == domain.ModeDelete {
+				for j, val := range pr.origRow {
+					var ct ColumnType
+					col1Based := j + 1
+					if j < len(colTypes) && !disabledMap[col1Based] {
+						ct = colTypes[j]
+					}
+					if ct != ColUnknown && strings.TrimSpace(val) != "" {
+						var headerName string
+						if j < len(headers) {
+							headerName = headers[j]
+						}
+						depMap.PutCell("", headerName, targetRowNum, val)
+					}
+				}
 			}
 
 			rowCount++
@@ -214,6 +271,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		// Write already-buffered data rows directly (streaming mode)
 		for i := headerIdx + 1; i < len(initialRows); i++ {
 			record := initialRows[i]
+			physicalRowNum := i + 1
 			outRow := make([]string, len(record))
 			for j, val := range record {
 				var ct ColumnType
@@ -221,7 +279,21 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 				if j < len(colTypes) && !disabledMap[col1Based] {
 					ct = colTypes[j]
 				}
-				outRow[j] = AnonymizeCell(h.Anon, ct, val, dateRange)
+				newVal := ProcessCell(h.Anon, ct, val, mode, dateRange)
+				outRow[j] = newVal
+
+				if ct != ColUnknown && strings.TrimSpace(val) != "" && depMap != nil {
+					var headerName string
+					if j < len(headers) {
+						headerName = headers[j]
+					}
+					depMap.AddTargetHeader(headerName)
+					if mode == domain.ModeDelete {
+						depMap.PutCell("", headerName, physicalRowNum, val)
+					} else {
+						depMap.Put(newVal, val)
+					}
+				}
 			}
 			if err := csvWriter.Write(outRow); err != nil {
 				return fmt.Errorf("failed writing csv row: %w", err)
@@ -233,6 +305,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		}
 
 		// Stream remaining data rows from file
+		physicalRowNum := len(initialRows) + 1
 		for {
 			select {
 			case <-ctx.Done():
@@ -255,13 +328,28 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 				if i < len(colTypes) && !disabledMap[col1Based] {
 					colType = colTypes[i]
 				}
-				outRow[i] = AnonymizeCell(h.Anon, colType, val, dateRange)
+				newVal := ProcessCell(h.Anon, colType, val, mode, dateRange)
+				outRow[i] = newVal
+
+				if colType != ColUnknown && strings.TrimSpace(val) != "" && depMap != nil {
+					var headerName string
+					if i < len(headers) {
+						headerName = headers[i]
+					}
+					depMap.AddTargetHeader(headerName)
+					if mode == domain.ModeDelete {
+						depMap.PutCell("", headerName, physicalRowNum, val)
+					} else {
+						depMap.Put(newVal, val)
+					}
+				}
 			}
 
 			if err := csvWriter.Write(outRow); err != nil {
 				return fmt.Errorf("failed writing csv row: %w", err)
 			}
 
+			physicalRowNum++
 			rowCount++
 			if progressFn != nil && rowCount%50 == 0 {
 				progressFn(rowCount)

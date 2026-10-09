@@ -115,7 +115,14 @@ func (dm *DepMap) PutCell(sheet, header string, row int, original string) {
 	if dm.CellMappings == nil {
 		dm.CellMappings = make(map[string]string)
 	}
-	key := fmt.Sprintf("%s!%s:%d", strings.TrimSpace(sheet), strings.TrimSpace(header), row)
+	s := strings.TrimSpace(sheet)
+	h := strings.TrimSpace(header)
+	var key string
+	if s != "" {
+		key = fmt.Sprintf("%s!%s:%d", s, h, row)
+	} else {
+		key = fmt.Sprintf("%s:%d", h, row)
+	}
 	dm.CellMappings[key] = original
 	dm.RecordsCount = len(dm.CellMappings) + len(dm.Mapping) + len(dm.OrdinalMappings)
 }
@@ -125,8 +132,20 @@ func (dm *DepMap) GetCell(sheet, header string, row int) (string, bool) {
 	if dm.CellMappings == nil {
 		return "", false
 	}
-	key := fmt.Sprintf("%s!%s:%d", strings.TrimSpace(sheet), strings.TrimSpace(header), row)
-	val, ok := dm.CellMappings[key]
+	s := strings.TrimSpace(sheet)
+	h := strings.TrimSpace(header)
+	if s != "" {
+		key := fmt.Sprintf("%s!%s:%d", s, h, row)
+		if val, ok := dm.CellMappings[key]; ok {
+			return val, ok
+		}
+	}
+	keyNoSheet := fmt.Sprintf("%s:%d", h, row)
+	if val, ok := dm.CellMappings[keyNoSheet]; ok {
+		return val, ok
+	}
+	keyWithBang := fmt.Sprintf("!%s:%d", h, row)
+	val, ok := dm.CellMappings[keyWithBang]
 	return val, ok
 }
 
