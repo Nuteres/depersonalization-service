@@ -82,15 +82,19 @@ export interface FileInfo {
   pdfRedactedSnippet?: string;
 }
 
+export type ProcessingMode = 'replace' | 'delete';
+
 export interface ProcessOptions {
   inputPath: string;
   outputPath?: string;
+  mode?: ProcessingMode;
   salt?: string;
   disabledCols?: number[];
   disabledBySheet?: Record<string, number[]>;
   createKey?: boolean;
   keyPassword?: string;
   keyPath?: string;
+  shuffleRows?: boolean;
 }
 
 export interface ProcessResult {

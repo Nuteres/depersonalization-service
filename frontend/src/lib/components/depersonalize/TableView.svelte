@@ -3,7 +3,7 @@
   import { appState } from '../../stores/appState.svelte';
   import { tableState } from '../../stores/tableState.svelte';
   import { GetSheetRows } from '../../api/wails';
-  import type { EntityInfo } from '../../types/domain';
+  import type { EntityInfo, ProcessingMode } from '../../types/domain';
 
   let loadAttemptCompleted = $state(false);
 
@@ -178,6 +178,30 @@
     }
   });
 
+  async function handleModeChange(mode: ProcessingMode) {
+    if (appState.processingMode === mode) return;
+    appState.setProcessingMode(mode);
+    if (appState.currentFilePath) {
+      try {
+        const count = Math.max(10, Math.min(tableState.previewRows.length, 50));
+        const updatedRows = await GetSheetRows(
+          appState.currentFilePath,
+          sheetName,
+          0,
+          count,
+          appState.currentSalt,
+          disabledCols,
+          mode
+        );
+        if (updatedRows && updatedRows.length > 0) {
+          tableState.setPreviewRows(updatedRows);
+        }
+      } catch (err) {
+        console.error('Failed to refresh preview rows on mode change:', err);
+      }
+    }
+  }
+
   async function loadMoreRows() {
     if (tableState.isLoadingRows) return;
     if (tableState.previewRows.length >= totalRowCount) {
@@ -197,7 +221,8 @@
         offset,
         limit,
         appState.currentSalt,
-        disabledCols
+        disabledCols,
+        appState.processingMode
       );
       if (newRows && newRows.length > 0) {
         tableState.appendPreviewRows(newRows);
@@ -267,6 +292,31 @@
       </div>
 
       <div class="flex items-center space-x-3">
+        <!-- Mode Switcher: [ Замена | Удаление ] -->
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-medium text-[#78716C]">Режим:</span>
+          <div class="flex items-center bg-[#F0EFEB] p-0.5 border border-[#E8E7E3] text-xs">
+            <button
+              type="button"
+              onclick={() => handleModeChange('replace')}
+              class={appState.processingMode === 'replace'
+                ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
+                : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
+            >
+              Замена
+            </button>
+            <button
+              type="button"
+              onclick={() => handleModeChange('delete')}
+              class={appState.processingMode === 'delete'
+                ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
+                : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
+            >
+              Удаление
+            </button>
+          </div>
+        </div>
+
         <!-- Expand Button -->
         <button
           id="btn-expand-preview"
@@ -351,9 +401,9 @@
                         </span>
                       {:else}
                         <span
-                          class="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded font-mono font-medium"
+                          class="text-[10px] {appState.processingMode === 'delete' ? 'text-rose-700 bg-rose-50 border-rose-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'} border px-1 py-0.5 rounded font-mono font-medium"
                         >
-                          ПДн: Замена
+                          {appState.processingMode === 'delete' ? 'ПДн: Удаление' : 'ПДн: Замена'}
                         </span>
                       {/if}
                     </button>
@@ -393,6 +443,11 @@
                   {@const isDisabled = disabledCols.includes(col1Based)}
                   {@const origVal = row.before?.[cIdx] ?? ''}
                   {@const anonVal = row.after?.[cIdx] ?? origVal}
+                  {@const displayVal = isDisabled
+                    ? origVal
+                    : isPii && appState.processingMode === 'delete'
+                      ? '[УДАЛЕНО]'
+                      : anonVal}
 
                   {#if tableState.isBefore}
                     <!-- Before view -->
@@ -412,11 +467,13 @@
                       class="py-3 px-4 text-xs font-mono border-r border-[#F0EFEB] truncate {isDisabled
                         ? 'text-[#78716C] bg-stone-50/70 italic'
                         : isPii
-                          ? 'font-medium text-[#1C1917] bg-emerald-50/40'
+                          ? appState.processingMode === 'delete'
+                            ? 'font-medium text-rose-700 bg-rose-50/40'
+                            : 'font-medium text-[#1C1917] bg-emerald-50/40'
                           : 'text-[#57534E]'}"
-                      title={isDisabled ? origVal : anonVal}
+                      title={displayVal}
                     >
-                      {isDisabled ? origVal : anonVal}
+                      {displayVal}
                     </td>
                   {/if}
                 {/each}
@@ -467,6 +524,31 @@
           </div>
 
           <div class="flex items-center space-x-3 shrink-0">
+            <!-- Mode Switcher inside Modal: [ Замена | Удаление ] -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-medium text-[#78716C]">Режим:</span>
+              <div class="flex items-center bg-[#F0EFEB] p-0.5 border border-[#E8E7E3] text-xs">
+                <button
+                  type="button"
+                  onclick={() => handleModeChange('replace')}
+                  class={appState.processingMode === 'replace'
+                    ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
+                    : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
+                >
+                  Замена
+                </button>
+                <button
+                  type="button"
+                  onclick={() => handleModeChange('delete')}
+                  class={appState.processingMode === 'delete'
+                    ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
+                    : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
+                >
+                  Удаление
+                </button>
+              </div>
+            </div>
+
             <!-- Toggle Before vs After inside Modal -->
             <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
               <button
@@ -552,9 +634,9 @@
                             </span>
                           {:else}
                             <span
-                              class="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded font-mono font-medium"
+                              class="text-[10px] {appState.processingMode === 'delete' ? 'text-rose-700 bg-rose-50 border-rose-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'} border px-1 py-0.5 rounded font-mono font-medium"
                             >
-                              ПДн: Замена
+                              {appState.processingMode === 'delete' ? 'ПДн: Удаление' : 'ПДн: Замена'}
                             </span>
                           {/if}
                         </button>
@@ -594,6 +676,11 @@
                       {@const isDisabled = disabledCols.includes(col1Based)}
                       {@const origVal = row.before?.[cIdx] ?? ''}
                       {@const anonVal = row.after?.[cIdx] ?? origVal}
+                      {@const displayVal = isDisabled
+                        ? origVal
+                        : isPii && appState.processingMode === 'delete'
+                          ? '[УДАЛЕНО]'
+                          : anonVal}
 
                       {#if tableState.isBefore}
                         <td
@@ -611,11 +698,13 @@
                           class="py-3 px-4 text-xs font-mono border-r border-[#F0EFEB] truncate {isDisabled
                             ? 'text-[#78716C] bg-stone-50/70 italic'
                             : isPii
-                              ? 'font-medium text-[#1C1917] bg-emerald-50/40'
+                              ? appState.processingMode === 'delete'
+                                ? 'font-medium text-rose-700 bg-rose-50/40'
+                                : 'font-medium text-[#1C1917] bg-emerald-50/40'
                               : 'text-[#57534E]'}"
-                          title={isDisabled ? origVal : anonVal}
+                          title={displayVal}
                         >
-                          {isDisabled ? origVal : anonVal}
+                          {displayVal}
                         </td>
                       {/if}
                     {/each}

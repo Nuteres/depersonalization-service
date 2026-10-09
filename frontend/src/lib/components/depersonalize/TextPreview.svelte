@@ -302,6 +302,31 @@
 
       <!-- Controls Right: Mode Switcher & Before/After Toggle -->
       <div class="flex items-center flex-wrap gap-3">
+        <!-- Segmented Mode Switcher: [ Замена | Удаление ] -->
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs font-medium text-[#78716C]">Режим:</span>
+          <div class="flex items-center bg-[#F0EFEB] p-0.5 border border-[#E8E7E3] text-xs">
+            <button
+              type="button"
+              onclick={() => appState.setProcessingMode('replace')}
+              class={appState.processingMode === 'replace'
+                ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
+                : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
+            >
+              Замена
+            </button>
+            <button
+              type="button"
+              onclick={() => appState.setProcessingMode('delete')}
+              class={appState.processingMode === 'delete'
+                ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
+                : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
+            >
+              Удаление
+            </button>
+          </div>
+        </div>
+
         <!-- View Mode: Word Sheet vs Snippet Cards -->
         <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
           <button
@@ -461,7 +486,9 @@
                         {@const markClass = isTypeDisabled
                           ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
                           : !isBefore
-                          ? 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
+                          ? appState.processingMode === 'delete'
+                            ? 'bg-rose-100/95 text-rose-950 border-rose-400 hover:bg-rose-200'
+                            : 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
                           : 'bg-amber-100/95 text-amber-950 border-amber-400 hover:bg-amber-200'}
                         
                         <button
@@ -474,12 +501,12 @@
                             toggleEntityType(seg.type || '');
                           }}
                           class="inline px-1.5 py-0.5 mx-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
-                          title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : 'Заменено'}. Нажмите для переключения."
+                          title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                         >
                           {#if isTypeDisabled}
                             <span class="line-through decoration-stone-400">{seg.original || seg.text}</span>
                           {:else if !isBefore}
-                            {seg.anonymized || seg.text}
+                            {appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}
                           {:else}
                             {seg.original || seg.text}
                           {/if}
@@ -506,7 +533,9 @@
                                     {@const markClass = isTypeDisabled
                                       ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
                                       : !isBefore
-                                      ? 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
+                                      ? appState.processingMode === 'delete'
+                                        ? 'bg-rose-100/95 text-rose-950 border-rose-400 hover:bg-rose-200'
+                                        : 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
                                       : 'bg-amber-100/95 text-amber-950 border-amber-400 hover:bg-amber-200'}
 
                                     <button
@@ -519,12 +548,12 @@
                                         toggleEntityType(seg.type || '');
                                       }}
                                       class="inline px-1 py-0.5 mx-0.5 rounded-[3px] border font-medium text-[12px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
-                                      title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : 'Заменено'}. Нажмите для переключения."
+                                      title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                                     >
                                       {#if isTypeDisabled}
                                         <span class="line-through decoration-stone-400">{seg.original || seg.text}</span>
                                       {:else if !isBefore}
-                                        {seg.anonymized || seg.text}
+                                        {appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}
                                       {:else}
                                         {seg.original || seg.text}
                                       {/if}
@@ -556,7 +585,9 @@
                       {@const markClass = isTypeDisabled
                         ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
                         : !isBefore
-                        ? 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
+                        ? appState.processingMode === 'delete'
+                          ? 'bg-rose-100/95 text-rose-950 border-rose-400 hover:bg-rose-200'
+                          : 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
                         : 'bg-amber-100/95 text-amber-950 border-amber-400 hover:bg-amber-200'}
                       
                       <button
@@ -569,13 +600,13 @@
                           toggleEntityType(seg.type || '');
                         }}
                         class="inline px-1.5 py-0.5 mx-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
-                        title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : 'Заменено'}. Нажмите для переключения."
+                        title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                       >
                         {#if isTypeDisabled}
                           <!-- When disabled, always show original text -->
                           <span class="line-through decoration-stone-400">{seg.original || seg.text}</span>
                         {:else if !isBefore}
-                          {seg.anonymized || seg.text}
+                          {appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}
                         {:else}
                           {seg.original || seg.text}
                         {/if}
@@ -608,10 +639,10 @@
                     <button
                       type="button"
                       onclick={() => toggleEntityType(snip.type)}
-                      class="bg-emerald-100/90 text-emerald-950 font-medium px-1.5 py-0.5 rounded-[3px] border border-emerald-300 transition hover:bg-emerald-200 cursor-pointer font-mono text-[13px]"
+                      class="{appState.processingMode === 'delete' ? 'bg-rose-100/90 text-rose-950 border-rose-300 hover:bg-rose-200' : 'bg-emerald-100/90 text-emerald-950 border-emerald-300 hover:bg-emerald-200'} font-medium px-1.5 py-0.5 rounded-[3px] border transition cursor-pointer font-mono text-[13px]"
                       title="Деперсонализация активна. Нажмите, чтобы отключить замену."
                     >
-                      {snip.anonymized}
+                      {appState.processingMode === 'delete' ? '[УДАЛЕНО]' : snip.anonymized}
                     </button>
                   {:else}
                     <button
@@ -647,9 +678,11 @@
                 <span
                   class="px-1.5 py-0.5 {hoveredEntity.isDisabled
                     ? 'bg-amber-950 border border-amber-600 text-amber-300'
-                    : 'bg-emerald-950 border border-emerald-600 text-emerald-300'} text-[9px] font-bold"
+                    : appState.processingMode === 'delete'
+                      ? 'bg-rose-950 border border-rose-600 text-rose-300'
+                      : 'bg-emerald-950 border border-emerald-600 text-emerald-300'} text-[9px] font-bold"
                 >
-                  {hoveredEntity.isDisabled ? '○ ОТКЛЮЧЕНО' : '● ЗАМЕНЯЕТСЯ'}
+                  {hoveredEntity.isDisabled ? '○ ОТКЛЮЧЕНО' : appState.processingMode === 'delete' ? '● УДАЛЯЕТСЯ' : '● ЗАМЕНЯЕТСЯ'}
                 </span>
               </div>
               <span class="text-stone-400 text-[10px]">
@@ -665,9 +698,9 @@
                 </span>
               </div>
               <div class="flex items-start justify-between gap-2">
-                <span class="text-stone-400 font-mono text-[11px] shrink-0">После:</span>
-                <span class="font-mono {hoveredEntity.isDisabled ? 'text-stone-400 line-through' : 'text-emerald-300'} text-[11px] break-all text-right font-medium">
-                  {hoveredEntity.isDisabled ? hoveredEntity.original : hoveredEntity.anonymized}
+                <span class="text-stone-400 font-mono text-[11px] shrink-0">{appState.processingMode === 'delete' ? 'После удаления:' : 'После:'}</span>
+                <span class="font-mono {hoveredEntity.isDisabled ? 'text-stone-400 line-through' : appState.processingMode === 'delete' ? 'text-rose-300' : 'text-emerald-300'} text-[11px] break-all text-right font-medium">
+                  {hoveredEntity.isDisabled ? hoveredEntity.original : (appState.processingMode === 'delete' ? '[УДАЛЕНО]' : hoveredEntity.anonymized)}
                 </span>
               </div>
             </div>
@@ -761,12 +794,12 @@
                     </div>
                     <div class="space-y-1 flex-1 min-w-0">
                       <div class="text-[11px] text-[#78716C] font-mono">
-                        После деперсонализации:
+                        {appState.processingMode === 'delete' ? 'После удаления:' : 'После деперсонализации:'}
                       </div>
                       <div
-                        class="p-2 bg-emerald-50/60 border border-emerald-200 text-emerald-950 rounded-none font-mono text-[11px] break-words"
+                        class="p-2 {appState.processingMode === 'delete' ? 'bg-rose-50/60 border-rose-200 text-rose-950' : 'bg-emerald-50/60 border-emerald-200 text-emerald-950'} border rounded-none font-mono text-[11px] break-words"
                       >
-                        {snip.anonymized}
+                        {appState.processingMode === 'delete' ? '[УДАЛЕНО]' : snip.anonymized}
                       </div>
                     </div>
                   </div>

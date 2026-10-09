@@ -2,6 +2,7 @@ import type {
   AppInfo,
   FileInfo,
   ProcessResult,
+  ProcessingMode,
   RestoreResult
 } from '../types/domain';
 
@@ -28,6 +29,7 @@ export type SuccessResult = (ProcessResult | RestoreResult) & {
 
 class AppState {
   currentAppMode = $state<AppMode>('depersonalize');
+  processingMode = $state<ProcessingMode>('replace');
   currentFilePath = $state<string>('');
   currentFileInfo = $state<FileInfo | null>(null);
   currentSalt = $state<string>('152fz-secure-salt');
@@ -50,6 +52,10 @@ class AppState {
 
   setMode(mode: AppMode): void {
     this.currentAppMode = mode;
+  }
+
+  setProcessingMode(mode: ProcessingMode): void {
+    this.processingMode = mode;
   }
 
   setFilePath(path: string): void {
@@ -141,6 +147,7 @@ class AppState {
   reset(): void {
     this.currentFilePath = '';
     this.currentFileInfo = null;
+    this.processingMode = 'replace';
     this.isProcessing = false;
     this.showProgressModal = false;
     this.successResult = null;

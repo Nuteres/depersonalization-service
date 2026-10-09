@@ -132,7 +132,9 @@
     onClose();
 
     // Start progress modal
-    appState.startProgress('Деперсонализация ПДн');
+    appState.startProgress(
+      appState.processingMode === 'delete' ? 'Удаление ПДн' : 'Деперсонализация ПДн'
+    );
     appState.updateProgress(0, 0, totalRows);
 
     try {
@@ -151,12 +153,18 @@
         createKey,
         keyPassword,
         keyPath,
-        shuffleRows
+        shuffleRows,
+        appState.processingMode
       );
 
       if (result && result.success) {
         appState.showSuccess(result);
-        appState.showToast('Деперсонализация успешно завершена!', 'success');
+        appState.showToast(
+          appState.processingMode === 'delete'
+            ? 'Удаление ПДн успешно завершено!'
+            : 'Деперсонализация успешно завершена!',
+          'success'
+        );
       } else {
         appState.finishProgress();
         appState.showToast(result?.error || 'Ошибка при деперсонализации', 'error');
@@ -261,33 +269,35 @@
         </div>
 
         <!-- Salt / Key Field with Random Key Generator -->
-        <div class="space-y-2 border border-[#E8E7E3] p-4 bg-white">
-          <div class="flex items-center justify-between">
-            <label
-              for="salt-input"
-              class="block text-[11px] font-mono font-bold text-[#1C1917] uppercase tracking-wider"
-            >
-              Ключ шифрования:
-            </label>
-            <button
-              type="button"
-              onclick={generateRandomSalt}
-              class="text-[11px] text-[#065F46] hover:text-[#047857] font-semibold underline cursor-pointer"
-            >
-              🎲 Случайный ключ
-            </button>
+        {#if appState.processingMode === 'replace'}
+          <div class="space-y-2 border border-[#E8E7E3] p-4 bg-white">
+            <div class="flex items-center justify-between">
+              <label
+                for="salt-input"
+                class="block text-[11px] font-mono font-bold text-[#1C1917] uppercase tracking-wider"
+              >
+                Ключ шифрования:
+              </label>
+              <button
+                type="button"
+                onclick={generateRandomSalt}
+                class="text-[11px] text-[#065F46] hover:text-[#047857] font-semibold underline cursor-pointer"
+              >
+                🎲 Случайный ключ
+              </button>
+            </div>
+            <input
+              id="salt-input"
+              type="text"
+              bind:value={salt}
+              placeholder="Введите или сгенерируйте ключ..."
+              class="w-full px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5]"
+            />
+            <div class="text-[11px] text-[#78716C] leading-relaxed">
+              Одинаковый ключ гарантирует одинаковую замену повторяющихся значений.
+            </div>
           </div>
-          <input
-            id="salt-input"
-            type="text"
-            bind:value={salt}
-            placeholder="Введите или сгенерируйте ключ..."
-            class="w-full px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5]"
-          />
-          <div class="text-[11px] text-[#78716C] leading-relaxed">
-            Одинаковый ключ гарантирует одинаковую замену повторяющихся значений.
-          </div>
-        </div>
+        {/if}
 
         <!-- Output Destination File Path -->
         <div class="space-y-1.5 border border-[#E8E7E3] p-4 bg-white">
@@ -413,7 +423,7 @@
           class="px-5 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-[0.99]"
         >
           <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">💾</span>
-          <span>Начать обезличивание</span>
+          <span>{appState.processingMode === 'delete' ? 'Начать удаление' : 'Начать обезличивание'}</span>
         </button>
       </div>
     </div>

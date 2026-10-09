@@ -92,12 +92,14 @@
                   }}
                   class="focus:outline-none flex items-center space-x-1.5 px-2 py-0.5 rounded text-[11px] font-mono font-medium transition cursor-pointer {isDisabled
                     ? 'bg-stone-100 text-stone-500 hover:bg-stone-200'
-                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}"
+                    : appState.processingMode === 'delete'
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}"
                 >
                   <span
-                    class="w-2 h-2 rounded-full {isDisabled ? 'bg-stone-400' : 'bg-emerald-500'}"
+                    class="w-2 h-2 rounded-full {isDisabled ? 'bg-stone-400' : appState.processingMode === 'delete' ? 'bg-rose-500' : 'bg-emerald-500'}"
                   ></span>
-                  <span>{isDisabled ? 'Отключено' : '● Заменено'}</span>
+                  <span>{isDisabled ? 'Отключено' : appState.processingMode === 'delete' ? '● Удаляется' : '● Заменено'}</span>
                 </button>
               </div>
 
@@ -116,7 +118,9 @@
                   title={isDisabled ? 'Включить деперсонализацию' : 'Отключить деперсонализацию'}
                   class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {isDisabled
                     ? 'bg-stone-300'
-                    : 'bg-emerald-600'}"
+                    : appState.processingMode === 'delete'
+                      ? 'bg-rose-600'
+                      : 'bg-emerald-600'}"
                 >
                   <span
                     class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out {isDisabled
@@ -134,9 +138,11 @@
             <div
               class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono -mx-4 -mb-4 p-2.5 transition-colors {isDisabled
                 ? 'text-[#78716C] bg-[#F5F5F4]'
-                : 'text-[#065F46] bg-[#ECFDF5]'}"
+                : appState.processingMode === 'delete'
+                  ? 'text-[#9F1239] bg-[#FFF1F2]'
+                  : 'text-[#065F46] bg-[#ECFDF5]'}"
             >
-              {isDisabled ? '○ Исходные данные без изменений' : `➜ ${ent.action}`}
+              {isDisabled ? '○ Исходные данные без изменений' : (appState.processingMode === 'delete' ? '➜ Удаление (очистка)' : `➜ ${ent.action}`)}
             </div>
           </div>
         {/each}

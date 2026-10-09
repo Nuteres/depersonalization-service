@@ -13,9 +13,9 @@ type AnyFunction = (...args: any[]) => void;
 interface WailsAppBinding {
   GetAppInfo?: () => Promise<AppInfo>;
   InspectFile?: (path: string) => Promise<FileInfo>;
-  GetTableRows?: (path: string, offset: number, limit: number, salt: string, disabledCols: number[]) => Promise<PreviewRow[]>;
-  GetSheetRows?: (path: string, sheetName: string, offset: number, limit: number, salt: string, disabledCols: number[]) => Promise<PreviewRow[]>;
-  ProcessFile?: (path: string, salt: string) => Promise<ProcessResult>;
+  GetTableRows?: (path: string, offset: number, limit: number, salt: string, disabledCols: number[], mode?: string) => Promise<PreviewRow[]>;
+  GetSheetRows?: (path: string, sheetName: string, offset: number, limit: number, salt: string, disabledCols: number[], mode?: string) => Promise<PreviewRow[]>;
+  ProcessFile?: (path: string, salt: string, mode?: string) => Promise<ProcessResult>;
   ProcessFileTo?: (
     path: string,
     outPath: string,
@@ -24,7 +24,8 @@ interface WailsAppBinding {
     createKey: boolean,
     keyPassword: string,
     keyPath: string,
-    shuffleRows?: boolean
+    shuffleRows?: boolean,
+    mode?: string
   ) => Promise<ProcessResult>;
   ProcessFileWithSheets?: (
     path: string,
@@ -35,7 +36,8 @@ interface WailsAppBinding {
     createKey: boolean,
     keyPassword: string,
     keyPath: string,
-    shuffleRows?: boolean
+    shuffleRows?: boolean,
+    mode?: string
   ) => Promise<ProcessResult>;
   GetAuditRecords?: (limit: number) => Promise<AuditRecord[]>;
   ExportAuditLog?: (destPath: string) => Promise<void>;
@@ -156,14 +158,15 @@ export async function GetTableRows(
   offset: number,
   limit: number,
   salt: string,
-  disabledCols: number[]
+  disabledCols: number[],
+  mode?: string
 ): Promise<PreviewRow[]> {
   const app = getApp();
   if (app?.GetTableRows) {
-    return await app.GetTableRows(path, offset, limit, salt, disabledCols);
+    return await app.GetTableRows(path, offset, limit, salt, disabledCols, mode || '');
   }
   if (app?.GetSheetRows) {
-    return await app.GetSheetRows(path, '', offset, limit, salt, disabledCols);
+    return await app.GetSheetRows(path, '', offset, limit, salt, disabledCols, mode || '');
   }
   return [];
 }
@@ -174,22 +177,23 @@ export async function GetSheetRows(
   offset: number,
   limit: number,
   salt: string,
-  disabledCols: number[]
+  disabledCols: number[],
+  mode?: string
 ): Promise<PreviewRow[]> {
   const app = getApp();
   if (app?.GetSheetRows) {
-    return await app.GetSheetRows(path, sheetName, offset, limit, salt, disabledCols);
+    return await app.GetSheetRows(path, sheetName, offset, limit, salt, disabledCols, mode || '');
   }
   if (app?.GetTableRows) {
-    return await app.GetTableRows(path, offset, limit, salt, disabledCols);
+    return await app.GetTableRows(path, offset, limit, salt, disabledCols, mode || '');
   }
   return [];
 }
 
-export async function ProcessFile(path: string, salt: string): Promise<ProcessResult> {
+export async function ProcessFile(path: string, salt: string, mode?: string): Promise<ProcessResult> {
   const app = getApp();
   if (app?.ProcessFile) {
-    return await app.ProcessFile(path, salt);
+    return await app.ProcessFile(path, salt, mode);
   }
   return {
     success: true,
@@ -210,7 +214,8 @@ export async function ProcessFileTo(
   createKey: boolean,
   keyPassword: string,
   keyPath: string,
-  shuffleRows: boolean = false
+  shuffleRows: boolean = false,
+  mode?: string
 ): Promise<ProcessResult> {
   const app = getApp();
   if (app?.ProcessFileTo) {
@@ -222,7 +227,8 @@ export async function ProcessFileTo(
       createKey,
       keyPassword,
       keyPath,
-      Boolean(shuffleRows)
+      Boolean(shuffleRows),
+      mode
     );
   }
   const defaultKeyPath = keyPath || `${outPath || path}.depmap`;
@@ -247,7 +253,8 @@ export async function ProcessFileWithSheets(
   createKey: boolean,
   keyPassword: string,
   keyPath: string,
-  shuffleRows: boolean = false
+  shuffleRows: boolean = false,
+  mode?: string
 ): Promise<ProcessResult> {
   const app = getApp();
   if (app?.ProcessFileWithSheets) {
@@ -260,7 +267,8 @@ export async function ProcessFileWithSheets(
       createKey,
       keyPassword,
       keyPath,
-      Boolean(shuffleRows)
+      Boolean(shuffleRows),
+      mode
     );
   }
   if (app?.ProcessFileTo) {
@@ -272,7 +280,8 @@ export async function ProcessFileWithSheets(
       createKey,
       keyPassword,
       keyPath,
-      Boolean(shuffleRows)
+      Boolean(shuffleRows),
+      mode
     );
   }
   const defaultKeyPath = keyPath || `${outPath || path}.depmap`;
