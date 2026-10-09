@@ -31,13 +31,17 @@ func New() *PreviewService {
 }
 
 // GetTableRows fetches a window of preview rows starting at offset with limit for the default sheet.
-func (s *PreviewService) GetTableRows(ctx context.Context, path string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
-	return s.GetSheetRows(ctx, path, "", offset, limit, salt, disabledCols)
+func (s *PreviewService) GetTableRows(ctx context.Context, path string, offset, limit int, salt string, disabledCols []int, mode ...string) ([]domain.PreviewRow, error) {
+	m := ""
+	if len(mode) > 0 {
+		m = mode[0]
+	}
+	return s.GetSheetRows(ctx, path, "", offset, limit, salt, disabledCols, m)
 }
 
 // GetSheetRows fetches a paginated window of rows for a specific sheet in a workbook or tabular file.
 // It applies anonymization rules while respecting disabledCols (1-based column indices).
-func (s *PreviewService) GetSheetRows(ctx context.Context, path, sheetName string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+func (s *PreviewService) GetSheetRows(ctx context.Context, path, sheetName string, offset, limit int, salt string, disabledCols []int, mode ...string) ([]domain.PreviewRow, error) {
 	if ctx != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -67,28 +71,37 @@ func (s *PreviewService) GetSheetRows(ctx context.Context, path, sheetName strin
 		salt = defaultSalt
 	}
 
+	procMode := domain.ModeReplace
+	if len(mode) > 0 && strings.TrimSpace(mode[0]) != "" {
+		procMode = domain.ProcessingMode(mode[0])
+	}
+
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".csv", ".tsv":
-		return getCSVRows(ctx, path, offset, limit, salt, disabledCols)
+		return getCSVRows(ctx, path, offset, limit, salt, disabledCols, procMode)
 	case ".xlsx", ".xlsm", ".xltx", ".xltm":
-		return getXLSXRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols)
+		return getXLSXRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols, procMode)
 	case ".xls":
-		return getXLSRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols)
+		return getXLSRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols, procMode)
 	case ".xlsb":
-		return getXLSBRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols)
+		return getXLSBRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols, procMode)
 	case ".ods":
-		return getODSRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols)
+		return getODSRowsForSheet(ctx, path, sheetName, offset, limit, salt, disabledCols, procMode)
 	default:
 		return nil, fmt.Errorf("%w: динамическая подгрузка строк поддерживается только для таблиц: %s", domain.ErrUnsupportedFormat, ext)
 	}
 }
 
-func getXLSXRows(ctx context.Context, path string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
-	return getXLSXRowsForSheet(ctx, path, "", offset, limit, salt, disabledCols)
+func getXLSXRows(ctx context.Context, path string, offset, limit int, salt string, disabledCols []int, mode ...domain.ProcessingMode) ([]domain.PreviewRow, error) {
+	m := domain.ModeReplace
+	if len(mode) > 0 && mode[0] != "" {
+		m = mode[0]
+	}
+	return getXLSXRowsForSheet(ctx, path, "", offset, limit, salt, disabledCols, m)
 }
 
-func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, offset, limit int, salt string, disabledCols []int, mode domain.ProcessingMode) ([]domain.PreviewRow, error) {
 	if ctx != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -187,7 +200,7 @@ func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, o
 			if j < len(colTypes) && !disabledMap[col1Based] {
 				ct = colTypes[j]
 			}
-			after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+			after[j] = formats.ProcessCell(anon, ct, val, mode, 30)
 		}
 
 		result = append(result, domain.PreviewRow{
@@ -205,7 +218,7 @@ func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, o
 }
 
 
-func getCSVRows(ctx context.Context, path string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+func getCSVRows(ctx context.Context, path string, offset, limit int, salt string, disabledCols []int, mode domain.ProcessingMode) ([]domain.PreviewRow, error) {
 	if ctx != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -290,7 +303,7 @@ func getCSVRows(ctx context.Context, path string, offset, limit int, salt string
 			if j < len(colTypes) && !disabledMap[col1Based] {
 				ct = colTypes[j]
 			}
-			after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+			after[j] = formats.ProcessCell(anon, ct, val, mode, 30)
 		}
 
 		result = append(result, domain.PreviewRow{
@@ -307,7 +320,7 @@ func getCSVRows(ctx context.Context, path string, offset, limit int, salt string
 	return result, nil
 }
 
-func getXLSRowsForSheet(ctx context.Context, path, targetSheet string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+func getXLSRowsForSheet(ctx context.Context, path, targetSheet string, offset, limit int, salt string, disabledCols []int, mode domain.ProcessingMode) ([]domain.PreviewRow, error) {
 	if ctx != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -332,10 +345,10 @@ func getXLSRowsForSheet(ctx context.Context, path, targetSheet string, offset, l
 		}
 	}
 
-	return paginateSampleRows(samples[sheetName], offset, limit, salt, disabledCols)
+	return paginateSampleRows(samples[sheetName], offset, limit, salt, disabledCols, mode)
 }
 
-func getXLSBRowsForSheet(ctx context.Context, path, targetSheet string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+func getXLSBRowsForSheet(ctx context.Context, path, targetSheet string, offset, limit int, salt string, disabledCols []int, mode domain.ProcessingMode) ([]domain.PreviewRow, error) {
 	if ctx != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -360,10 +373,10 @@ func getXLSBRowsForSheet(ctx context.Context, path, targetSheet string, offset, 
 		}
 	}
 
-	return paginateSampleRows(samples[sheetName], offset, limit, salt, disabledCols)
+	return paginateSampleRows(samples[sheetName], offset, limit, salt, disabledCols, mode)
 }
 
-func getODSRowsForSheet(ctx context.Context, path, targetSheet string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+func getODSRowsForSheet(ctx context.Context, path, targetSheet string, offset, limit int, salt string, disabledCols []int, mode domain.ProcessingMode) ([]domain.PreviewRow, error) {
 	if ctx != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -399,10 +412,10 @@ func getODSRowsForSheet(ctx context.Context, path, targetSheet string, offset, l
 		}
 	}
 
-	return paginateSampleRows(samples[sheetName], offset, limit, salt, disabledCols)
+	return paginateSampleRows(samples[sheetName], offset, limit, salt, disabledCols, mode)
 }
 
-func paginateSampleRows(sampleRows [][]string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+func paginateSampleRows(sampleRows [][]string, offset, limit int, salt string, disabledCols []int, mode domain.ProcessingMode) ([]domain.PreviewRow, error) {
 	if len(sampleRows) == 0 {
 		return nil, nil
 	}
@@ -437,7 +450,7 @@ func paginateSampleRows(sampleRows [][]string, offset, limit int, salt string, d
 			if j < len(colTypes) && !disabledMap[col1Based] {
 				ct = colTypes[j]
 			}
-			after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+			after[j] = formats.ProcessCell(anon, ct, val, mode, 30)
 		}
 
 		result = append(result, domain.PreviewRow{

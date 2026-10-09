@@ -424,8 +424,8 @@ func TestDesktopApp_WailsArgumentTypes(t *testing.T) {
 	if !ok {
 		t.Fatalf("ProcessFileWithSheets not found on DesktopApp")
 	}
-	if m.Type.NumIn() != 10 {
-		t.Fatalf("expected 10 inputs (including receiver), got %d", m.Type.NumIn())
+	if m.Type.NumIn() != 10 && m.Type.NumIn() != 11 {
+		t.Fatalf("expected 10 or 11 inputs (including receiver), got %d", m.Type.NumIn())
 	}
 	lastParam := m.Type.In(9)
 	if lastParam.Kind() != reflect.Bool {
@@ -444,12 +444,66 @@ func TestDesktopApp_WailsArgumentTypes(t *testing.T) {
 	if !ok {
 		t.Fatalf("ProcessFileTo not found on DesktopApp")
 	}
-	if mTo.Type.NumIn() != 9 {
-		t.Fatalf("expected 9 inputs (including receiver), got %d", mTo.Type.NumIn())
+	if mTo.Type.NumIn() != 9 && mTo.Type.NumIn() != 10 {
+		t.Fatalf("expected 9 or 10 inputs (including receiver), got %d", mTo.Type.NumIn())
 	}
 	lastParamTo := mTo.Type.In(8)
 	if lastParamTo.Kind() != reflect.Bool {
 		t.Errorf("expected last parameter of ProcessFileTo to be bool, got %v", lastParamTo)
+	}
+
+	// Test GetSheetRows: 7th arg must be string for mode
+	mPrev, ok := appType.MethodByName("GetSheetRows")
+	if !ok {
+		t.Fatalf("GetSheetRows not found on DesktopApp")
+	}
+	if mPrev.Type.NumIn() != 8 {
+		t.Fatalf("expected 8 inputs (including receiver), got %d", mPrev.Type.NumIn())
+	}
+	modeParam := mPrev.Type.In(7)
+	if modeParam.Kind() != reflect.String {
+		t.Errorf("expected 7th parameter of GetSheetRows to be string, got %v", modeParam)
+	}
+}
+
+func TestDesktopApp_ModeDelete(t *testing.T) {
+	app := newTestApp()
+	tmpDir := t.TempDir()
+
+	csvPath := filepath.Join(tmpDir, "test_app_delete.csv")
+	outPath := filepath.Join(tmpDir, "test_app_delete_out.csv")
+	content := "ID,ФИО,Телефон\n1,Иванов Иван Иванович,+7 999 123-45-67\n"
+	if err := os.WriteFile(csvPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test csv: %v", err)
+	}
+
+	// 1. GetSheetRows with mode="delete"
+	rows, err := app.GetSheetRows(csvPath, "", 0, 10, "test-salt", nil, "delete")
+	if err != nil {
+		t.Fatalf("GetSheetRows failed: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].After[1] != "[УДАЛЕНО]" {
+		t.Errorf("expected After[1] to be [УДАЛЕНО], got %q", rows[0].After[1])
+	}
+
+	// 2. ProcessFileWithSheets with mode="delete"
+	res, err := app.ProcessFileWithSheets(csvPath, outPath, "test-salt", nil, nil, false, "", "", false, "delete")
+	if err != nil {
+		t.Fatalf("ProcessFileWithSheets failed: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected Success=true")
+	}
+
+	outBytes, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read out file: %v", err)
+	}
+	if !strings.Contains(string(outBytes), "[УДАЛЕНО]") {
+		t.Errorf("expected out file to contain '[УДАЛЕНО]', got %s", string(outBytes))
 	}
 }
 

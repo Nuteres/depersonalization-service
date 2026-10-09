@@ -583,3 +583,57 @@ func TestGetXLSRows_Pagination(t *testing.T) {
 		t.Errorf("expected single-word patronymic for %q, got %q", origPatr, anonPatr)
 	}
 }
+
+func TestGetSheetRows_ModeDelete(t *testing.T) {
+	tmpDir := t.TempDir()
+	csvPath := filepath.Join(tmpDir, "delete_test.csv")
+	content := "ID,ФИО,Количество\n1,Иванов Иван Иванович,42\n2,Петров Петр Петрович,100\n"
+	if err := os.WriteFile(csvPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test csv: %v", err)
+	}
+
+	svc := preview.New()
+	ctx := context.Background()
+
+	// 1. Request rows with mode = "delete"
+	rows, err := svc.GetSheetRows(ctx, csvPath, "", 0, 5, "test-salt", nil, "delete")
+	if err != nil {
+		t.Fatalf("GetSheetRows with mode=delete failed: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+
+	for i, r := range rows {
+		// Column 0 is ID -> non-sensitive, preserved
+		if r.After[0] != r.Before[0] {
+			t.Errorf("row %d: expected After[0] to be preserved %q, got %q", i, r.Before[0], r.After[0])
+		}
+		// Column 1 is ФИО -> sensitive, deleted!
+		if r.After[1] != "[УДАЛЕНО]" {
+			t.Errorf("row %d: expected After[1] to be [УДАЛЕНО], got %q", i, r.After[1])
+		}
+		// Column 2 is Количество -> non-sensitive, preserved
+		if r.After[2] != r.Before[2] {
+			t.Errorf("row %d: expected After[2] to be preserved %q, got %q", i, r.Before[2], r.After[2])
+		}
+	}
+
+	// 2. Disabled columns in delete mode: disabled col 2 (ФИО) should NOT be deleted
+	disabledRows, err := svc.GetSheetRows(ctx, csvPath, "", 0, 5, "test-salt", []int{2}, "delete")
+	if err != nil {
+		t.Fatalf("GetSheetRows with disabled col failed: %v", err)
+	}
+	if disabledRows[0].After[1] != "Иванов Иван Иванович" {
+		t.Errorf("expected disabled column to remain untouched, got %q", disabledRows[0].After[1])
+	}
+
+	// 3. Default / replace mode: sensitive col is anonymized, NOT replaced with [УДАЛЕНО]
+	replaceRows, err := svc.GetSheetRows(ctx, csvPath, "", 0, 5, "test-salt", nil, "replace")
+	if err != nil {
+		t.Fatalf("GetSheetRows with mode=replace failed: %v", err)
+	}
+	if replaceRows[0].After[1] == "[УДАЛЕНО]" || replaceRows[0].After[1] == replaceRows[0].Before[1] {
+		t.Errorf("expected anonymized replacement, got %q", replaceRows[0].After[1])
+	}
+}

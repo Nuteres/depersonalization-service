@@ -17,6 +17,7 @@ import (
 	"dep_service/internal/service/keymanager"
 	"dep_service/internal/service/processor"
 	"dep_service/pkg/audit"
+	"dep_service/pkg/depmap"
 )
 
 func TestProcessor_New(t *testing.T) {
@@ -822,6 +823,87 @@ func TestProcessor_ShuffleRows(t *testing.T) {
 		t.Errorf("expected rows to be shuffled, but IDs remained in sequential order: %v", shuffledIDs)
 	}
 }
+
+func TestProcessor_ModeDelete(t *testing.T) {
+	km := keymanager.New()
+	insp := inspector.New()
+	proc := processor.New(km, insp)
+
+	tmpDir := t.TempDir()
+	auditPath := filepath.Join(tmpDir, "audit.jsonl")
+	al, err := audit.NewLogger(auditPath)
+	if err != nil {
+		t.Fatalf("failed to create audit logger: %v", err)
+	}
+	proc.SetAuditLogger(al)
+
+	inPath := filepath.Join(tmpDir, "input.csv")
+	outPath := filepath.Join(tmpDir, "output.csv")
+	keyPath := filepath.Join(tmpDir, "key.depmap")
+
+	csvContent := "ID,ФИО,Телефон\n1,Иванов Иван Иванович,+7 999 123-45-67\n2,Петров Петр Петрович,+7 999 765-43-21\n"
+	if err := os.WriteFile(inPath, []byte(csvContent), 0644); err != nil {
+		t.Fatalf("failed to write input file: %v", err)
+	}
+
+	opts := domain.ProcessOptions{
+		InputPath:   inPath,
+		OutputPath:  outPath,
+		Mode:        domain.ModeDelete,
+		CreateKey:   true,
+		KeyPassword: "password123",
+		KeyPath:     keyPath,
+	}
+
+	res, err := proc.Process(context.Background(), opts, nil)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected res.Success=true")
+	}
+
+	// 1. Verify output file contains [УДАЛЕНО]
+	outBytes, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read output file: %v", err)
+	}
+	outStr := string(outBytes)
+	if !strings.Contains(outStr, "[УДАЛЕНО]") {
+		t.Errorf("expected output to contain '[УДАЛЕНО]', got: %s", outStr)
+	}
+	if strings.Contains(outStr, "Иванов Иван Иванович") || strings.Contains(outStr, "+7 999 123-45-67") {
+		t.Errorf("output still contains sensitive data: %s", outStr)
+	}
+
+	// 2. Verify audit record Mode is "delete"
+	records, err := al.ReadRecent(1)
+	if err != nil {
+		t.Fatalf("ReadRecent failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 audit record, got %d", len(records))
+	}
+	if records[0].Mode != "delete" {
+		t.Errorf("expected audit record Mode to be 'delete', got %q", records[0].Mode)
+	}
+
+	// 3. Verify key file has ModeDelete and CellMappings
+	dm, err := depmap.LoadFile(keyPath, "password123")
+	if err != nil {
+		t.Fatalf("failed to load key file: %v", err)
+	}
+	if dm.Mode != string(domain.ModeDelete) {
+		t.Errorf("expected dm.Mode to be 'delete', got %q", dm.Mode)
+	}
+	if len(dm.CellMappings) == 0 {
+		t.Errorf("expected dm.CellMappings to be populated in ModeDelete")
+	}
+	if len(dm.TargetHeaders) == 0 {
+		t.Errorf("expected dm.TargetHeaders to be populated")
+	}
+}
+
 
 
 

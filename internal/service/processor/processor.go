@@ -72,6 +72,10 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 		outPath    = opts.OutputPath
 	)
 
+	if opts.Mode == "" {
+		opts.Mode = domain.ModeReplace
+	}
+
 	if strings.TrimSpace(opts.InputPath) != "" {
 		sourceHash, _ = audit.ComputeFileSHA256(opts.InputPath)
 	}
@@ -97,6 +101,7 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 
 		_ = p.audit.Log(audit.AuditRecord{
 			Operation:    "depersonalize",
+			Mode:         string(opts.Mode),
 			SourceFile:   opts.InputPath,
 			SourceHash:   sourceHash,
 			ResultFile:   outPath,
@@ -219,6 +224,7 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	}
 
 	options := map[string]interface{}{
+		"mode":                      opts.Mode,
 		"disabled_columns":          opts.DisabledCols,
 		"disabled_columns_by_sheet": opts.DisabledBySheet,
 		"progress_callback":         progressCallback,
@@ -267,6 +273,12 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	anon := anonymizer.New(salt)
 	startTime := time.Now()
 	var directDepMap *depmap.DepMap
+
+	if opts.CreateKey {
+		directDepMap = depmap.New(filepath.Base(opts.InputPath))
+		directDepMap.Mode = string(opts.Mode)
+		options["depmap"] = directDepMap
+	}
 
 	switch ext {
 	case ".csv", ".tsv":

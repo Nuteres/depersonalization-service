@@ -3,6 +3,7 @@ package desktop
 import (
 	"context"
 	goruntime "runtime"
+	"strings"
 	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -111,21 +112,25 @@ func (a *DesktopApp) InspectFile(path string) (*domain.FileInfo, error) {
 
 // GetTableRows fetches a window of preview rows starting at offset with limit for the default sheet.
 func (a *DesktopApp) GetTableRows(path string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
-	return a.GetSheetRows(path, "", offset, limit, salt, disabledCols)
+	return a.GetSheetRows(path, "", offset, limit, salt, disabledCols, "")
 }
 
 // GetSheetRows fetches a paginated window of rows for a specific sheet.
-func (a *DesktopApp) GetSheetRows(path, sheetName string, offset, limit int, salt string, disabledCols []int) ([]domain.PreviewRow, error) {
+func (a *DesktopApp) GetSheetRows(path, sheetName string, offset, limit int, salt string, disabledCols []int, mode string) ([]domain.PreviewRow, error) {
 	ctx := a.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return a.prev.GetSheetRows(ctx, path, sheetName, offset, limit, salt, disabledCols)
+	return a.prev.GetSheetRows(ctx, path, sheetName, offset, limit, salt, disabledCols, mode)
 }
 
 // ProcessFile processes the input file with default output path and options.
-func (a *DesktopApp) ProcessFile(path, salt string) (*domain.ProcessResult, error) {
-	return a.ProcessFileTo(path, "", salt, nil, false, "", "", false)
+func (a *DesktopApp) ProcessFile(path, salt string, mode ...string) (*domain.ProcessResult, error) {
+	m := ""
+	if len(mode) > 0 {
+		m = mode[0]
+	}
+	return a.ProcessFileTo(path, "", salt, nil, false, "", "", false, m)
 }
 
 // ProcessFileTo processes the input file and writes to outPath.
@@ -135,11 +140,16 @@ func (a *DesktopApp) ProcessFileTo(
 	createKey bool,
 	keyPassword, keyPath string,
 	shuffleRows bool,
+	mode ...string,
 ) (*domain.ProcessResult, error) {
-	return a.ProcessFileWithSheets(path, outPath, salt, disabledCols, nil, createKey, keyPassword, keyPath, shuffleRows)
+	m := ""
+	if len(mode) > 0 {
+		m = mode[0]
+	}
+	return a.ProcessFileWithSheets(path, outPath, salt, disabledCols, nil, createKey, keyPassword, keyPath, shuffleRows, m)
 }
 
-// ProcessFileWithSheets processes the input file with per-sheet disabled column options.
+// ProcessFileWithSheets processes the input file with per-sheet disabled column options and optional mode.
 func (a *DesktopApp) ProcessFileWithSheets(
 	path string,
 	outPath string,
@@ -150,6 +160,7 @@ func (a *DesktopApp) ProcessFileWithSheets(
 	keyPassword string,
 	keyPath string,
 	shuffleRows bool,
+	mode ...string,
 ) (*domain.ProcessResult, error) {
 	ctx := a.ctx
 	if ctx == nil {
@@ -166,10 +177,16 @@ func (a *DesktopApp) ProcessFileWithSheets(
 		cancel()
 	}()
 
+	processingMode := domain.ModeReplace
+	if len(mode) > 0 && strings.TrimSpace(mode[0]) != "" {
+		processingMode = domain.ProcessingMode(mode[0])
+	}
+
 	reporter := newProcessProgressReporter(a.ctx)
 	opts := domain.ProcessOptions{
 		InputPath:       path,
 		OutputPath:      outPath,
+		Mode:            processingMode,
 		Salt:            salt,
 		DisabledCols:    disabledCols,
 		DisabledBySheet: disabledBySheet,
@@ -179,6 +196,27 @@ func (a *DesktopApp) ProcessFileWithSheets(
 		ShuffleRows:     shuffleRows,
 	}
 
+	return a.proc.Process(opCtx, opts, reporter)
+}
+
+// ProcessFileWithOptions processes the input file with full domain.ProcessOptions.
+func (a *DesktopApp) ProcessFileWithOptions(opts domain.ProcessOptions) (*domain.ProcessResult, error) {
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	opCtx, cancel := context.WithCancel(ctx)
+	a.cancelMu.Lock()
+	a.cancel = cancel
+	a.cancelMu.Unlock()
+	defer func() {
+		a.cancelMu.Lock()
+		a.cancel = nil
+		a.cancelMu.Unlock()
+		cancel()
+	}()
+
+	reporter := newProcessProgressReporter(a.ctx)
 	return a.proc.Process(opCtx, opts, reporter)
 }
 

@@ -24,6 +24,7 @@ func TestAuditLogger_LogAndReadRecent(t *testing.T) {
 
 	rec1 := audit.AuditRecord{
 		Operation:    "depersonalize",
+		Mode:         "replace",
 		SourceFile:   "source1.xlsx",
 		SourceHash:   "hash1",
 		ResultFile:   "res1.xlsx",
@@ -95,8 +96,8 @@ func TestAuditLogger_LogAndReadRecent(t *testing.T) {
 	if len(all) != 3 {
 		t.Fatalf("expected 3 records, got %d", len(all))
 	}
-	if all[0].Status != "error" || all[1].Operation != "restore" || all[2].SourceFile != "source1.xlsx" {
-		t.Errorf("unexpected ordering of records in all: %+v", all)
+	if all[0].Status != "error" || all[1].Operation != "restore" || all[2].SourceFile != "source1.xlsx" || all[2].Mode != "replace" {
+		t.Errorf("unexpected ordering or content of records in all: %+v", all)
 	}
 }
 

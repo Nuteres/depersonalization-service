@@ -873,7 +873,7 @@ func TestApp_MultiSheetExcel(t *testing.T) {
 	}
 
 	// 2. GetSheetRows for sheet 1 vs sheet 2
-	rows1, err := app.GetSheetRows(xlsxPath, sheet1, 0, 10, "test-salt", nil)
+	rows1, err := app.GetSheetRows(xlsxPath, sheet1, 0, 10, "test-salt", nil, "")
 	if err != nil {
 		t.Fatalf("GetSheetRows sheet 1 failed: %v", err)
 	}
@@ -884,7 +884,7 @@ func TestApp_MultiSheetExcel(t *testing.T) {
 		t.Errorf("expected sheet 1 row 0 before[0] 'Иванов Иван Иванович', got %s", rows1[0].Before[0])
 	}
 
-	rows2, err := app.GetSheetRows(xlsxPath, sheet2, 0, 10, "test-salt", nil)
+	rows2, err := app.GetSheetRows(xlsxPath, sheet2, 0, 10, "test-salt", nil, "")
 	if err != nil {
 		t.Fatalf("GetSheetRows sheet 2 failed: %v", err)
 	}

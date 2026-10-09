@@ -25,6 +25,7 @@ type AuditRecord struct {
 	Username     string   `json:"username"`
 	Hostname     string   `json:"hostname"`
 	Operation    string   `json:"operation"` // "depersonalize" | "restore"
+	Mode         string   `json:"mode,omitempty"`
 	SourceFile   string   `json:"source_file"`
 	SourceHash   string   `json:"source_hash"`
 	ResultFile   string   `json:"result_file"`
