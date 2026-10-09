@@ -1,9 +1,18 @@
 package domain
 
+// ProcessingMode defines the processing strategy for sensitive personal data.
+type ProcessingMode string
+
+const (
+	ModeReplace ProcessingMode = "replace"
+	ModeDelete  ProcessingMode = "delete"
+)
+
 // ProcessOptions specifies options for processing and anonymizing a file.
 type ProcessOptions struct {
 	InputPath       string           `json:"inputPath"`
 	OutputPath      string           `json:"outputPath"`
+	Mode            ProcessingMode   `json:"mode"`
 	Salt            string           `json:"salt"`
 	DisabledCols    []int            `json:"disabledCols"`
 	DisabledBySheet map[string][]int `json:"disabledBySheet"`

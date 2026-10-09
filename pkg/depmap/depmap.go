@@ -65,8 +65,12 @@ type DepMap struct {
 	CreatedAt        time.Time         `json:"created_at"`
 	OriginalFileName string            `json:"original_file_name"`
 	RecordsCount     int               `json:"records_count"`
-	Mapping          map[string]string `json:"mapping"` // synthetic -> original
+	Mode             string            `json:"mode,omitempty"`
+	Mapping          map[string]string `json:"mapping,omitempty"` // synthetic -> original
 	Entities         map[string]string `json:"entities,omitempty"`
+	CellMappings     map[string]string `json:"cell_mappings,omitempty"`
+	TargetHeaders    []string          `json:"target_headers,omitempty"`
+	OrdinalMappings  []string          `json:"ordinal_mappings,omitempty"`
 }
 
 // New creates a new DepMap initialized with version 1 and current UTC timestamp.
@@ -89,7 +93,7 @@ func (dm *DepMap) Put(synthetic, original string) {
 	}
 	dm.Mapping[synthetic] = original
 	dm.Entities = dm.Mapping
-	dm.RecordsCount = len(dm.Mapping)
+	dm.RecordsCount = len(dm.Mapping) + len(dm.CellMappings) + len(dm.OrdinalMappings)
 }
 
 // Get looks up the original value for a given synthetic value.
@@ -104,6 +108,46 @@ func (dm *DepMap) Get(synthetic string) (string, bool) {
 // LookupOriginal looks up the original value for a given synthetic value.
 func (dm *DepMap) LookupOriginal(synthetic string) (string, bool) {
 	return dm.Get(synthetic)
+}
+
+// PutCell records a mapping for a specific sheet, header, and row to its original value.
+func (dm *DepMap) PutCell(sheet, header string, row int, original string) {
+	if dm.CellMappings == nil {
+		dm.CellMappings = make(map[string]string)
+	}
+	key := fmt.Sprintf("%s!%s:%d", strings.TrimSpace(sheet), strings.TrimSpace(header), row)
+	dm.CellMappings[key] = original
+	dm.RecordsCount = len(dm.CellMappings) + len(dm.Mapping) + len(dm.OrdinalMappings)
+}
+
+// GetCell retrieves the original value for a specific sheet, header, and row.
+func (dm *DepMap) GetCell(sheet, header string, row int) (string, bool) {
+	if dm.CellMappings == nil {
+		return "", false
+	}
+	key := fmt.Sprintf("%s!%s:%d", strings.TrimSpace(sheet), strings.TrimSpace(header), row)
+	val, ok := dm.CellMappings[key]
+	return val, ok
+}
+
+// AddTargetHeader appends a header to TargetHeaders if not already present.
+func (dm *DepMap) AddTargetHeader(header string) {
+	h := strings.TrimSpace(header)
+	if h == "" {
+		return
+	}
+	for _, existing := range dm.TargetHeaders {
+		if existing == h {
+			return
+		}
+	}
+	dm.TargetHeaders = append(dm.TargetHeaders, h)
+}
+
+// PutOrdinal appends an original value to OrdinalMappings.
+func (dm *DepMap) PutOrdinal(original string) {
+	dm.OrdinalMappings = append(dm.OrdinalMappings, original)
+	dm.RecordsCount = len(dm.CellMappings) + len(dm.Mapping) + len(dm.OrdinalMappings)
 }
 
 // SaveFileWithAutoPassword serializes the DepMap to zlib-compressed JSON, encrypts it

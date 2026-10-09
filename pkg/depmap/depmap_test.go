@@ -341,4 +341,119 @@ func TestGenerateRandomPassword(t *testing.T) {
 	}
 }
 
+func TestDepMap_CellAndOrdinalMappings(t *testing.T) {
+	dm := depmap.New("test.xlsx")
+	dm.Mode = "delete"
+	dm.PutCell("Лист1", "ФИО", 5, "Иванов Иван Иванович")
+	dm.PutCell("Лист1", "Телефон", 5, "+79991234567")
+	dm.AddTargetHeader("ФИО")
+	dm.AddTargetHeader("Телефон")
+	dm.PutOrdinal("Паспорт серии 1234")
+
+	val, ok := dm.GetCell("Лист1", "ФИО", 5)
+	if !ok || val != "Иванов Иван Иванович" {
+		t.Fatalf("expected 'Иванов Иван Иванович', got %q (found: %v)", val, ok)
+	}
+
+	tmpFile := filepath.Join(t.TempDir(), "test.depmap")
+	pwd, err := dm.SaveFileWithAutoPassword(tmpFile, "TestPassword123!")
+	if err != nil {
+		t.Fatalf("SaveFileWithAutoPassword failed: %v", err)
+	}
+
+	loaded, err := depmap.LoadFile(tmpFile, pwd)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+
+	if loaded.Mode != "delete" {
+		t.Errorf("expected Mode 'delete', got %q", loaded.Mode)
+	}
+	loadedVal, ok := loaded.GetCell("Лист1", "ФИО", 5)
+	if !ok || loadedVal != "Иванов Иван Иванович" {
+		t.Errorf("expected loaded cell value 'Иванов Иван Иванович', got %q", loadedVal)
+	}
+	if len(loaded.TargetHeaders) != 2 || loaded.TargetHeaders[0] != "ФИО" {
+		t.Errorf("unexpected TargetHeaders: %v", loaded.TargetHeaders)
+	}
+	if len(loaded.OrdinalMappings) != 1 || loaded.OrdinalMappings[0] != "Паспорт серии 1234" {
+		t.Errorf("unexpected OrdinalMappings: %v", loaded.OrdinalMappings)
+	}
+}
+
+func TestDepMap_TargetHeadersAndGetCellEdgeCases(t *testing.T) {
+	dm := depmap.New("test.xlsx")
+
+	// GetCell on empty/nil CellMappings
+	val, ok := dm.GetCell("Лист1", "Колонка", 1)
+	if ok || val != "" {
+		t.Fatalf("expected empty and false for GetCell on uninitialized CellMappings, got %q, %v", val, ok)
+	}
+
+	// AddTargetHeader with empty / whitespace strings
+	dm.AddTargetHeader("")
+	dm.AddTargetHeader("   ")
+	if len(dm.TargetHeaders) != 0 {
+		t.Fatalf("expected 0 headers, got %v", dm.TargetHeaders)
+	}
+
+	// AddTargetHeader with duplicates
+	dm.AddTargetHeader("ФИО")
+	dm.AddTargetHeader("  ФИО  ")
+	if len(dm.TargetHeaders) != 1 || dm.TargetHeaders[0] != "ФИО" {
+		t.Fatalf("expected duplicate header to be ignored, got %v", dm.TargetHeaders)
+	}
+
+	// PutCell and GetCell with surrounding whitespace in sheet and header
+	dm.PutCell("  Лист1  ", "  ФИО  ", 10, "Петров")
+	val, ok = dm.GetCell("Лист1", "ФИО", 10)
+	if !ok || val != "Петров" {
+		t.Fatalf("expected 'Петров', got %q (found: %v)", val, ok)
+	}
+
+	// Non-existent cell lookup
+	_, ok = dm.GetCell("Лист1", "ФИО", 999)
+	if ok {
+		t.Fatalf("expected false for nonexistent cell")
+	}
+}
+
+func TestDepMap_BackwardCompatibilityV1(t *testing.T) {
+	// Verify that a standard v1 DepMap without new fields still loads cleanly
+	tmpFile := filepath.Join(t.TempDir(), "v1.depmap")
+	v1dm := depmap.New("legacy.csv")
+	v1dm.Put("synthetic_1", "original_1")
+
+	pwd, err := v1dm.SaveFileWithAutoPassword(tmpFile, "SecretPass123!")
+	if err != nil {
+		t.Fatalf("SaveFileWithAutoPassword failed: %v", err)
+	}
+
+	loaded, err := depmap.LoadFile(tmpFile, pwd)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+
+	if loaded.Mode != "" {
+		t.Errorf("expected empty Mode for legacy v1, got %q", loaded.Mode)
+	}
+	if loaded.CellMappings != nil {
+		t.Errorf("expected nil CellMappings for legacy v1, got %v", loaded.CellMappings)
+	}
+	if loaded.TargetHeaders != nil {
+		t.Errorf("expected nil TargetHeaders for legacy v1, got %v", loaded.TargetHeaders)
+	}
+	if loaded.OrdinalMappings != nil {
+		t.Errorf("expected nil OrdinalMappings for legacy v1, got %v", loaded.OrdinalMappings)
+	}
+	val, ok := loaded.Get("synthetic_1")
+	if !ok || val != "original_1" {
+		t.Fatalf("expected 'original_1', got %q", val)
+	}
+	_, ok = loaded.GetCell("Sheet", "Col", 1)
+	if ok {
+		t.Fatalf("expected GetCell on legacy v1 to return false")
+	}
+}
+
 
