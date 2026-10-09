@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/depmap"
 
@@ -564,5 +565,72 @@ func TestODSHandler_ProcessToXLSX(t *testing.T) {
 		t.Errorf("expected anonymized FIO, got %s", rows[1][0])
 	}
 }
+
+func TestODSHandler_ModeDelete_DateValueStripped(t *testing.T) {
+	buf := new(bytes.Buffer)
+	zw := zip.NewWriter(buf)
+
+	mimeHeader := &zip.FileHeader{Name: "mimetype", Method: zip.Store}
+	mw, _ := zw.CreateHeader(mimeHeader)
+	mw.Write([]byte("application/vnd.oasis.opendocument.spreadsheet"))
+
+	contentXML := `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+ xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+ xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+ <office:body>
+  <office:spreadsheet>
+   <table:table table:name="Dates">
+    <table:table-row>
+     <table:table-cell office:value-type="string"><text:p>Дата рождения</text:p></table:table-cell>
+    </table:table-row>
+    <table:table-row>
+     <table:table-cell office:value-type="date" office:date-value="1985-05-12"><text:p>12.05.1985</text:p></table:table-cell>
+    </table:table-row>
+   </table:table>
+  </office:spreadsheet>
+ </office:body>
+</office:document-content>`
+	cw, _ := zw.CreateHeader(&zip.FileHeader{Name: "content.xml", Method: zip.Deflate})
+	cw.Write([]byte(contentXML))
+	zw.Close()
+
+	odsBytes := buf.Bytes()
+	anon := anonymizer.New("salt")
+	h := NewODSHandler(anon)
+
+	var outBuf bytes.Buffer
+	dm, err := h.Process(context.Background(), bytes.NewReader(odsBytes), int64(len(odsBytes)), &outBuf, map[string]interface{}{
+		"mode": domain.ModeDelete,
+	})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+	if dm == nil {
+		t.Fatal("expected depmap")
+	}
+
+	// Verify content.xml in outBuf
+	zr, err := zip.NewReader(bytes.NewReader(outBuf.Bytes()), int64(outBuf.Len()))
+	if err != nil {
+		t.Fatalf("failed to open output zip: %v", err)
+	}
+	contentOut, err := readZipEntry(zr, "content.xml")
+	if err != nil {
+		t.Fatalf("failed to read content.xml: %v", err)
+	}
+
+	contentStr := string(contentOut)
+	if strings.Contains(contentStr, "office:date-value") {
+		t.Errorf("expected office:date-value to be stripped, but found it in: %s", contentStr)
+	}
+	if !strings.Contains(contentStr, "[УДАЛЕНО]") {
+		t.Errorf("expected [УДАЛЕНО] in content, got: %s", contentStr)
+	}
+	if !strings.Contains(contentStr, `office:value-type="string"`) {
+		t.Errorf("expected office:value-type=\"string\", got: %s", contentStr)
+	}
+}
+
 
 

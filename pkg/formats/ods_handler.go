@@ -375,11 +375,17 @@ func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 					if strings.Contains(tagStr, "office:date-value") {
 						oldDateAttr := extractAttrValue(cell.tagBytes, "office:date-value")
 						if oldDateAttr != "" {
-							synthDateAttr := h.Anon.PerturbDate(oldDateAttr, dateRange)
-							if synthDateAttr != oldDateAttr {
-								dm.Put(synthDateAttr, oldDateAttr)
-								newTag = updateAttrInTag(newTag, "office:date-value", oldDateAttr, synthDateAttr)
+							if mode == domain.ModeDelete {
+								newTag = removeAttrFromTag(newTag, "office:date-value")
+								newTag = updateAttrInTag(newTag, "office:value-type", "date", "string")
 								tagModified = true
+							} else {
+								synthDateAttr := h.Anon.PerturbDate(oldDateAttr, dateRange)
+								if synthDateAttr != oldDateAttr {
+									dm.Put(synthDateAttr, oldDateAttr)
+									newTag = updateAttrInTag(newTag, "office:date-value", oldDateAttr, synthDateAttr)
+									tagModified = true
+								}
 							}
 						}
 					}
@@ -813,6 +819,32 @@ func updateAttrInTag(tag []byte, attrName, oldVal, newVal string) []byte {
 	needleSglRaw := fmt.Sprintf("%s='%s'", attrName, oldVal)
 	res = bytes.Replace(tag, []byte(needleSglRaw), []byte(replacementDbl), 1)
 	return res
+}
+
+func removeAttrFromTag(tag []byte, attrName string) []byte {
+	s := string(tag)
+	idx := strings.Index(s, attrName+"=")
+	if idx == -1 {
+		return tag
+	}
+	start := idx
+	if start > 0 && s[start-1] == ' ' {
+		start--
+	}
+	valStart := strings.Index(s[idx:], "=") + idx + 1
+	if valStart >= len(s) {
+		return tag
+	}
+	quote := s[valStart]
+	if quote != '"' && quote != '\'' {
+		return tag
+	}
+	end := strings.IndexByte(s[valStart+1:], quote)
+	if end == -1 {
+		return tag
+	}
+	valEnd := valStart + 1 + end + 1
+	return append(tag[:start], tag[valEnd:]...)
 }
 
 // ProcessToXLSX reads sheets from an ODS archive at r/size, anonymizes sensitive PII cells,
