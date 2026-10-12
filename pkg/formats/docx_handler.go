@@ -690,7 +690,7 @@ func extractParagraphsFromBlocks(blocks []docxBlock) []docxParagraph {
 	return paras
 }
 
-func buildParagraphSegments(text string, matches []docxMatch, anon *anonymizer.Anonymizer) []TextParagraphSegment {
+func buildParagraphSegments(text string, matches []docxMatch, anon *anonymizer.Anonymizer, ts *anonymizer.TokenSession) []TextParagraphSegment {
 	if len(matches) == 0 {
 		return []TextParagraphSegment{
 			{
@@ -709,13 +709,18 @@ func buildParagraphSegments(text string, matches []docxMatch, anon *anonymizer.A
 				IsEntity: false,
 			})
 		}
-		synth := generateSynthetic(anon, m.entityType, m.value)
+		var repl string
+		if ts != nil {
+			repl = ts.GenerateToken(EntityTypeToTokenType(m.entityType), m.value)
+		} else {
+			repl = generateSynthetic(anon, m.entityType, m.value)
+		}
 		segments = append(segments, TextParagraphSegment{
-			Text:       synth,
+			Text:       repl,
 			IsEntity:   true,
 			Type:       m.entityType,
 			Original:   m.value,
-			Anonymized: synth,
+			Anonymized: repl,
 		})
 		lastIdx = m.end
 	}
@@ -800,6 +805,7 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 	var snippets []DocxTextSnippet
 	var paragraphPreviews []TextParagraphPreview
 	var documentBlocks []TextDocumentBlock
+	ts := anonymizer.NewTokenSession("")
 
 	// Filter and sort XML files in logical document reading order:
 	// 1. word/document.xml (main body)
@@ -858,16 +864,16 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 				matches := findDocxSensitiveMatches(pStr)
 				for _, m := range matches {
 					counts[m.entityType]++
-					synth := generateSynthetic(h.Anon, m.entityType, m.value)
+					tok := ts.GenerateToken(EntityTypeToTokenType(m.entityType), m.value)
 					snippets = append(snippets, DocxTextSnippet{
 						Original:   m.value,
-						Anonymized: synth,
+						Anonymized: tok,
 						Type:       m.entityType,
 					})
 				}
 
 				if isBodyOrNotes {
-					segments := buildParagraphSegments(pStr, matches, h.Anon)
+					segments := buildParagraphSegments(pStr, matches, h.Anon, ts)
 
 					paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
 						Index:    len(paragraphPreviews) + 1,
@@ -898,10 +904,10 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 						matches := findDocxSensitiveMatches(cStr)
 						for _, m := range matches {
 							counts[m.entityType]++
-							synth := generateSynthetic(h.Anon, m.entityType, m.value)
+							tok := ts.GenerateToken(EntityTypeToTokenType(m.entityType), m.value)
 							snippets = append(snippets, DocxTextSnippet{
 								Original:   m.value,
-								Anonymized: synth,
+								Anonymized: tok,
 								Type:       m.entityType,
 							})
 						}
@@ -911,7 +917,7 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 							if strings.TrimSpace(cStr) == "" {
 								segments = []TextParagraphSegment{{Text: cStr, IsEntity: false}}
 							} else {
-								segments = buildParagraphSegments(cStr, matches, h.Anon)
+								segments = buildParagraphSegments(cStr, matches, h.Anon, ts)
 								paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
 									Index:    len(paragraphPreviews) + 1,
 									Segments: segments,

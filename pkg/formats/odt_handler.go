@@ -225,6 +225,7 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 	seenSnippets := make(map[string]bool)
 	var paragraphPreviews []TextParagraphPreview
 	var documentBlocks []TextDocumentBlock
+	ts := anonymizer.NewTokenSession("")
 
 	for _, f := range zr.File {
 		if !isODTTextXML(f.Name) {
@@ -273,20 +274,17 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 
 					if len(snippets) < 20 && !seenSnippets[m.value] {
 						seenSnippets[m.value] = true
-						synth := m.value
-						if h.Anon != nil {
-							synth = generateSynthetic(h.Anon, m.entityType, m.value)
-						}
+						tok := ts.GenerateToken(EntityTypeToTokenType(m.entityType), m.value)
 						snippets = append(snippets, DocxTextSnippet{
 							Original:   m.value,
-							Anonymized: synth,
+							Anonymized: tok,
 							Type:       m.entityType,
 						})
 					}
 				}
 
 				if isMainBody {
-					segments := buildParagraphSegments(pStr, matches, h.Anon)
+					segments := buildParagraphSegments(pStr, matches, h.Anon, ts)
 
 					paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
 						Index:    len(paragraphPreviews) + 1,
@@ -320,13 +318,10 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 
 							if len(snippets) < 20 && !seenSnippets[m.value] {
 								seenSnippets[m.value] = true
-								synth := m.value
-								if h.Anon != nil {
-									synth = generateSynthetic(h.Anon, m.entityType, m.value)
-								}
+								tok := ts.GenerateToken(EntityTypeToTokenType(m.entityType), m.value)
 								snippets = append(snippets, DocxTextSnippet{
 									Original:   m.value,
-									Anonymized: synth,
+									Anonymized: tok,
 									Type:       m.entityType,
 								})
 							}
@@ -337,7 +332,7 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 							if strings.TrimSpace(cStr) == "" {
 								segments = []TextParagraphSegment{{Text: cStr, IsEntity: false}}
 							} else {
-								segments = buildParagraphSegments(cStr, matches, h.Anon)
+								segments = buildParagraphSegments(cStr, matches, h.Anon, ts)
 								paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
 									Index:    len(paragraphPreviews) + 1,
 									Segments: segments,

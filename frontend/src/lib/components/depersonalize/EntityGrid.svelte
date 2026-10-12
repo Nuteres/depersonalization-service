@@ -97,9 +97,9 @@
                       : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}"
                 >
                   <span
-                    class="w-2 h-2 rounded-full {isDisabled ? 'bg-stone-400' : appState.processingMode === 'delete' ? 'bg-rose-500' : 'bg-emerald-500'}"
+                    class="w-2 h-2 rounded-full {isDisabled ? 'bg-stone-400' : 'bg-emerald-500'}"
                   ></span>
-                  <span>{isDisabled ? 'Отключено' : appState.processingMode === 'delete' ? '● Удаляется' : '● Заменено'}</span>
+                  <span>{isDisabled ? 'Отключено' : '● Токенизация'}</span>
                 </button>
               </div>
 
@@ -138,11 +138,9 @@
             <div
               class="mt-4 pt-3 border-t border-[#F0EFEB] text-xs font-mono -mx-4 -mb-4 p-2.5 transition-colors {isDisabled
                 ? 'text-[#78716C] bg-[#F5F5F4]'
-                : appState.processingMode === 'delete'
-                  ? 'text-[#9F1239] bg-[#FFF1F2]'
-                  : 'text-[#065F46] bg-[#ECFDF5]'}"
+                : 'text-[#065F46] bg-[#ECFDF5]'}"
             >
-              {isDisabled ? '○ Исходные данные без изменений' : (appState.processingMode === 'delete' ? '➜ Удаление' : `➜ ${ent.action}`)}
+              {isDisabled ? '○ Исходные данные без изменений' : `➜ ${ent.action}`}
             </div>
           </div>
         {/each}

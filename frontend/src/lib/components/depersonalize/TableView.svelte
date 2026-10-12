@@ -387,9 +387,9 @@
                         </span>
                       {:else}
                         <span
-                          class="text-[10px] {appState.processingMode === 'delete' ? 'text-rose-700 bg-rose-50 border-rose-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'} border px-1 py-0.5 rounded font-mono font-medium"
+                          class="text-[10px] text-emerald-700 bg-emerald-50 border-emerald-200 border px-1 py-0.5 rounded font-mono font-medium"
                         >
-                          {appState.processingMode === 'delete' ? 'ПДн: Удаление' : 'ПДн: Замена'}
+                          ПДн: Токен
                         </span>
                       {/if}
                     </button>
@@ -595,9 +595,9 @@
                             </span>
                           {:else}
                             <span
-                              class="text-[10px] {appState.processingMode === 'delete' ? 'text-rose-700 bg-rose-50 border-rose-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'} border px-1 py-0.5 rounded font-mono font-medium"
+                              class="text-[10px] text-emerald-700 bg-emerald-50 border-emerald-200 border px-1 py-0.5 rounded font-mono font-medium"
                             >
-                              {appState.processingMode === 'delete' ? 'ПДн: Удаление' : 'ПДн: Замена'}
+                              ПДн: Токен
                             </span>
                           {/if}
                         </button>

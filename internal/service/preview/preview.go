@@ -190,6 +190,20 @@ func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, o
 		}
 		currentIdx++
 		if currentIdx <= targetSkip {
+			if strategy == domain.StrategySemanticTokens && currentIdx > headerIdx+1 {
+				cols, err := rowsIter.Columns()
+				if err == nil {
+					for j := 0; j < len(headers) && j < len(cols); j++ {
+						col1Based := j + 1
+						if j < len(colTypes) && !disabledMap[col1Based] {
+							ct := colTypes[j]
+							if ct != formats.ColUnknown {
+								_ = formats.ProcessCellWithStrategy(anon, ts, ct, cols[j], strategy, 30)
+							}
+						}
+					}
+				}
+			}
 			continue
 		}
 
@@ -299,6 +313,17 @@ func getCSVRows(ctx context.Context, path string, offset, limit int, salt string
 		}
 		currentIdx++
 		if currentIdx <= targetSkip {
+			if strategy == domain.StrategySemanticTokens && currentIdx > headerIdx+1 {
+				for j := 0; j < len(headers) && j < len(rec); j++ {
+					col1Based := j + 1
+					if j < len(colTypes) && !disabledMap[col1Based] {
+						ct := colTypes[j]
+						if ct != formats.ColUnknown {
+							_ = formats.ProcessCellWithStrategy(anon, ts, ct, rec[j], strategy, 30)
+						}
+					}
+				}
+			}
 			continue
 		}
 
@@ -446,6 +471,21 @@ func paginateSampleRows(sampleRows [][]string, offset, limit int, salt string, d
 	anon := anonymizer.New(salt)
 	ts := anonymizer.NewTokenSession(salt)
 	startRow := headerIdx + 1 + offset
+
+	if strategy == domain.StrategySemanticTokens {
+		for r := headerIdx + 1; r < startRow && r < len(sampleRows); r++ {
+			cols := sampleRows[r]
+			for j := 0; j < len(headers) && j < len(cols); j++ {
+				col1Based := j + 1
+				if j < len(colTypes) && !disabledMap[col1Based] {
+					ct := colTypes[j]
+					if ct != formats.ColUnknown {
+						_ = formats.ProcessCellWithStrategy(anon, ts, ct, cols[j], strategy, 30)
+					}
+				}
+			}
+		}
+	}
 
 	var result []domain.PreviewRow
 	for r := startRow; r < len(sampleRows) && len(result) < limit; r++ {

@@ -53,18 +53,18 @@
   };
 
   const typeActionLabels: Record<string, string> = {
-    FIO: 'Синтетический профиль с сохранением пола',
-    SNILS: 'Валидный СНИЛС (модуль 101)',
-    PASSPORT: 'Случайная серия/номер РФ',
-    PHONE: 'Синтетический номер РФ',
-    INN: 'Контрольная сумма ФНС (12 цифр)',
-    BANK_CARD: 'Карта МИР / Валидный 20-значный счёт',
-    CARD: 'Карта МИР (алгоритм Луна)',
-    DATE: 'Смещение даты ±30 дней',
-    EMAIL: 'Синтетический email',
-    ADDRESS: 'Синтетический адрес РФ',
-    GRADE: 'Синтетический грейд',
-    EMPLOYEE_ID: 'Синтетический номер сотрудника'
+    FIO: 'Токен [ФИО_XXXX]',
+    SNILS: 'Токен [СНИЛС_XXXX]',
+    PASSPORT: 'Токен [Паспорт_XXXX]',
+    PHONE: 'Токен [Тел_XXXX]',
+    INN: 'Токен [ИНН_XXXX]',
+    BANK_CARD: 'Токен [Карта_XXXX]',
+    CARD: 'Токен [Карта_XXXX]',
+    DATE: 'Токен [Дата_XXXX]',
+    EMAIL: 'Токен [Email_XXXX]',
+    ADDRESS: 'Токен [Адрес_XXXX]',
+    GRADE: 'Токен [Грейд_XXXX]',
+    EMPLOYEE_ID: 'Токен [Табель_XXXX]'
   };
 
   function getEntityTypeName(type: string): string {

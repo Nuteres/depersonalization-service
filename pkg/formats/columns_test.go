@@ -248,6 +248,16 @@ func TestProcessCell_StrategySemanticTokens(t *testing.T) {
 	if pass != "[Паспорт_0001]" {
 		t.Fatalf("expected [Паспорт_0001], got %s", pass)
 	}
+
+	emp := ProcessCellWithStrategy(anon, ts, ColEmployeeID, "824988", domain.StrategySemanticTokens, 30)
+	if emp != "[Табель_0001]" {
+		t.Fatalf("expected [Табель_0001], got %s", emp)
+	}
+
+	grade := ProcessCellWithStrategy(anon, ts, ColGrade, "15", domain.StrategySemanticTokens, 30)
+	if grade != "[Грейд_0001]" {
+		t.Fatalf("expected [Грейд_0001], got %s", grade)
+	}
 }
 
 

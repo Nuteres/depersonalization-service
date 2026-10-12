@@ -507,7 +507,7 @@ func ColumnTypeToTokenType(ct ColumnType) (anonymizer.TokenType, bool) {
 	case ColFirstName:
 		return anonymizer.TokenFirstName, true
 	case ColPatronymic:
-		return anonymizer.TokenFIO, true
+		return anonymizer.TokenPatronymic, true
 	case ColPassport:
 		return anonymizer.TokenPassport, true
 	case ColSNILS:
@@ -524,11 +524,53 @@ func ColumnTypeToTokenType(ct ColumnType) (anonymizer.TokenType, bool) {
 		return anonymizer.TokenCard, true
 	case ColDate:
 		return anonymizer.TokenDate, true
-	case ColGrade, ColEmployeeID:
-		return anonymizer.TokenFIO, true
+	case ColGrade:
+		return anonymizer.TokenGrade, true
+	case ColEmployeeID:
+		return anonymizer.TokenEmployeeID, true
 	default:
 		return "", false
 	}
+}
+
+// EntityTypeToTokenType maps detector entity type strings to anonymizer.TokenType.
+func EntityTypeToTokenType(entityType string) anonymizer.TokenType {
+	switch strings.ToUpper(strings.TrimSpace(entityType)) {
+	case string(detector.EntityFIO), "NAME":
+		return anonymizer.TokenFIO
+	case string(detector.EntityLastName):
+		return anonymizer.TokenLastName
+	case string(detector.EntityFirstName):
+		return anonymizer.TokenFirstName
+	case string(detector.EntityPatronymic):
+		return anonymizer.TokenPatronymic
+	case string(detector.EntityPassport):
+		return anonymizer.TokenPassport
+	case string(detector.EntityPhone):
+		return anonymizer.TokenPhone
+	case string(detector.EntitySNILS):
+		return anonymizer.TokenSNILS
+	case string(detector.EntityINN):
+		return anonymizer.TokenINN
+	case string(detector.EntityCard), "CARD":
+		return anonymizer.TokenCard
+	case string(detector.EntityEmail):
+		return anonymizer.TokenEmail
+	case string(detector.EntityBirthday), string(detector.EntityDate):
+		return anonymizer.TokenDate
+	case string(detector.EntityAddress):
+		return anonymizer.TokenAddress
+	case string(detector.EntityEmployeeID), "TABEL":
+		return anonymizer.TokenEmployeeID
+	case string(detector.EntityGrade):
+		return anonymizer.TokenGrade
+	default:
+		return anonymizer.TokenFIO
+	}
+}
+
+func entityTypeToTokenType(entityType string) anonymizer.TokenType {
+	return EntityTypeToTokenType(entityType)
 }
 
 // ProcessCellWithStrategy processes a cell value according to strategy (tokens, synthetic, delete).

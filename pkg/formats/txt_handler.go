@@ -11,7 +11,6 @@ import (
 	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
 	"dep_service/pkg/depmap"
-	"dep_service/pkg/detector"
 )
 
 // TXTHandler processes plain text (.txt) files with DLP-safe tokenization or synthetic anonymization.
@@ -130,37 +129,13 @@ func (h *TXTHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 	return nil
 }
 
-func entityTypeToTokenType(entityType string) anonymizer.TokenType {
-	switch entityType {
-	case string(detector.EntityFIO), "NAME", string(detector.EntityLastName), string(detector.EntityFirstName), string(detector.EntityPatronymic):
-		return anonymizer.TokenFIO
-	case string(detector.EntityPassport):
-		return anonymizer.TokenPassport
-	case string(detector.EntityPhone):
-		return anonymizer.TokenPhone
-	case string(detector.EntitySNILS):
-		return anonymizer.TokenSNILS
-	case string(detector.EntityINN):
-		return anonymizer.TokenINN
-	case string(detector.EntityCard), "CARD":
-		return anonymizer.TokenCard
-	case string(detector.EntityEmail):
-		return anonymizer.TokenEmail
-	case string(detector.EntityBirthday), string(detector.EntityDate):
-		return anonymizer.TokenDate
-	case string(detector.EntityAddress):
-		return anonymizer.TokenAddress
-	default:
-		return anonymizer.TokenFIO
-	}
-}
-
 // Inspect reads plain text line-by-line, detects PII entities, counts them, and builds structured previews.
 func (h *TXTHandler) Inspect(r io.Reader) (int, []EntityCount, []DocxTextSnippet, []TextParagraphPreview, []TextDocumentBlock, error) {
 	if r == nil {
 		return 0, nil, nil, nil, nil, errors.New("reader cannot be nil")
 	}
 
+	ts := anonymizer.NewTokenSession("")
 	scanner := bufio.NewScanner(r)
 	lineCount := 0
 	counts := make(map[string]int)
@@ -176,15 +151,16 @@ func (h *TXTHandler) Inspect(r io.Reader) (int, []EntityCount, []DocxTextSnippet
 		for _, m := range matches {
 			counts[m.entityType]++
 			if len(snippets) < 50 {
+				tokenVal := ts.GenerateToken(EntityTypeToTokenType(m.entityType), m.value)
 				snippets = append(snippets, DocxTextSnippet{
 					Original:   m.value,
-					Anonymized: generateSynthetic(h.Anon, m.entityType, m.value),
+					Anonymized: tokenVal,
 					Type:       m.entityType,
 				})
 			}
 		}
 
-		segments := buildParagraphSegments(line, matches, h.Anon)
+		segments := buildParagraphSegments(line, matches, h.Anon, ts)
 		preview := TextParagraphPreview{
 			Index:    lineCount,
 			Segments: segments,

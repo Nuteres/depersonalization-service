@@ -40,7 +40,23 @@ func TestTokenSession_GenerateToken_FormattingAndDLPImmunity(t *testing.T) {
 		t.Fatalf("token %s must not match phone regex", phone)
 	}
 
-	if !IsBracketedToken(fio1) || !IsBracketedToken(pass) {
+	// Verify employee ID and grade tokens
+	emp := ts.GenerateToken(TokenEmployeeID, "824988")
+	if emp != "[Табель_0001]" {
+		t.Fatalf("expected [Табель_0001], got %s", emp)
+	}
+
+	grade := ts.GenerateToken(TokenGrade, "15")
+	if grade != "[Грейд_0001]" {
+		t.Fatalf("expected [Грейд_0001], got %s", grade)
+	}
+
+	patronymic := ts.GenerateToken(TokenPatronymic, "Иванович")
+	if patronymic != "[Отчество_0001]" {
+		t.Fatalf("expected [Отчество_0001], got %s", patronymic)
+	}
+
+	if !IsBracketedToken(fio1) || !IsBracketedToken(pass) || !IsBracketedToken(emp) {
 		t.Fatalf("expected IsBracketedToken to be true for tokens")
 	}
 	if IsBracketedToken("обычный текст") || IsBracketedToken("[Случайный текст с пробелом]") {

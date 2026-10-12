@@ -11,17 +11,20 @@ import (
 type TokenType string
 
 const (
-	TokenFIO       TokenType = "ФИО"
-	TokenLastName  TokenType = "Фамилия"
-	TokenFirstName TokenType = "Имя"
-	TokenPassport  TokenType = "Паспорт"
-	TokenSNILS     TokenType = "СНИЛС"
-	TokenINN       TokenType = "ИНН"
-	TokenPhone     TokenType = "Тел"
-	TokenEmail     TokenType = "Email"
-	TokenAddress   TokenType = "Адрес"
-	TokenCard      TokenType = "Карта"
-	TokenDate      TokenType = "Дата"
+	TokenFIO        TokenType = "ФИО"
+	TokenLastName   TokenType = "Фамилия"
+	TokenFirstName  TokenType = "Имя"
+	TokenPatronymic TokenType = "Отчество"
+	TokenPassport   TokenType = "Паспорт"
+	TokenSNILS      TokenType = "СНИЛС"
+	TokenINN        TokenType = "ИНН"
+	TokenPhone      TokenType = "Тел"
+	TokenEmail      TokenType = "Email"
+	TokenAddress    TokenType = "Адрес"
+	TokenCard       TokenType = "Карта"
+	TokenDate       TokenType = "Дата"
+	TokenEmployeeID TokenType = "Табель"
+	TokenGrade      TokenType = "Грейд"
 )
 
 var reBracketedToken = regexp.MustCompile(`^\[[А-Яа-яA-Za-z0-9_]+\]$`)

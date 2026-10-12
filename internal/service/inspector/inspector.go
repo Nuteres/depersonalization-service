@@ -105,33 +105,33 @@ func (i *Inspector) Inspect(ctx context.Context, path string) (*domain.FileInfo,
 func columnTypeDetails(colType formats.ColumnType) (typeName, desc, action string) {
 	switch colType {
 	case formats.ColFIO:
-		return "FIO", "Русские фамилии, имена и отчества", "Синтетический профиль"
+		return "FIO", "Русские фамилии, имена и отчества", "Токен [ФИО_XXXX]"
 	case formats.ColLastName:
-		return "LAST_NAME", "Русские фамилии", "Синтетическая фамилия"
+		return "LAST_NAME", "Русские фамилии", "Токен [Фамилия_XXXX]"
 	case formats.ColFirstName:
-		return "FIRST_NAME", "Русские имена", "Синтетическое имя"
+		return "FIRST_NAME", "Русские имена", "Токен [Имя_XXXX]"
 	case formats.ColPatronymic:
-		return "PATRONYMIC", "Русские отчества", "Синтетическое отчество"
+		return "PATRONYMIC", "Русские отчества", "Токен [Отчество_XXXX]"
 	case formats.ColSNILS:
-		return "SNILS", "Страховые номера РФ", "Валидный модуль 101"
+		return "SNILS", "Страховые номера РФ", "Токен [СНИЛС_XXXX]"
 	case formats.ColINN:
-		return "INN", "Идентификационный номер налогоплательщика", "Контрольная сумма ФНС"
+		return "INN", "Идентификационный номер налогоплательщика", "Токен [ИНН_XXXX]"
 	case formats.ColPassport:
-		return "PASSPORT", "Серия и номер гражданина РФ", "Случайная серия/номер"
+		return "PASSPORT", "Серия и номер гражданина РФ", "Токен [Паспорт_XXXX]"
 	case formats.ColPhone:
-		return "PHONE", "Мобильные операторы РФ", "Синтетический номер"
+		return "PHONE", "Мобильные операторы РФ", "Токен [Тел_XXXX]"
 	case formats.ColCard:
-		return "BANK_CARD", "Банковские карты", "Карта МИР (Luhn)"
+		return "BANK_CARD", "Банковские карты", "Токен [Карта_XXXX]"
 	case formats.ColDate:
-		return "DATE", "Даты и периоды", "Смещение ±30 дней"
+		return "DATE", "Даты и периоды", "Токен [Дата_XXXX]"
 	case formats.ColEmail:
-		return "EMAIL", "Корпоративная и личная почта", "Синтетический email"
+		return "EMAIL", "Корпоративная и личная почта", "Токен [Email_XXXX]"
 	case formats.ColAddress:
-		return "ADDRESS", "Адреса проживания и регистрации", "Синтетический адрес"
+		return "ADDRESS", "Адреса проживания и регистрации", "Токен [Адрес_XXXX]"
 	case formats.ColGrade:
-		return "GRADE", "Грейды и квалификационные разряды", "Синтетический грейд"
+		return "GRADE", "Грейды и квалификационные разряды", "Токен [Грейд_XXXX]"
 	case formats.ColEmployeeID:
-		return "EMPLOYEE_ID", "Табельные номера сотрудников", "Синтетический номер"
+		return "EMPLOYEE_ID", "Табельные номера сотрудников", "Токен [Табель_XXXX]"
 	default:
 		return "UNKNOWN", "Обычное поле", "Без изменений"
 	}
@@ -202,6 +202,7 @@ func inspectCSV(ctx context.Context, path string) (*domain.FileInfo, error) {
 	}
 
 	anon := anonymizer.New(defaultPreviewSalt)
+	ts := anonymizer.NewTokenSession(defaultPreviewSalt)
 	var previewRows []domain.PreviewRow
 	rowCount := 0
 
@@ -224,7 +225,7 @@ func inspectCSV(ctx context.Context, path string) (*domain.FileInfo, error) {
 				if j < len(colTypes) {
 					ct = colTypes[j]
 				}
-				after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+				after[j] = formats.ProcessCellWithStrategy(anon, ts, ct, val, domain.StrategySemanticTokens, 30)
 			}
 			previewRows = append(previewRows, domain.PreviewRow{
 				Index:  rowCount,
@@ -256,7 +257,7 @@ func inspectCSV(ctx context.Context, path string) (*domain.FileInfo, error) {
 				if j < len(colTypes) {
 					ct = colTypes[j]
 				}
-				after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+				after[j] = formats.ProcessCellWithStrategy(anon, ts, ct, val, domain.StrategySemanticTokens, 30)
 			}
 			previewRows = append(previewRows, domain.PreviewRow{
 				Index:  rowCount,
@@ -341,6 +342,7 @@ func inspectSingleSheet(ctx context.Context, xl *excelize.File, sheetName string
 		}
 	}
 
+	ts := anonymizer.NewTokenSession(defaultPreviewSalt)
 	var previewRows []domain.PreviewRow
 	rowCount := 0
 
@@ -364,7 +366,7 @@ func inspectSingleSheet(ctx context.Context, xl *excelize.File, sheetName string
 				if j < len(colTypes) {
 					ct = colTypes[j]
 				}
-				after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+				after[j] = formats.ProcessCellWithStrategy(anon, ts, ct, val, domain.StrategySemanticTokens, 30)
 			}
 			previewRows = append(previewRows, domain.PreviewRow{
 				Index:  rowCount,
@@ -400,7 +402,7 @@ func inspectSingleSheet(ctx context.Context, xl *excelize.File, sheetName string
 						if j < len(colTypes) {
 							ct = colTypes[j]
 						}
-						after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+						after[j] = formats.ProcessCellWithStrategy(anon, ts, ct, val, domain.StrategySemanticTokens, 30)
 					}
 					previewRows = append(previewRows, domain.PreviewRow{
 						Index:  rowCount,
@@ -522,6 +524,7 @@ func buildSheetInfoFromRows(sheetName string, sheetIndex int, rowCount int, samp
 		}
 	}
 
+	ts := anonymizer.NewTokenSession(defaultPreviewSalt)
 	var previewRows []domain.PreviewRow
 	limit := 10
 	currRow := 0
@@ -541,7 +544,7 @@ func buildSheetInfoFromRows(sheetName string, sheetIndex int, rowCount int, samp
 				if j < len(colTypes) {
 					ct = colTypes[j]
 				}
-				after[j] = formats.AnonymizeCell(anon, ct, val, 30)
+				after[j] = formats.ProcessCellWithStrategy(anon, ts, ct, val, domain.StrategySemanticTokens, 30)
 			}
 			previewRows = append(previewRows, domain.PreviewRow{
 				Index:  currRow,
@@ -752,35 +755,35 @@ func textEntityTypeName(t string) string {
 func textEntityDetails(t string) (desc, action string) {
 	switch t {
 	case "FIO":
-		return "Русские фамилии, имена и отчества", "Синтетический профиль"
+		return "Русские фамилии, имена и отчества", "Токен [ФИО_XXXX]"
 	case "LAST_NAME":
-		return "Русские фамилии", "Синтетическая фамилия"
+		return "Русские фамилии", "Токен [Фамилия_XXXX]"
 	case "FIRST_NAME":
-		return "Русские имена", "Синтетическое имя"
+		return "Русские имена", "Токен [Имя_XXXX]"
 	case "PATRONYMIC":
-		return "Русские отчества", "Синтетическое отчество"
+		return "Русские отчества", "Токен [Отчество_XXXX]"
 	case "SNILS":
-		return "Страховые номера РФ (модуль 101)", "Валидный СНИЛС"
+		return "Страховые номера РФ (модуль 101)", "Токен [СНИЛС_XXXX]"
 	case "PASSPORT":
-		return "Серия и номер гражданина РФ", "Случайная серия/номер"
+		return "Серия и номер гражданина РФ", "Токен [Паспорт_XXXX]"
 	case "PHONE":
-		return "Мобильные операторы РФ", "Синтетический номер"
+		return "Мобильные операторы РФ", "Токен [Тел_XXXX]"
 	case "INN":
-		return "ИНН физлица (алгоритм ФНС)", "Контрольная сумма ФНС"
+		return "ИНН физлица (алгоритм ФНС)", "Токен [ИНН_XXXX]"
 	case "BANK_CARD":
-		return "Номера банковских карт", "Карта МИР (Luhn)"
+		return "Номера банковских карт", "Токен [Карта_XXXX]"
 	case "DATE":
-		return "Даты и периоды", "Смещение ±30 дней"
+		return "Даты и периоды", "Токен [Дата_XXXX]"
 	case "EMAIL":
-		return "Корпоративная и личная почта", "Синтетический email"
+		return "Корпоративная и личная почта", "Токен [Email_XXXX]"
 	case "ADDRESS":
-		return "Адреса проживания и регистрации", "Синтетический адрес"
+		return "Адреса проживания и регистрации", "Токен [Адрес_XXXX]"
 	case "GRADE":
-		return "Грейды и квалификационные разряды", "Синтетический грейд"
+		return "Грейды и квалификационные разряды", "Токен [Грейд_XXXX]"
 	case "EMPLOYEE_ID":
-		return "Табельные номера сотрудников", "Синтетический номер"
+		return "Табельные номера сотрудников", "Токен [Табель_XXXX]"
 	default:
-		return "Персональные данные", "Обезличивание"
+		return "Персональные данные", "Токен"
 	}
 }
 
