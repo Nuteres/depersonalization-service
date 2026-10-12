@@ -293,11 +293,11 @@ func TestApp_EdgeCases(t *testing.T) {
 
 	// Unsupported extension
 	tmpDir := t.TempDir()
-	txtPath := filepath.Join(tmpDir, "file.txt")
-	_ = os.WriteFile(txtPath, []byte("hello"), 0644)
-	_, err = app.InspectFile(txtPath)
+	xyzPath := filepath.Join(tmpDir, "file.xyz")
+	_ = os.WriteFile(xyzPath, []byte("hello"), 0644)
+	_, err = app.InspectFile(xyzPath)
 	if err == nil {
-		t.Errorf("expected error on unsupported extension .txt")
+		t.Errorf("expected error on unsupported extension .xyz")
 	}
 }
 

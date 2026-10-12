@@ -178,21 +178,21 @@
     }
   });
 
-  let lastObservedMode = $state(appState.processingMode);
+  let lastObservedStrategy = $state(appState.strategy);
 
   $effect(() => {
-    const currentMode = appState.processingMode;
-    if (currentMode !== lastObservedMode) {
-      lastObservedMode = currentMode;
+    const currentStrategy = appState.strategy;
+    if (currentStrategy !== lastObservedStrategy) {
+      lastObservedStrategy = currentStrategy;
       if (appState.currentFilePath) {
         untrack(() => {
-          refreshPreviewRows(currentMode);
+          refreshPreviewRows(currentStrategy);
         });
       }
     }
   });
 
-  async function refreshPreviewRows(mode: ProcessingMode) {
+  async function refreshPreviewRows(strat: string) {
     if (!appState.currentFilePath) return;
     try {
       const count = Math.max(10, Math.min(tableState.previewRows.length, 50));
@@ -203,13 +203,13 @@
         count,
         appState.currentSalt,
         disabledCols,
-        mode
+        strat
       );
       if (updatedRows && updatedRows.length > 0) {
         tableState.setPreviewRows(updatedRows);
       }
     } catch (err) {
-      console.error('Failed to refresh preview rows on mode change:', err);
+      console.error('Failed to refresh preview rows on strategy change:', err);
     }
   }
 
@@ -233,7 +233,7 @@
         limit,
         appState.currentSalt,
         disabledCols,
-        appState.processingMode
+        appState.strategy
       );
       if (newRows && newRows.length > 0) {
         tableState.appendPreviewRows(newRows);

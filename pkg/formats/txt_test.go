@@ -63,3 +63,31 @@ func TestRestoreTXT(t *testing.T) {
 	}
 }
 
+func TestTXTHandler_Inspect(t *testing.T) {
+	anon := anonymizer.New("salt")
+	h := NewTXTHandler(anon)
+
+	input := "Сотрудник Иванов Иван Иванович имеет паспорт 4508 123456.\nВторая строка без данных."
+	lineCount, entitiesCounts, snippets, paragraphPreviews, documentBlocks, err := h.Inspect(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	if lineCount != 2 {
+		t.Errorf("expected 2 lines, got %d", lineCount)
+	}
+	if len(entitiesCounts) < 2 {
+		t.Errorf("expected at least 2 entity types, got %d", len(entitiesCounts))
+	}
+	if len(snippets) < 2 {
+		t.Errorf("expected at least 2 snippets, got %d", len(snippets))
+	}
+	if len(paragraphPreviews) != 2 {
+		t.Errorf("expected 2 paragraph previews, got %d", len(paragraphPreviews))
+	}
+	if len(documentBlocks) != 2 {
+		t.Errorf("expected 2 document blocks, got %d", len(documentBlocks))
+	}
+}
+
+

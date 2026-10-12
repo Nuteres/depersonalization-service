@@ -3,6 +3,7 @@ package formats
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -153,3 +154,64 @@ func entityTypeToTokenType(entityType string) anonymizer.TokenType {
 		return anonymizer.TokenFIO
 	}
 }
+
+// Inspect reads plain text line-by-line, detects PII entities, counts them, and builds structured previews.
+func (h *TXTHandler) Inspect(r io.Reader) (int, []EntityCount, []DocxTextSnippet, []TextParagraphPreview, []TextDocumentBlock, error) {
+	if r == nil {
+		return 0, nil, nil, nil, nil, errors.New("reader cannot be nil")
+	}
+
+	scanner := bufio.NewScanner(r)
+	lineCount := 0
+	counts := make(map[string]int)
+	var snippets []DocxTextSnippet
+	var paragraphPreviews []TextParagraphPreview
+	var documentBlocks []TextDocumentBlock
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		lineCount++
+
+		matches := findDocxSensitiveMatches(line)
+		for _, m := range matches {
+			counts[m.entityType]++
+			if len(snippets) < 50 {
+				snippets = append(snippets, DocxTextSnippet{
+					Original:   m.value,
+					Anonymized: generateSynthetic(h.Anon, m.entityType, m.value),
+					Type:       m.entityType,
+				})
+			}
+		}
+
+		segments := buildParagraphSegments(line, matches, h.Anon)
+		preview := TextParagraphPreview{
+			Index:    lineCount,
+			Segments: segments,
+		}
+		paragraphPreviews = append(paragraphPreviews, preview)
+		documentBlocks = append(documentBlocks, TextDocumentBlock{
+			Type:     "paragraph",
+			Index:    lineCount,
+			Segments: segments,
+		})
+	}
+
+	if err := scanner.Err(); err != nil {
+		return 0, nil, nil, nil, nil, fmt.Errorf("error reading text stream: %w", err)
+	}
+
+	var entitiesCounts []EntityCount
+	for t, c := range counts {
+		entitiesCounts = append(entitiesCounts, EntityCount{
+			Type:  t,
+			Count: c,
+		})
+	}
+	sort.Slice(entitiesCounts, func(i, j int) bool {
+		return entitiesCounts[i].Count > entitiesCounts[j].Count
+	})
+
+	return lineCount, entitiesCounts, snippets, paragraphPreviews, documentBlocks, nil
+}
+

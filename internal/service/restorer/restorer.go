@@ -192,7 +192,7 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 			return nil, fmt.Errorf("failed to restore excel: %w", err)
 		}
 
-	case ".ods":
+	case ".ods", ".xods":
 		inStat, err := os.Stat(inputPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to stat input file: %w", err)
@@ -274,6 +274,29 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 				return nil, ctx.Err()
 			}
 			return nil, fmt.Errorf("failed to restore odt: %w", err)
+		}
+
+	case ".txt":
+		inFile, err := os.Open(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open input file: %w", err)
+		}
+		defer inFile.Close()
+
+		outFile, err := os.Create(destPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create destination file: %w", err)
+		}
+		defer outFile.Close()
+
+		restoredCount, err = formats.RestoreTXT(ctx, inFile, outFile, dm)
+		if err != nil {
+			_ = outFile.Close()
+			_ = os.Remove(destPath)
+			if errors.Is(err, context.Canceled) || (ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled)) {
+				return nil, ctx.Err()
+			}
+			return nil, fmt.Errorf("failed to restore txt: %w", err)
 		}
 
 	default:

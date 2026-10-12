@@ -82,7 +82,7 @@ func (i *Inspector) Inspect(ctx context.Context, path string) (*domain.FileInfo,
 		return inspectCSV(ctx, path)
 	case ".xlsx", ".xlsm", ".xltx", ".xltm":
 		return inspectXLSX(ctx, path)
-	case ".ods":
+	case ".ods", ".xods":
 		return inspectODS(ctx, path)
 	case ".xlsb":
 		return inspectXLSB(ctx, path)
@@ -92,6 +92,8 @@ func (i *Inspector) Inspect(ctx context.Context, path string) (*domain.FileInfo,
 		return inspectDOCX(ctx, path)
 	case ".odt":
 		return inspectODT(ctx, path)
+	case ".txt", ".text":
+		return inspectTXT(ctx, path)
 	case ".pdf":
 		return inspectPDF(ctx, path)
 	default:
@@ -878,6 +880,60 @@ func inspectODT(ctx context.Context, path string) (*domain.FileInfo, error) {
 		FileType:               "text",
 		Format:                 "odt",
 		SupportedExportFormats: []string{"odt", "docx"},
+		Size:                   stat.Size(),
+		RowCount:               paramCount,
+		ParagraphCount:         paramCount,
+		PageCount:              1,
+		Entities:               entities,
+		Headers:                []string{"Тип сущности", "Количество", "Действие"},
+		TextSnippets:           snippets,
+		ParagraphPreviews:      paragraphPreviews,
+		DocumentBlocks:         documentBlocks,
+	}, nil
+}
+
+func inspectTXT(ctx context.Context, path string) (*domain.FileInfo, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open txt file: %w", err)
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat txt file: %w", err)
+	}
+
+	anon := anonymizer.New(defaultPreviewSalt)
+	handler := formats.NewTXTHandler(anon)
+	paramCount, entitiesCounts, snippets, paragraphPreviews, documentBlocks, err := handler.Inspect(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect txt file: %w", err)
+	}
+
+	var entities []domain.EntityInfo
+	for i, ec := range entitiesCounts {
+		desc, action := textEntityDetails(ec.Type)
+		entities = append(entities, domain.EntityInfo{
+			ColumnIndex: i + 1,
+			ColumnName:  fmt.Sprintf("%s (%d)", textEntityTypeName(ec.Type), ec.Count),
+			Type:        ec.Type,
+			Description: desc,
+			Action:      action,
+		})
+	}
+
+	return &domain.FileInfo{
+		Path:                   path,
+		Name:                   filepath.Base(path),
+		Extension:              "txt",
+		FileType:               "text",
+		Format:                 "txt",
+		SupportedExportFormats: []string{"txt"},
 		Size:                   stat.Size(),
 		RowCount:               paramCount,
 		ParagraphCount:         paramCount,

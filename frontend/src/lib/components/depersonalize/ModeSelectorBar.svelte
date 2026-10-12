@@ -12,20 +12,30 @@
     </span>
     <div class="inline-flex bg-[#F0EFEB] p-0.5 border border-[#E8E7E3] text-xs font-medium">
       <button
-        id="mode-btn-replace"
+        id="mode-btn-tokens"
         type="button"
-        onclick={() => appState.setProcessingMode('replace')}
-        class={appState.processingMode === 'replace'
+        onclick={() => appState.setStrategy('tokens')}
+        class={appState.strategy === 'tokens'
           ? 'px-3.5 py-1 bg-[#1C1917] text-white font-semibold shadow-xs cursor-pointer'
           : 'px-3.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer transition'}
       >
-        Замена
+        Для нейросетей
+      </button>
+      <button
+        id="mode-btn-synthetic"
+        type="button"
+        onclick={() => appState.setStrategy('synthetic')}
+        class={appState.strategy === 'synthetic'
+          ? 'px-3.5 py-1 bg-[#1C1917] text-white font-semibold shadow-xs cursor-pointer'
+          : 'px-3.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer transition'}
+      >
+        Синтетика
       </button>
       <button
         id="mode-btn-delete"
         type="button"
-        onclick={() => appState.setProcessingMode('delete')}
-        class={appState.processingMode === 'delete'
+        onclick={() => appState.setStrategy('delete')}
+        class={appState.strategy === 'delete'
           ? 'px-3.5 py-1 bg-[#1C1917] text-white font-semibold shadow-xs cursor-pointer'
           : 'px-3.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer transition'}
       >

@@ -178,8 +178,27 @@ func (a *DesktopApp) ProcessFileWithSheets(
 	}()
 
 	processingMode := domain.ModeReplace
+	strategy := domain.StrategySemanticTokens
+
 	if len(mode) > 0 && strings.TrimSpace(mode[0]) != "" {
-		processingMode = domain.ProcessingMode(mode[0])
+		m := strings.TrimSpace(mode[0])
+		switch m {
+		case string(domain.StrategyDelete):
+			processingMode = domain.ModeDelete
+			strategy = domain.StrategyDelete
+		case string(domain.StrategySynthetic):
+			processingMode = domain.ModeReplace
+			strategy = domain.StrategySynthetic
+		case string(domain.StrategySemanticTokens):
+			processingMode = domain.ModeReplace
+			strategy = domain.StrategySemanticTokens
+		default:
+			processingMode = domain.ProcessingMode(m)
+			strategy = domain.StrategySemanticTokens
+		}
+	}
+	if len(mode) > 1 && strings.TrimSpace(mode[1]) != "" {
+		strategy = domain.AnonymizationStrategy(mode[1])
 	}
 
 	reporter := newProcessProgressReporter(a.ctx)
@@ -187,6 +206,7 @@ func (a *DesktopApp) ProcessFileWithSheets(
 		InputPath:       path,
 		OutputPath:      outPath,
 		Mode:            processingMode,
+		Strategy:        strategy,
 		Salt:            salt,
 		DisabledCols:    disabledCols,
 		DisabledBySheet: disabledBySheet,
@@ -215,6 +235,14 @@ func (a *DesktopApp) ProcessFileWithOptions(opts domain.ProcessOptions) (*domain
 		a.cancelMu.Unlock()
 		cancel()
 	}()
+
+	if opts.Strategy == "" {
+		if opts.Mode == domain.ModeDelete {
+			opts.Strategy = domain.StrategyDelete
+		} else {
+			opts.Strategy = domain.StrategySemanticTokens
+		}
+	}
 
 	reporter := newProcessProgressReporter(a.ctx)
 	return a.proc.Process(opCtx, opts, reporter)

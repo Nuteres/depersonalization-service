@@ -23,16 +23,16 @@ func (a *DesktopApp) SelectFile() (string, error) {
 	if goruntime.GOOS != "darwin" {
 		filters = []runtime.FileFilter{
 			{
-				DisplayName: "Все поддерживаемые форматы (*.xlsx, *.xlsb, *.ods, *.xls, *.csv, *.docx, *.odt, *.pdf)",
-				Pattern:     "*.xlsx;*.xlsb;*.ods;*.xls;*.csv;*.tsv;*.docx;*.odt;*.pdf",
+				DisplayName: "Все поддерживаемые форматы (*.xlsx, *.xlsb, *.ods, *.xods, *.xls, *.csv, *.docx, *.odt, *.txt, *.pdf)",
+				Pattern:     "*.xlsx;*.xlsb;*.ods;*.xods;*.xls;*.csv;*.tsv;*.docx;*.odt;*.txt;*.pdf",
 			},
 			{
-				DisplayName: "Таблицы Excel и ODS (*.xlsx, *.xlsb, *.ods, *.xls, *.csv)",
-				Pattern:     "*.xlsx;*.xlsb;*.ods;*.xls;*.csv;*.tsv",
+				DisplayName: "Таблицы Excel и ODS (*.xlsx, *.xlsb, *.ods, *.xods, *.xls, *.csv)",
+				Pattern:     "*.xlsx;*.xlsb;*.ods;*.xods;*.xls;*.csv;*.tsv",
 			},
 			{
-				DisplayName: "Текстовые документы Word и ODT (*.docx, *.odt)",
-				Pattern:     "*.docx;*.odt",
+				DisplayName: "Текстовые документы (*.docx, *.odt, *.txt)",
+				Pattern:     "*.docx;*.odt;*.txt",
 			},
 			{
 				DisplayName: "Документы PDF (*.pdf)",
@@ -66,7 +66,7 @@ func (a *DesktopApp) SaveFileDialog(defaultName string) (string, error) {
 			filters = []runtime.FileFilter{
 				{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
 			}
-		case ".ods":
+		case ".ods", ".xods":
 			filters = []runtime.FileFilter{
 				{DisplayName: "Таблица OpenDocument (*.ods)", Pattern: "*.ods"},
 				{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
@@ -80,6 +80,10 @@ func (a *DesktopApp) SaveFileDialog(defaultName string) (string, error) {
 			filters = []runtime.FileFilter{
 				{DisplayName: "Документ OpenDocument Text (*.odt)", Pattern: "*.odt"},
 				{DisplayName: "Документ Word (*.docx)", Pattern: "*.docx"},
+			}
+		case ".txt":
+			filters = []runtime.FileFilter{
+				{DisplayName: "Текстовый документ (*.txt)", Pattern: "*.txt"},
 			}
 		case ".pdf":
 			filters = []runtime.FileFilter{

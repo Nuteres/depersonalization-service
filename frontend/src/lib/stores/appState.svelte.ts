@@ -1,4 +1,5 @@
 import type {
+  AnonymizationStrategy,
   AppInfo,
   FileInfo,
   ProcessResult,
@@ -30,6 +31,7 @@ export type SuccessResult = (ProcessResult | RestoreResult) & {
 class AppState {
   currentAppMode = $state<AppMode>('depersonalize');
   processingMode = $state<ProcessingMode>('replace');
+  strategy = $state<AnonymizationStrategy>('tokens');
   currentFilePath = $state<string>('');
   currentFileInfo = $state<FileInfo | null>(null);
   currentSalt = $state<string>('152fz-secure-salt');
@@ -54,8 +56,22 @@ class AppState {
     this.currentAppMode = mode;
   }
 
+  setStrategy(strategy: AnonymizationStrategy): void {
+    this.strategy = strategy;
+    if (strategy === 'delete') {
+      this.processingMode = 'delete';
+    } else {
+      this.processingMode = 'replace';
+    }
+  }
+
   setProcessingMode(mode: ProcessingMode): void {
     this.processingMode = mode;
+    if (mode === 'delete') {
+      this.strategy = 'delete';
+    } else if (this.strategy === 'delete') {
+      this.strategy = 'tokens';
+    }
   }
 
   setFilePath(path: string): void {
@@ -148,6 +164,7 @@ class AppState {
     this.currentFilePath = '';
     this.currentFileInfo = null;
     this.processingMode = 'replace';
+    this.strategy = 'tokens';
     this.isProcessing = false;
     this.showProgressModal = false;
     this.successResult = null;

@@ -83,11 +83,13 @@ export interface FileInfo {
 }
 
 export type ProcessingMode = 'replace' | 'delete';
+export type AnonymizationStrategy = 'tokens' | 'synthetic' | 'delete';
 
 export interface ProcessOptions {
   inputPath: string;
   outputPath?: string;
   mode?: ProcessingMode;
+  strategy?: AnonymizationStrategy;
   salt?: string;
   disabledCols?: number[];
   disabledBySheet?: Record<string, number[]>;

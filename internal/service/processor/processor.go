@@ -137,7 +137,7 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	}
 
 	switch ext {
-	case ".csv", ".tsv", ".xlsx", ".xlsm", ".xltx", ".xltm", ".ods", ".xlsb", ".xls", ".docx", ".odt", ".pdf":
+	case ".csv", ".tsv", ".xlsx", ".xlsm", ".xltx", ".xltm", ".ods", ".xods", ".xlsb", ".xls", ".docx", ".odt", ".pdf", ".txt":
 		// Supported format
 	default:
 		return nil, fmt.Errorf("%w: %s", domain.ErrUnsupportedFormat, ext)
@@ -225,13 +225,15 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 
 	options := map[string]interface{}{
 		"mode":                      opts.Mode,
+		"strategy":                  opts.Strategy,
 		"disabled_columns":          opts.DisabledCols,
 		"disabled_columns_by_sheet": opts.DisabledBySheet,
 		"progress_callback":         progressCallback,
 		"shuffle_rows":              opts.ShuffleRows,
+		"salt":                      salt,
 	}
 
-	if ext == ".docx" || ext == ".odt" || ext == ".pdf" {
+	if ext == ".docx" || ext == ".odt" || ext == ".pdf" || ext == ".txt" {
 		if len(opts.DisabledCols) > 0 && info != nil {
 			var disabledEntityTypes []string
 			for _, cIdx := range opts.DisabledCols {
@@ -288,7 +290,7 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	case ".xlsx", ".xlsm", ".xltx", ".xltm":
 		handler := formats.NewExcelHandler(anon)
 		err = handler.Process(ctx, inFile, outFile, options)
-	case ".ods":
+	case ".ods", ".xods":
 		odsHandler := formats.NewODSHandler(anon)
 		if strings.EqualFold(filepath.Ext(outPath), ".xlsx") {
 			directDepMap, err = odsHandler.ProcessToXLSX(ctx, inFile, stat.Size(), outFile, options)
@@ -307,6 +309,9 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	case ".odt":
 		odtHandler := formats.NewODTHandler(anon)
 		directDepMap, err = odtHandler.Process(ctx, inFile, stat.Size(), outFile, options)
+	case ".txt":
+		txtHandler := formats.NewTXTHandler(anon)
+		err = txtHandler.Process(ctx, inFile, outFile, options)
 	case ".pdf":
 		handler := formats.NewPDFHandler(anon)
 		err = handler.Process(ctx, inFile, outFile, options)

@@ -154,7 +154,7 @@
         keyPassword,
         keyPath,
         shuffleRows,
-        appState.processingMode
+        appState.strategy
       );
 
       if (result && result.success) {
