@@ -606,4 +606,79 @@ func TestRestoreExcel_ModeReplace_HeaderAwareAIColumnProtected(t *testing.T) {
 	}
 }
 
+func TestRestoreExcel_ShuffledRowsAndTokensInSubstrings(t *testing.T) {
+	tempDir := t.TempDir()
+	inputPath := filepath.Join(tempDir, "input_shuffled.xlsx")
+	outputPath := filepath.Join(tempDir, "output_restored.xlsx")
+
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	_ = f.SetCellValue(sheet, "A1", "Комментарий_LLM")
+	_ = f.SetCellValue(sheet, "B1", "ФИО")
+	_ = f.SetCellValue(sheet, "C1", "Паспорт")
+
+	_ = f.SetCellValue(sheet, "A2", "Рекомендация: повысить сотрудника [ФИО_0002] на 1 грейд")
+	_ = f.SetCellValue(sheet, "B2", "[ФИО_0002]")
+	_ = f.SetCellValue(sheet, "C2", "[Паспорт_0002]")
+
+	_ = f.SetCellValue(sheet, "A3", "Рекомендация: премировать [ФИО_0001]")
+	_ = f.SetCellValue(sheet, "B3", "[ФИО_0001]")
+	_ = f.SetCellValue(sheet, "C3", "[Паспорт_0001]")
+
+	if err := f.SaveAs(inputPath); err != nil {
+		t.Fatalf("failed to save input xlsx: %v", err)
+	}
+	f.Close()
+
+	dm := depmap.New("test.xlsx")
+	dm.Mode = "tokens"
+	dm.Put("[ФИО_0001]", "Иванов Иван Иванович")
+	dm.Put("[Паспорт_0001]", "4508 123456")
+	dm.Put("[ФИО_0002]", "Петров Петр Петрович")
+	dm.Put("[Паспорт_0002]", "4510 654321")
+
+	count, err := formats.RestoreExcel(context.Background(), inputPath, outputPath, dm, nil)
+	if err != nil {
+		t.Fatalf("RestoreExcel failed: %v", err)
+	}
+	if count < 6 {
+		t.Errorf("expected at least 6 replacements, got %d", count)
+	}
+
+	rf, err := excelize.OpenFile(outputPath)
+	if err != nil {
+		t.Fatalf("failed to open restored xlsx: %v", err)
+	}
+	defer rf.Close()
+
+	// Row 2 checks (Petrov)
+	comment2, _ := rf.GetCellValue(sheet, "A2")
+	if comment2 != "Рекомендация: повысить сотрудника Петров Петр Петрович на 1 грейд" {
+		t.Errorf("expected substring restored in A2, got %q", comment2)
+	}
+	fio2, _ := rf.GetCellValue(sheet, "B2")
+	if fio2 != "Петров Петр Петрович" {
+		t.Errorf("expected B2 restored to Петров, got %q", fio2)
+	}
+	pass2, _ := rf.GetCellValue(sheet, "C2")
+	if pass2 != "4510 654321" {
+		t.Errorf("expected C2 restored to 4510 654321, got %q", pass2)
+	}
+
+	// Row 3 checks (Ivanov)
+	comment3, _ := rf.GetCellValue(sheet, "A3")
+	if comment3 != "Рекомендация: премировать Иванов Иван Иванович" {
+		t.Errorf("expected substring restored in A3, got %q", comment3)
+	}
+	fio3, _ := rf.GetCellValue(sheet, "B3")
+	if fio3 != "Иванов Иван Иванович" {
+		t.Errorf("expected B3 restored to Иванов, got %q", fio3)
+	}
+	pass3, _ := rf.GetCellValue(sheet, "C3")
+	if pass3 != "4508 123456" {
+		t.Errorf("expected C3 restored to 4508 123456, got %q", pass3)
+	}
+}
+
+
 

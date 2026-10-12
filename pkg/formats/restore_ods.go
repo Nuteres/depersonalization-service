@@ -111,57 +111,17 @@ func RestoreODS(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 				var orig string
 				ok := false
 
-				if isDeleteMode {
+				if restoredVal, found := RestoreCellString(val, dm); found {
+					if len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName] || strings.Contains(val, "[") {
+						orig = restoredVal
+						ok = true
+					}
+				} else if isDeleteMode {
 					if o, found := dm.GetCell(sheet.name, headerName, physicalRow); found {
 						trimmed := strings.TrimSpace(strings.TrimPrefix(val, "\ufeff"))
 						if trimmed == DeletionMarker {
 							orig = o
 							ok = true
-						}
-					}
-					if !ok && len(dm.Mapping) > 0 && (len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName]) {
-						if o, found := dm.LookupOriginal(val); found {
-							orig = o
-							ok = true
-						} else {
-							trimmed := strings.TrimSpace(val)
-							trimmed = strings.TrimPrefix(trimmed, "\ufeff")
-							if trimmed != val {
-								if o, found := dm.LookupOriginal(trimmed); found {
-									orig = o
-									ok = true
-								}
-							}
-						}
-					}
-				} else if len(dm.TargetHeaders) > 0 {
-					if targetHeadersMap[headerName] {
-						if o, found := dm.LookupOriginal(val); found {
-							orig = o
-							ok = true
-						} else {
-							trimmed := strings.TrimSpace(val)
-							trimmed = strings.TrimPrefix(trimmed, "\ufeff")
-							if trimmed != val {
-								if o, found := dm.LookupOriginal(trimmed); found {
-									orig = o
-									ok = true
-								}
-							}
-						}
-					}
-				} else {
-					if o, found := dm.LookupOriginal(val); found {
-						orig = o
-						ok = true
-					} else {
-						trimmed := strings.TrimSpace(val)
-						trimmed = strings.TrimPrefix(trimmed, "\ufeff")
-						if trimmed != val {
-							if o, found := dm.LookupOriginal(trimmed); found {
-								orig = o
-								ok = true
-							}
 						}
 					}
 				}

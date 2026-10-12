@@ -178,6 +178,16 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 					headerName = strings.TrimSpace(headers[colIdx])
 				}
 
+				if restoredVal, ok := RestoreCellString(val, dm); ok {
+					if len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName] || strings.Contains(val, "[") {
+						coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
+						if err == nil {
+							changes = append(changes, cellChange{cell: coord, val: restoredVal})
+						}
+						continue
+					}
+				}
+
 				if isDeleteMode {
 					if orig, ok := dm.GetCell(sheetName, headerName, rowNum); ok {
 						trimmed := strings.TrimSpace(strings.TrimPrefix(val, "\ufeff"))
@@ -187,52 +197,6 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 								changes = append(changes, cellChange{cell: coord, val: orig})
 							}
 							continue
-						}
-					}
-					if len(dm.Mapping) > 0 && (len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName]) {
-						if orig, ok := dm.Get(val); ok {
-							coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
-							if err == nil {
-								changes = append(changes, cellChange{cell: coord, val: orig})
-							}
-						}
-					}
-				} else if len(dm.TargetHeaders) > 0 {
-					if targetHeadersMap[headerName] {
-						if orig, ok := dm.Get(val); ok {
-							coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
-							if err == nil {
-								changes = append(changes, cellChange{cell: coord, val: orig})
-							}
-						} else {
-							trimmed := strings.TrimSpace(val)
-							trimmed = strings.TrimPrefix(trimmed, "\ufeff")
-							if trimmed != val {
-								if orig, ok := dm.Get(trimmed); ok {
-									coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
-									if err == nil {
-										changes = append(changes, cellChange{cell: coord, val: orig})
-									}
-								}
-							}
-						}
-					}
-				} else {
-					if orig, ok := dm.Get(val); ok {
-						coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
-						if err == nil {
-							changes = append(changes, cellChange{cell: coord, val: orig})
-						}
-					} else {
-						trimmed := strings.TrimSpace(val)
-						trimmed = strings.TrimPrefix(trimmed, "\ufeff")
-						if trimmed != val {
-							if orig, ok := dm.Get(trimmed); ok {
-								coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
-								if err == nil {
-									changes = append(changes, cellChange{cell: coord, val: orig})
-								}
-							}
 						}
 					}
 				}

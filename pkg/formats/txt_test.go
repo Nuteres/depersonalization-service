@@ -40,3 +40,26 @@ func TestTXTHandler_Process_Tokens(t *testing.T) {
 		t.Fatalf("expected at least 2 records in depmap, got %d", dm.RecordsCount)
 	}
 }
+
+func TestRestoreTXT(t *testing.T) {
+	dm := depmap.New("test.txt")
+	dm.Put("[ФИО_0001]", "Иванов Иван Иванович")
+	dm.Put("[Паспорт_0001]", "4508 123456")
+
+	input := "Вывод нейросети: Данные принадлежат [ФИО_0001], документ [Паспорт_0001]."
+	var out bytes.Buffer
+
+	count, err := RestoreTXT(context.Background(), strings.NewReader(input), &out, dm)
+	if err != nil {
+		t.Fatalf("RestoreTXT failed: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2 replacements, got %d", count)
+	}
+
+	expected := "Вывод нейросети: Данные принадлежат Иванов Иван Иванович, документ 4508 123456."
+	if out.String() != expected {
+		t.Errorf("expected %q, got %q", expected, out.String())
+	}
+}
+

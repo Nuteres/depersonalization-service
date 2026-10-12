@@ -99,6 +99,14 @@ func RestoreCSV(ctx context.Context, r io.Reader, w io.Writer, dm *depmap.DepMap
 				headerName = strings.TrimSpace(headers[colIdx])
 			}
 
+			if restoredVal, ok := RestoreCellString(cell, dm); ok {
+				if len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName] || strings.Contains(cell, "[") {
+					outRecord[colIdx] = restoredVal
+					restoredCount++
+					continue
+				}
+			}
+
 			if isDeleteMode {
 				if orig, ok := dm.GetCell("", headerName, physicalRowNum); ok {
 					trimmed := strings.TrimSpace(strings.TrimPrefix(cell, "\ufeff"))
@@ -108,61 +116,8 @@ func RestoreCSV(ctx context.Context, r io.Reader, w io.Writer, dm *depmap.DepMap
 						continue
 					}
 				}
-				if len(dm.Mapping) > 0 && (len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName]) {
-					if orig, ok := dm.Get(cell); ok {
-						outRecord[colIdx] = orig
-						restoredCount++
-						continue
-					} else {
-						trimmed := strings.TrimSpace(cell)
-						trimmed = strings.TrimPrefix(trimmed, "\ufeff")
-						if trimmed != cell {
-							if orig, ok := dm.Get(trimmed); ok {
-								outRecord[colIdx] = orig
-								restoredCount++
-								continue
-							}
-						}
-					}
-				}
-				outRecord[colIdx] = cell
-			} else if len(dm.TargetHeaders) > 0 {
-				if targetHeadersMap[headerName] {
-					if orig, ok := dm.Get(cell); ok {
-						outRecord[colIdx] = orig
-						restoredCount++
-					} else {
-						trimmed := strings.TrimSpace(cell)
-						trimmed = strings.TrimPrefix(trimmed, "\ufeff")
-						if trimmed != cell {
-							if orig, ok := dm.Get(trimmed); ok {
-								outRecord[colIdx] = orig
-								restoredCount++
-								continue
-							}
-						}
-						outRecord[colIdx] = cell
-					}
-				} else {
-					outRecord[colIdx] = cell
-				}
-			} else {
-				if orig, ok := dm.Get(cell); ok {
-					outRecord[colIdx] = orig
-					restoredCount++
-				} else {
-					trimmed := strings.TrimSpace(cell)
-					trimmed = strings.TrimPrefix(trimmed, "\ufeff")
-					if trimmed != cell {
-						if orig, ok := dm.Get(trimmed); ok {
-							outRecord[colIdx] = orig
-							restoredCount++
-							continue
-						}
-					}
-					outRecord[colIdx] = cell
-				}
 			}
+			outRecord[colIdx] = cell
 		}
 		return outRecord
 	}
