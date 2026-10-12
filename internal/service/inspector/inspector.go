@@ -105,33 +105,33 @@ func (i *Inspector) Inspect(ctx context.Context, path string) (*domain.FileInfo,
 func columnTypeDetails(colType formats.ColumnType) (typeName, desc, action string) {
 	switch colType {
 	case formats.ColFIO:
-		return "FIO", "Русские фамилии, имена и отчества", "Токен [ФИО_XXXX]"
+		return "FIO", "Русские фамилии, имена и отчества", "Обезличивание ФИО"
 	case formats.ColLastName:
-		return "LAST_NAME", "Русские фамилии", "Токен [Фамилия_XXXX]"
+		return "LAST_NAME", "Русские фамилии", "Обезличивание фамилий"
 	case formats.ColFirstName:
-		return "FIRST_NAME", "Русские имена", "Токен [Имя_XXXX]"
+		return "FIRST_NAME", "Русские имена", "Обезличивание имён"
 	case formats.ColPatronymic:
-		return "PATRONYMIC", "Русские отчества", "Токен [Отчество_XXXX]"
+		return "PATRONYMIC", "Русские отчества", "Обезличивание отчеств"
 	case formats.ColSNILS:
-		return "SNILS", "Страховые номера РФ", "Токен [СНИЛС_XXXX]"
+		return "SNILS", "Страховые номера РФ", "Обезличивание СНИЛС"
 	case formats.ColINN:
-		return "INN", "Идентификационный номер налогоплательщика", "Токен [ИНН_XXXX]"
+		return "INN", "Идентификационный номер налогоплательщика", "Обезличивание ИНН"
 	case formats.ColPassport:
-		return "PASSPORT", "Серия и номер гражданина РФ", "Токен [Паспорт_XXXX]"
+		return "PASSPORT", "Серия и номер гражданина РФ", "Обезличивание паспортов"
 	case formats.ColPhone:
-		return "PHONE", "Мобильные операторы РФ", "Токен [Тел_XXXX]"
+		return "PHONE", "Мобильные операторы РФ", "Обезличивание телефонов"
 	case formats.ColCard:
-		return "BANK_CARD", "Банковские карты", "Токен [Карта_XXXX]"
+		return "BANK_CARD", "Банковские карты", "Обезличивание карт"
 	case formats.ColDate:
-		return "DATE", "Даты и периоды", "Токен [Дата_XXXX]"
+		return "DATE", "Даты и периоды", "Обезличивание дат"
 	case formats.ColEmail:
-		return "EMAIL", "Корпоративная и личная почта", "Токен [Email_XXXX]"
+		return "EMAIL", "Корпоративная и личная почта", "Обезличивание email"
 	case formats.ColAddress:
-		return "ADDRESS", "Адреса проживания и регистрации", "Токен [Адрес_XXXX]"
+		return "ADDRESS", "Адреса проживания и регистрации", "Обезличивание адресов"
 	case formats.ColGrade:
-		return "GRADE", "Грейды и квалификационные разряды", "Токен [Грейд_XXXX]"
+		return "GRADE", "Грейды и квалификационные разряды", "Обезличивание грейдов"
 	case formats.ColEmployeeID:
-		return "EMPLOYEE_ID", "Табельные номера сотрудников", "Токен [Табель_XXXX]"
+		return "EMPLOYEE_ID", "Табельные номера сотрудников", "Обезличивание табельных номеров"
 	default:
 		return "UNKNOWN", "Обычное поле", "Без изменений"
 	}
@@ -755,35 +755,35 @@ func textEntityTypeName(t string) string {
 func textEntityDetails(t string) (desc, action string) {
 	switch t {
 	case "FIO":
-		return "Русские фамилии, имена и отчества", "Токен [ФИО_XXXX]"
+		return "Русские фамилии, имена и отчества", "Обезличивание ФИО"
 	case "LAST_NAME":
-		return "Русские фамилии", "Токен [Фамилия_XXXX]"
+		return "Русские фамилии", "Обезличивание фамилий"
 	case "FIRST_NAME":
-		return "Русские имена", "Токен [Имя_XXXX]"
+		return "Русские имена", "Обезличивание имён"
 	case "PATRONYMIC":
-		return "Русские отчества", "Токен [Отчество_XXXX]"
+		return "Русские отчества", "Обезличивание отчеств"
 	case "SNILS":
-		return "Страховые номера РФ (модуль 101)", "Токен [СНИЛС_XXXX]"
+		return "Страховые номера РФ (модуль 101)", "Обезличивание СНИЛС"
 	case "PASSPORT":
-		return "Серия и номер гражданина РФ", "Токен [Паспорт_XXXX]"
+		return "Серия и номер гражданина РФ", "Обезличивание паспортов"
 	case "PHONE":
-		return "Мобильные операторы РФ", "Токен [Тел_XXXX]"
+		return "Мобильные операторы РФ", "Обезличивание телефонов"
 	case "INN":
-		return "ИНН физлица (алгоритм ФНС)", "Токен [ИНН_XXXX]"
+		return "ИНН физлица (алгоритм ФНС)", "Обезличивание ИНН"
 	case "BANK_CARD":
-		return "Номера банковских карт", "Токен [Карта_XXXX]"
+		return "Номера банковских карт", "Обезличивание карт"
 	case "DATE":
-		return "Даты и периоды", "Токен [Дата_XXXX]"
+		return "Даты и периоды", "Обезличивание дат"
 	case "EMAIL":
-		return "Корпоративная и личная почта", "Токен [Email_XXXX]"
+		return "Корпоративная и личная почта", "Обезличивание email"
 	case "ADDRESS":
-		return "Адреса проживания и регистрации", "Токен [Адрес_XXXX]"
+		return "Адреса проживания и регистрации", "Обезличивание адресов"
 	case "GRADE":
-		return "Грейды и квалификационные разряды", "Токен [Грейд_XXXX]"
+		return "Грейды и квалификационные разряды", "Обезличивание грейдов"
 	case "EMPLOYEE_ID":
-		return "Табельные номера сотрудников", "Токен [Табель_XXXX]"
+		return "Табельные номера сотрудников", "Обезличивание табельных номеров"
 	default:
-		return "Персональные данные", "Токен"
+		return "Персональные данные", "Обезличивание данных"
 	}
 }
 

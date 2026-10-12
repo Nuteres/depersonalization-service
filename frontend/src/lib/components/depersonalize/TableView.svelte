@@ -80,8 +80,8 @@
       '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     );
 
-    // 2. Badge "[ ПДн: Замена ]" takes ~96px
-    const badgeW = isPiiCol ? 96 : 0;
+    // 2. Badge "[ ПДн ]" takes ~48px
+    const badgeW = isPiiCol ? 48 : 0;
 
     // 3. Spacing: th px-3 (24px) + gap-1.5 (6px) + col-resizer handle (10px) + safety buffer (16px) = 56px
     let maxNeeded = headerTextW + badgeW + 56;
@@ -366,10 +366,10 @@
               >
                 <div class="flex items-center justify-between gap-1.5 w-full min-w-0 overflow-hidden pr-2">
                   <span
-                    class="truncate min-w-0 flex-1 whitespace-nowrap {isDisabled ? 'line-through text-stone-400' : ''}"
-                    title={h}
+                    class="truncate min-w-0 flex-1 whitespace-nowrap {isDisabled ? 'line-through text-stone-400' : ''} {!h || !h.trim() ? 'text-stone-400 italic font-normal' : ''}"
+                    title={h && h.trim() ? h : `Колонка ${col1Based}`}
                   >
-                    {h}
+                    {h && h.trim() ? h : `Колонка ${col1Based}`}
                   </span>
 
                   {#if isPii}
@@ -387,9 +387,9 @@
                         </span>
                       {:else}
                         <span
-                          class="text-[10px] text-emerald-700 bg-emerald-50 border-emerald-200 border px-1 py-0.5 rounded font-mono font-medium"
+                          class="text-[10px] text-emerald-700 bg-emerald-50 border-emerald-200 border px-1.5 py-0.5 rounded font-mono font-medium"
                         >
-                          ПДн: Токен
+                          ПДн
                         </span>
                       {/if}
                     </button>
@@ -575,10 +575,10 @@
                   >
                     <div class="flex items-center justify-between gap-1.5 w-full min-w-0 overflow-hidden pr-2">
                       <span
-                        class="truncate min-w-0 flex-1 whitespace-nowrap {isDisabled ? 'line-through text-stone-400' : ''}"
-                        title={h}
+                        class="truncate min-w-0 flex-1 whitespace-nowrap {isDisabled ? 'line-through text-stone-400' : ''} {!h || !h.trim() ? 'text-stone-400 italic font-normal' : ''}"
+                        title={h && h.trim() ? h : `Колонка ${col1Based}`}
                       >
-                        {h}
+                        {h && h.trim() ? h : `Колонка ${col1Based}`}
                       </span>
                       {#if isPii}
                         <button
@@ -595,9 +595,9 @@
                             </span>
                           {:else}
                             <span
-                              class="text-[10px] text-emerald-700 bg-emerald-50 border-emerald-200 border px-1 py-0.5 rounded font-mono font-medium"
+                              class="text-[10px] text-emerald-700 bg-emerald-50 border-emerald-200 border px-1.5 py-0.5 rounded font-mono font-medium"
                             >
-                              ПДн: Токен
+                              ПДн
                             </span>
                           {/if}
                         </button>

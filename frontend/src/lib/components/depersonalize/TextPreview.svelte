@@ -53,18 +53,18 @@
   };
 
   const typeActionLabels: Record<string, string> = {
-    FIO: 'Токен [ФИО_XXXX]',
-    SNILS: 'Токен [СНИЛС_XXXX]',
-    PASSPORT: 'Токен [Паспорт_XXXX]',
-    PHONE: 'Токен [Тел_XXXX]',
-    INN: 'Токен [ИНН_XXXX]',
-    BANK_CARD: 'Токен [Карта_XXXX]',
-    CARD: 'Токен [Карта_XXXX]',
-    DATE: 'Токен [Дата_XXXX]',
-    EMAIL: 'Токен [Email_XXXX]',
-    ADDRESS: 'Токен [Адрес_XXXX]',
-    GRADE: 'Токен [Грейд_XXXX]',
-    EMPLOYEE_ID: 'Токен [Табель_XXXX]'
+    FIO: 'Обезличивание ФИО',
+    SNILS: 'Обезличивание СНИЛС',
+    PASSPORT: 'Обезличивание паспортов',
+    PHONE: 'Обезличивание номеров',
+    INN: 'Обезличивание ИНН',
+    BANK_CARD: 'Обезличивание карт',
+    CARD: 'Обезличивание карт',
+    DATE: 'Обезличивание дат',
+    EMAIL: 'Обезличивание email',
+    ADDRESS: 'Обезличивание адресов',
+    GRADE: 'Обезличивание грейдов',
+    EMPLOYEE_ID: 'Обезличивание табельных номеров'
   };
 
   function getEntityTypeName(type: string): string {
