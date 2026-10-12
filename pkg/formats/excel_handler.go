@@ -74,7 +74,13 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 	defer outFile.Close()
 
 	dateRange := getDateRange(options)
-	mode := getProcessingMode(options)
+	strategy := getProcessingStrategy(options)
+	salt := ""
+	if s, ok := options["salt"].(string); ok {
+		salt = s
+	}
+	ts := anonymizer.NewTokenSession(salt)
+
 	var depMap *depmap.DepMap
 	if dm, ok := options["depmap"].(*depmap.DepMap); ok {
 		depMap = dm
@@ -82,7 +88,7 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 		depMap = dm
 	}
 	if depMap != nil {
-		depMap.Mode = string(mode)
+		depMap.Mode = string(strategy)
 	}
 
 	for sheetIdx, sheetName := range sheetList {
@@ -243,7 +249,7 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 					if i < len(colTypes) && !disabledMap[col1Based] {
 						colType = colTypes[i]
 					}
-					newVal := ProcessCell(h.Anon, colType, v, mode, dateRange)
+					newVal := ProcessCellWithStrategy(h.Anon, ts, colType, v, strategy, dateRange)
 					dataCells[i] = newVal
 
 					if colType != ColUnknown && strings.TrimSpace(v) != "" && depMap != nil {
@@ -252,7 +258,7 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 							headerName = headers[i]
 						}
 						depMap.AddTargetHeader(headerName)
-						if mode == domain.ModeDelete {
+						if strategy == domain.StrategyDelete {
 							if !shouldShuffle {
 								depMap.PutCell(sheetName, headerName, rowNum, v)
 							}
@@ -303,7 +309,7 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 				if err := sw.SetRow(cellCoordinate, pr.dataCells); err != nil {
 					return fmt.Errorf("failed to write shuffled data row %d in sheet %s: %w", targetRowNum, sheetName, err)
 				}
-				if depMap != nil && mode == domain.ModeDelete {
+				if depMap != nil && strategy == domain.StrategyDelete {
 					for colIdx, v := range pr.origCells {
 						var colType ColumnType
 						col1Based := colIdx + 1

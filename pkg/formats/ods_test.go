@@ -148,7 +148,17 @@ func TestODSHandler_Lifecycle(t *testing.T) {
 func TestODSHandler_SupportedExtensions(t *testing.T) {
 	handler := &ODSHandler{}
 	exts := handler.SupportedExtensions()
-	if len(exts) != 1 || exts[0] != ".ods" {
+	hasODS := false
+	hasXODS := false
+	for _, ext := range exts {
+		if ext == ".ods" {
+			hasODS = true
+		}
+		if ext == ".xods" {
+			hasXODS = true
+		}
+	}
+	if !hasODS || !hasXODS {
 		t.Fatalf("unexpected supported extensions: %v", exts)
 	}
 }

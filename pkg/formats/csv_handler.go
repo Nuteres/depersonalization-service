@@ -74,6 +74,15 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 
 	dateRange := getDateRange(options)
 	mode := getProcessingMode(options)
+	strategy := getProcessingStrategy(options)
+	salt := ""
+	if options != nil {
+		if s, ok := options["salt"].(string); ok {
+			salt = s
+		}
+	}
+	ts := anonymizer.NewTokenSession(salt)
+
 	var depMap *depmap.DepMap
 	if dm, ok := options["depmap"].(*depmap.DepMap); ok {
 		depMap = dm
@@ -81,7 +90,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		depMap = dm
 	}
 	if depMap != nil {
-		depMap.Mode = string(mode)
+		depMap.Mode = string(strategy)
 	}
 
 	var progressFn func(int)
@@ -168,7 +177,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 				if j < len(colTypes) && !disabledMap[col1Based] {
 					ct = colTypes[j]
 				}
-				newVal := ProcessCell(h.Anon, ct, val, mode, dateRange)
+				newVal := ProcessCellWithStrategy(h.Anon, ts, ct, val, strategy, dateRange)
 				outRow[j] = newVal
 
 				if ct != ColUnknown && strings.TrimSpace(val) != "" && depMap != nil {
@@ -177,7 +186,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 						headerName = headers[j]
 					}
 					depMap.AddTargetHeader(headerName)
-					if mode != domain.ModeDelete {
+					if strategy != domain.StrategyDelete {
 						depMap.Put(newVal, val)
 					}
 				}
@@ -208,7 +217,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 				if i < len(colTypes) && !disabledMap[col1Based] {
 					colType = colTypes[i]
 				}
-				newVal := ProcessCell(h.Anon, colType, val, mode, dateRange)
+				newVal := ProcessCellWithStrategy(h.Anon, ts, colType, val, strategy, dateRange)
 				outRow[i] = newVal
 
 				if colType != ColUnknown && strings.TrimSpace(val) != "" && depMap != nil {
@@ -217,7 +226,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 						headerName = headers[i]
 					}
 					depMap.AddTargetHeader(headerName)
-					if mode != domain.ModeDelete {
+					if strategy != domain.StrategyDelete {
 						depMap.Put(newVal, val)
 					}
 				}
@@ -279,7 +288,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 				if j < len(colTypes) && !disabledMap[col1Based] {
 					ct = colTypes[j]
 				}
-				newVal := ProcessCell(h.Anon, ct, val, mode, dateRange)
+				newVal := ProcessCellWithStrategy(h.Anon, ts, ct, val, strategy, dateRange)
 				outRow[j] = newVal
 
 				if ct != ColUnknown && strings.TrimSpace(val) != "" && depMap != nil {
@@ -288,7 +297,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 						headerName = headers[j]
 					}
 					depMap.AddTargetHeader(headerName)
-					if mode == domain.ModeDelete {
+					if strategy == domain.StrategyDelete {
 						depMap.PutCell("", headerName, physicalRowNum, val)
 					} else {
 						depMap.Put(newVal, val)
@@ -328,7 +337,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 				if i < len(colTypes) && !disabledMap[col1Based] {
 					colType = colTypes[i]
 				}
-				newVal := ProcessCell(h.Anon, colType, val, mode, dateRange)
+				newVal := ProcessCellWithStrategy(h.Anon, ts, colType, val, strategy, dateRange)
 				outRow[i] = newVal
 
 				if colType != ColUnknown && strings.TrimSpace(val) != "" && depMap != nil {
@@ -337,7 +346,7 @@ func (h *CSVHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 						headerName = headers[i]
 					}
 					depMap.AddTargetHeader(headerName)
-					if mode == domain.ModeDelete {
+					if strategy == domain.StrategyDelete {
 						depMap.PutCell("", headerName, physicalRowNum, val)
 					} else {
 						depMap.Put(newVal, val)

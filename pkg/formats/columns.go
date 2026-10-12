@@ -497,6 +497,87 @@ func ProcessCell(anon *anonymizer.Anonymizer, colType ColumnType, val string, mo
 	return AnonymizeCell(anon, colType, val, dateRange)
 }
 
+// ColumnTypeToTokenType maps ColumnType to anonymizer.TokenType for semantic tokens.
+func ColumnTypeToTokenType(ct ColumnType) (anonymizer.TokenType, bool) {
+	switch ct {
+	case ColFIO:
+		return anonymizer.TokenFIO, true
+	case ColLastName:
+		return anonymizer.TokenLastName, true
+	case ColFirstName:
+		return anonymizer.TokenFirstName, true
+	case ColPatronymic:
+		return anonymizer.TokenFIO, true
+	case ColPassport:
+		return anonymizer.TokenPassport, true
+	case ColSNILS:
+		return anonymizer.TokenSNILS, true
+	case ColINN:
+		return anonymizer.TokenINN, true
+	case ColPhone:
+		return anonymizer.TokenPhone, true
+	case ColEmail:
+		return anonymizer.TokenEmail, true
+	case ColAddress:
+		return anonymizer.TokenAddress, true
+	case ColCard:
+		return anonymizer.TokenCard, true
+	case ColDate:
+		return anonymizer.TokenDate, true
+	case ColGrade, ColEmployeeID:
+		return anonymizer.TokenFIO, true
+	default:
+		return "", false
+	}
+}
+
+// ProcessCellWithStrategy processes a cell value according to strategy (tokens, synthetic, delete).
+func ProcessCellWithStrategy(anon *anonymizer.Anonymizer, ts *anonymizer.TokenSession, colType ColumnType, val string, strategy domain.AnonymizationStrategy, dateRange int) string {
+	if strings.TrimSpace(val) == "" || colType == ColUnknown {
+		return val
+	}
+	if strategy == domain.StrategyDelete {
+		return DeletionMarker
+	}
+	if strategy == domain.StrategySemanticTokens || strategy == "" {
+		if ts != nil {
+			if tokenType, ok := ColumnTypeToTokenType(colType); ok {
+				return ts.GenerateToken(tokenType, val)
+			}
+		}
+	}
+	return AnonymizeCell(anon, colType, val, dateRange)
+}
+
+func getProcessingStrategy(options map[string]interface{}) domain.AnonymizationStrategy {
+	if options == nil {
+		return domain.StrategySynthetic
+	}
+	if strat, ok := options["strategy"].(domain.AnonymizationStrategy); ok && strat != "" {
+		return strat
+	}
+	if s, ok := options["strategy"].(string); ok && s != "" {
+		return domain.AnonymizationStrategy(s)
+	}
+	if m, ok := options["mode"].(domain.ProcessingMode); ok {
+		if m == domain.ModeDelete {
+			return domain.StrategyDelete
+		}
+		if m == domain.ModeReplace {
+			return domain.StrategySynthetic
+		}
+	}
+	if s, ok := options["mode"].(string); ok {
+		if s == "delete" {
+			return domain.StrategyDelete
+		}
+		if s == "replace" {
+			return domain.StrategySynthetic
+		}
+	}
+	return domain.StrategySynthetic
+}
+
 func getProcessingMode(options map[string]interface{}) domain.ProcessingMode {
 	if options == nil {
 		return domain.ModeReplace

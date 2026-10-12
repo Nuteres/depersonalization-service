@@ -8,18 +8,28 @@ const (
 	ModeDelete  ProcessingMode = "delete"
 )
 
+// AnonymizationStrategy defines the anonymization method: semantic tokens (DLP-safe), synthetic values, or redaction.
+type AnonymizationStrategy string
+
+const (
+	StrategySemanticTokens AnonymizationStrategy = "tokens"
+	StrategySynthetic      AnonymizationStrategy = "synthetic"
+	StrategyDelete         AnonymizationStrategy = "delete"
+)
+
 // ProcessOptions specifies options for processing and anonymizing a file.
 type ProcessOptions struct {
-	InputPath       string           `json:"inputPath"`
-	OutputPath      string           `json:"outputPath"`
-	Mode            ProcessingMode   `json:"mode"`
-	Salt            string           `json:"salt"`
-	DisabledCols    []int            `json:"disabledCols"`
-	DisabledBySheet map[string][]int `json:"disabledBySheet"`
-	CreateKey       bool             `json:"createKey"`
-	KeyPassword     string           `json:"keyPassword"`
-	KeyPath         string           `json:"keyPath"`
-	ShuffleRows     bool             `json:"shuffleRows"`
+	InputPath       string                `json:"inputPath"`
+	OutputPath      string                `json:"outputPath"`
+	Mode            ProcessingMode        `json:"mode"`
+	Strategy        AnonymizationStrategy `json:"strategy,omitempty"`
+	Salt            string                `json:"salt"`
+	DisabledCols    []int                 `json:"disabledCols"`
+	DisabledBySheet map[string][]int      `json:"disabledBySheet"`
+	CreateKey       bool                  `json:"createKey"`
+	KeyPassword     string                `json:"keyPassword"`
+	KeyPath         string                `json:"keyPath"`
+	ShuffleRows     bool                  `json:"shuffleRows"`
 }
 
 // RestoreOptions specifies options for restoring a previously anonymized file using a .depmap key.

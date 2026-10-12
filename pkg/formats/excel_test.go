@@ -527,3 +527,69 @@ func TestExcelHandler_ModeDelete(t *testing.T) {
 	}
 }
 
+func TestExcelHandler_Process_StrategySemanticTokens(t *testing.T) {
+	anon := anonymizer.New("salt")
+	handler := formats.NewExcelHandler(anon)
+
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	_ = f.SetCellValue(sheet, "A1", "ФИО")
+	_ = f.SetCellValue(sheet, "B1", "Паспорт")
+	_ = f.SetCellValue(sheet, "A2", "Иванов Иван Иванович")
+	_ = f.SetCellValue(sheet, "B2", "4508 123456")
+
+	var inBuf bytes.Buffer
+	if err := f.Write(&inBuf); err != nil {
+		t.Fatalf("failed to write excel: %v", err)
+	}
+
+	dm := depmap.New("test.xlsx")
+	opts := map[string]interface{}{
+		"strategy": domain.StrategySemanticTokens,
+		"salt":     "salt",
+		"depmap":   dm,
+	}
+
+	var outBuf bytes.Buffer
+	if err := handler.Process(context.Background(), &inBuf, &outBuf, opts); err != nil {
+		t.Fatalf("process failed: %v", err)
+	}
+
+	resExcel, err := excelize.OpenReader(&outBuf)
+	if err != nil {
+		t.Fatalf("failed to read out excel: %v", err)
+	}
+	defer resExcel.Close()
+
+	rows, err := resExcel.GetRows(sheet)
+	if err != nil {
+		t.Fatalf("failed to get rows: %v", err)
+	}
+
+	if len(rows) < 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+
+	// Verify headers preserved intact
+	if rows[0][0] != "ФИО" || rows[0][1] != "Паспорт" {
+		t.Errorf("headers altered: %v", rows[0])
+	}
+
+	// Verify tokens
+	if rows[1][0] != "[ФИО_0001]" {
+		t.Errorf("expected [ФИО_0001], got %q", rows[1][0])
+	}
+	if rows[1][1] != "[Паспорт_0001]" {
+		t.Errorf("expected [Паспорт_0001], got %q", rows[1][1])
+	}
+
+	// Verify depmap mapping
+	if orig, ok := dm.Get("[ФИО_0001]"); !ok || orig != "Иванов Иван Иванович" {
+		t.Errorf("expected depmap mapping for [ФИО_0001] to be Иванов Иван Иванович, got %q (ok=%v)", orig, ok)
+	}
+	if orig, ok := dm.Get("[Паспорт_0001]"); !ok || orig != "4508 123456" {
+		t.Errorf("expected depmap mapping for [Паспорт_0001] to be 4508 123456, got %q (ok=%v)", orig, ok)
+	}
+}
+
+

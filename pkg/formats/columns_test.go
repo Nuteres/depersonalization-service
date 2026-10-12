@@ -235,4 +235,20 @@ func TestProcessCell_ModeDelete(t *testing.T) {
 	}
 }
 
+func TestProcessCell_StrategySemanticTokens(t *testing.T) {
+	anon := anonymizer.New("salt")
+	ts := anonymizer.NewTokenSession("salt")
+
+	fio := ProcessCellWithStrategy(anon, ts, ColFIO, "Иванов Иван", domain.StrategySemanticTokens, 30)
+	if fio != "[ФИО_0001]" {
+		t.Fatalf("expected [ФИО_0001], got %s", fio)
+	}
+
+	pass := ProcessCellWithStrategy(anon, ts, ColPassport, "4508 123456", domain.StrategySemanticTokens, 30)
+	if pass != "[Паспорт_0001]" {
+		t.Fatalf("expected [Паспорт_0001], got %s", pass)
+	}
+}
+
+
 

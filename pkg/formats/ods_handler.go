@@ -34,7 +34,7 @@ func NewODSHandler(anon *anonymizer.Anonymizer) *ODSHandler {
 
 // SupportedExtensions returns file extensions supported by this handler.
 func (h *ODSHandler) SupportedExtensions() []string {
-	return []string{".ods"}
+	return []string{".ods", ".xods"}
 }
 
 // Inspect examines the sheets in the ODS document, detecting headers and row counts.
@@ -190,7 +190,15 @@ func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 			origFileName = fn
 		}
 	}
-	mode := getProcessingMode(options)
+	strategy := getProcessingStrategy(options)
+	salt := ""
+	if options != nil {
+		if s, ok := options["salt"].(string); ok {
+			salt = s
+		}
+	}
+	ts := anonymizer.NewTokenSession(salt)
+
 	var dm *depmap.DepMap
 	if d, ok := options["depmap"].(*depmap.DepMap); ok {
 		dm = d
@@ -200,7 +208,7 @@ func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 	if dm == nil {
 		dm = depmap.New(origFileName)
 	}
-	dm.Mode = string(mode)
+	dm.Mode = string(strategy)
 
 	var targetSheet string
 	if options != nil {
@@ -322,7 +330,7 @@ func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 					continue
 				}
 
-				newVal := ProcessCell(h.Anon, colType, val, mode, dateRange)
+				newVal := ProcessCellWithStrategy(h.Anon, ts, colType, val, strategy, dateRange)
 				if newVal == val {
 					continue
 				}
@@ -332,7 +340,7 @@ func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 					headerName = headers[cell.colIdx]
 				}
 				dm.AddTargetHeader(headerName)
-				if mode == domain.ModeDelete {
+				if strategy == domain.StrategyDelete {
 					physicalRow := rIdx + 1
 					dm.PutCell(sheet.name, headerName, physicalRow, val)
 				} else {
@@ -375,7 +383,7 @@ func (h *ODSHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 					if strings.Contains(tagStr, "office:date-value") {
 						oldDateAttr := extractAttrValue(cell.tagBytes, "office:date-value")
 						if oldDateAttr != "" {
-							if mode == domain.ModeDelete {
+							if strategy == domain.StrategyDelete {
 								newTag = removeAttrFromTag(newTag, "office:date-value")
 								newTag = updateAttrInTag(newTag, "office:value-type", "date", "string")
 								tagModified = true
@@ -896,7 +904,15 @@ func (h *ODSHandler) ProcessToXLSX(ctx context.Context, r io.ReaderAt, size int6
 			origFileName = fn
 		}
 	}
-	mode := getProcessingMode(options)
+	strategy := getProcessingStrategy(options)
+	salt := ""
+	if options != nil {
+		if s, ok := options["salt"].(string); ok {
+			salt = s
+		}
+	}
+	ts := anonymizer.NewTokenSession(salt)
+
 	var dm *depmap.DepMap
 	if d, ok := options["depmap"].(*depmap.DepMap); ok {
 		dm = d
@@ -906,7 +922,7 @@ func (h *ODSHandler) ProcessToXLSX(ctx context.Context, r io.ReaderAt, size int6
 	if dm == nil {
 		dm = depmap.New(origFileName)
 	}
-	dm.Mode = string(mode)
+	dm.Mode = string(strategy)
 
 	var targetSheet string
 	if options != nil {
@@ -1018,14 +1034,14 @@ func (h *ODSHandler) ProcessToXLSX(ctx context.Context, r io.ReaderAt, size int6
 					continue
 				}
 
-				newVal := ProcessCell(h.Anon, colType, val, mode, dateRange)
+				newVal := ProcessCellWithStrategy(h.Anon, ts, colType, val, strategy, dateRange)
 				if newVal != val && strings.TrimSpace(val) != "" {
 					var headerName string
 					if cIdx < len(headers) {
 						headerName = headers[cIdx]
 					}
 					dm.AddTargetHeader(headerName)
-					if mode == domain.ModeDelete {
+					if strategy == domain.StrategyDelete {
 						physicalRow := rIdx + 1
 						dm.PutCell(sheetName, headerName, physicalRow, val)
 					} else {
