@@ -51,22 +51,29 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 	// Calculate total rows for progress tracking
 	totalRows := 0
 	for _, sheet := range sheetList {
+		counted := false
 		dim, err := xl.GetSheetDimension(sheet)
-		if err == nil && dim != "" {
+		if err == nil && strings.Contains(dim, ":") {
 			parts := strings.Split(dim, ":")
-			lastCell := parts[len(parts)-1]
-			_, r, err := excelize.SplitCellName(lastCell)
-			if err == nil && r > 0 {
-				totalRows += r
-				continue
+			if len(parts) >= 2 {
+				lastCell := parts[len(parts)-1]
+				_, r, err := excelize.SplitCellName(lastCell)
+				if err == nil && r > 1 {
+					totalRows += r
+					counted = true
+				}
 			}
 		}
-		rIter, err := xl.Rows(sheet)
-		if err == nil {
-			for rIter.Next() {
-				totalRows++
+		if !counted {
+			rIter, err := xl.Rows(sheet)
+			if err == nil {
+				sheetRows := 0
+				for rIter.Next() {
+					sheetRows++
+				}
+				_ = rIter.Close()
+				totalRows += sheetRows
 			}
-			_ = rIter.Close()
 		}
 	}
 
@@ -82,18 +89,21 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 		if procRows > total {
 			total = procRows
 		}
-		pct := 100
+		pct := 0
 		if total > 0 {
 			pct = (procRows * 100) / total
-			if pct > 100 {
-				pct = 100
+			if pct > 99 {
+				pct = 99
 			}
 		}
-		if force || pct != lastReportedPct {
+		if force || procRows%50 == 0 || pct != lastReportedPct {
 			lastReportedPct = pct
 			onProgress(pct, procRows, total)
 		}
 	}
+
+	// Initial progress report (0%)
+	reportProgress(true)
 
 	type cellChange struct {
 		cell string
@@ -228,8 +238,8 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 		}
 	}
 
-	// Final progress callback if not reached 100%
-	if onProgress != nil && lastReportedPct < 100 {
+	// Final progress callback reaching 100%
+	if onProgress != nil {
 		total := totalRows
 		if procRows > total {
 			total = procRows

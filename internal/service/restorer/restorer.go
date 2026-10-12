@@ -309,7 +309,12 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 	}
 
 	if reporter != nil {
-		reporter(restoredCount, restoredCount, 100)
+		switch ext {
+		case ".xlsx", ".xlsm", ".xltx", ".xltm":
+			// RestoreExcel already reported 100% with accurate processed and total rows
+		default:
+			reporter(restoredCount, restoredCount, 100)
+		}
 	}
 
 	durationMs := time.Since(startTime).Milliseconds()

@@ -680,5 +680,75 @@ func TestRestoreExcel_ShuffledRowsAndTokensInSubstrings(t *testing.T) {
 	}
 }
 
+func TestRestoreExcel_ProgressTracking_StreamWriterDimensionA1(t *testing.T) {
+	tmpDir := t.TempDir()
+	inPath := filepath.Join(tmpDir, "stream_writer_dim_a1.xlsx")
+	outPath := filepath.Join(tmpDir, "stream_writer_dim_a1_restored.xlsx")
+
+	dm := depmap.New("original.xlsx")
+	dm.Put("Синтетика", "Оригинал")
+
+	// Create file using StreamWriter (which leaves Sheet1 dimension as default "A1")
+	f := excelize.NewFile()
+	sw, err := f.NewStreamWriter("Sheet1")
+	if err != nil {
+		t.Fatalf("failed to create stream writer: %v", err)
+	}
+	// Write header + 120 rows
+	_ = sw.SetRow("A1", []interface{}{"Колонка1", "Колонка2"})
+	for r := 2; r <= 121; r++ {
+		coord, _ := excelize.CoordinatesToCellName(1, r)
+		_ = sw.SetRow(coord, []interface{}{"Синтетика", r})
+	}
+	if err := sw.Flush(); err != nil {
+		t.Fatalf("failed to flush stream writer: %v", err)
+	}
+	if err := f.SaveAs(inPath); err != nil {
+		t.Fatalf("failed to save stream writer file: %v", err)
+	}
+	_ = f.Close()
+
+	// Verify that Excelize reports dimension without multi-row range (e.g. "A1")
+	checkFile, _ := excelize.OpenFile(inPath)
+	dim, _ := checkFile.GetSheetDimension("Sheet1")
+	_ = checkFile.Close()
+	if strings.Contains(dim, ":") {
+		t.Logf("note: dimension unexpectedly contains colon: %s", dim)
+	}
+
+	var progressEvents []struct{ Pct, Proc, Total int }
+	progressFn := func(pct, proc, total int) {
+		progressEvents = append(progressEvents, struct{ Pct, Proc, Total int }{pct, proc, total})
+	}
+
+	restored, err := formats.RestoreExcel(context.Background(), inPath, outPath, dm, progressFn)
+	if err != nil {
+		t.Fatalf("RestoreExcel failed: %v", err)
+	}
+	if restored != 120 {
+		t.Errorf("expected 120 restored cells, got %d", restored)
+	}
+
+	if len(progressEvents) == 0 {
+		t.Fatalf("expected progress events to be emitted, got none")
+	}
+
+	first := progressEvents[0]
+	if first.Total != 121 {
+		t.Errorf("expected total rows to be detected as 121, got %d", first.Total)
+	}
+
+	last := progressEvents[len(progressEvents)-1]
+	if last.Pct != 100 {
+		t.Errorf("expected final percentage 100, got %d", last.Pct)
+	}
+	if last.Total != 121 {
+		t.Errorf("expected final total to be 121, got %d", last.Total)
+	}
+	if last.Proc != 121 {
+		t.Errorf("expected final proc to be 121, got %d", last.Proc)
+	}
+}
+
 
 

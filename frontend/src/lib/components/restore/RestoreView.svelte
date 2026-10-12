@@ -117,7 +117,18 @@
         return;
       }
 
+      let totalRows = restoreState.dataInfo?.rowCount || 0;
+      if (restoreState.dataInfo?.sheets && restoreState.dataInfo.sheets.length > 1) {
+        totalRows = restoreState.dataInfo.sheets.reduce(
+          (acc, s) => acc + (s.rowCount || 0),
+          0
+        );
+      }
+
       appState.startProgress('Восстановление данных...');
+      if (totalRows > 0) {
+        appState.updateProgress(0, 0, totalRows);
+      }
 
       const res = await RestoreFileTo(
         restoreState.dataPath,
