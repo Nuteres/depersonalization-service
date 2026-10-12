@@ -105,13 +105,13 @@ func (i *Inspector) Inspect(ctx context.Context, path string) (*domain.FileInfo,
 func columnTypeDetails(colType formats.ColumnType) (typeName, desc, action string) {
 	switch colType {
 	case formats.ColFIO:
-		return "FIO", "Русские фамилии, имена и отчества", "Обезличивание ФИО"
+		return "FIO", "Фамилии, имена и отчества", "Обезличивание ФИО"
 	case formats.ColLastName:
-		return "LAST_NAME", "Русские фамилии", "Обезличивание фамилий"
+		return "LAST_NAME", "Фамилии", "Обезличивание фамилий"
 	case formats.ColFirstName:
-		return "FIRST_NAME", "Русские имена", "Обезличивание имён"
+		return "FIRST_NAME", "Имена", "Обезличивание имён"
 	case formats.ColPatronymic:
-		return "PATRONYMIC", "Русские отчества", "Обезличивание отчеств"
+		return "PATRONYMIC", "Отчества", "Обезличивание отчеств"
 	case formats.ColSNILS:
 		return "SNILS", "Страховые номера РФ", "Обезличивание СНИЛС"
 	case formats.ColINN:
@@ -755,13 +755,13 @@ func textEntityTypeName(t string) string {
 func textEntityDetails(t string) (desc, action string) {
 	switch t {
 	case "FIO":
-		return "Русские фамилии, имена и отчества", "Обезличивание ФИО"
+		return "Фамилии, имена и отчества", "Обезличивание ФИО"
 	case "LAST_NAME":
-		return "Русские фамилии", "Обезличивание фамилий"
+		return "Фамилии", "Обезличивание фамилий"
 	case "FIRST_NAME":
-		return "Русские имена", "Обезличивание имён"
+		return "Имена", "Обезличивание имён"
 	case "PATRONYMIC":
-		return "Русские отчества", "Обезличивание отчеств"
+		return "Отчества", "Обезличивание отчеств"
 	case "SNILS":
 		return "Страховые номера РФ (модуль 101)", "Обезличивание СНИЛС"
 	case "PASSPORT":

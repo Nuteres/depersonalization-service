@@ -139,7 +139,6 @@
               {:else}
                 <div
                   class="text-sm font-normal text-stone-400 italic truncate"
-                  title="Колонка без названия"
                 >
                   (Без названия)
                 </div>
@@ -157,7 +156,6 @@
               </span>
               <span
                 class="text-xs text-[#78716C] truncate leading-normal"
-                title={ent.description}
               >
                 {ent.description}
               </span>

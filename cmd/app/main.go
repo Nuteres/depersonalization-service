@@ -9,6 +9,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
 	"dep_service/frontend"
 	"dep_service/internal/desktop"
@@ -42,11 +43,15 @@ func main() {
 			EnableFileDrop: true,
 		},
 		Mac: &mac.Options{
+			Appearance: mac.NSAppearanceNameAqua,
 			About: &mac.AboutInfo{
 				Title:   "Деперсонализация ПД (152-ФЗ)",
 				Message: "Автономное приложение для деперсонализации и обратного восстановления ПДн (152-ФЗ)",
 				Icon:    appIcon,
 			},
+		},
+		Windows: &windows.Options{
+			Theme: windows.Light,
 		},
 		Linux: &linux.Options{
 			Icon: appIcon,
