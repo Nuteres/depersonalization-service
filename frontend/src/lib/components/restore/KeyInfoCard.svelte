@@ -29,17 +29,17 @@
   });
 </script>
 
-<div id="restore-key-info" class="flex-1 flex flex-col justify-between p-4 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono">
+<div id="restore-key-info" class="flex-1 flex flex-col justify-between p-4 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-sans">
   <div>
     <div class="flex items-start justify-between gap-2 mb-2">
       <div class="flex items-center gap-2 min-w-0">
         <span class="text-base shrink-0 select-none">🔑</span>
-        <span class="font-bold text-[#1C1917] truncate" id="restore-key-name" title={keyFileName}>
+        <span class="font-bold text-[#1C1917] truncate font-sans" id="restore-key-name" title={keyFileName}>
           {keyFileName}
         </span>
       </div>
       <div class="flex items-center gap-1.5 shrink-0">
-        <span id="restore-key-status-badge" class={badgeClass}>
+        <span id="restore-key-status-badge" class="{badgeClass} font-mono">
           {badgeText}
         </span>
         {#if onClear}
@@ -64,20 +64,20 @@
     </div>
   </div>
 
-  <div class="pt-3 border-t border-[#E8E7E3] flex items-center justify-between">
-    <span class="text-[11px] text-[#57534E]" id="restore-key-meta">
+  <div class="pt-3 border-t border-[#E8E7E3] flex items-center justify-between gap-3 font-sans">
+    <span class="text-[11px] text-[#57534E] truncate min-w-0" id="restore-key-meta">
       {#if isValid && keyInfo}
         {keyInfo.recordsCount.toLocaleString('ru-RU')} записей
       {:else}
         Зашифрован
       {/if}
     </span>
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 shrink-0">
       <button
         type="button"
         id="btn-reselect-key"
         onclick={onReselect}
-        class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer"
+        class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer whitespace-nowrap"
       >
         Сменить
       </button>
@@ -87,7 +87,7 @@
           type="button"
           id="btn-clear-key-text"
           onclick={onClear}
-          class="text-[11px] text-[#78716C] hover:text-rose-600 hover:underline cursor-pointer"
+          class="text-[11px] text-[#78716C] hover:text-rose-600 hover:underline cursor-pointer whitespace-nowrap"
         >
           Удалить
         </button>

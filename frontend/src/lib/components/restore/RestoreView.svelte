@@ -12,16 +12,23 @@
     restoreState.dataPath.split('.').pop()?.toUpperCase() || 'XLSX'
   );
 
+  function formatFileSize(bytes: number): string {
+    if (!bytes || bytes <= 0) return '';
+    if (bytes < 1024) return `${bytes} Б`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+  }
+
   const dataStatsText = $derived.by(() => {
     const info = restoreState.dataInfo;
     if (!info) {
       return restoreState.isLoadingData ? 'Загрузка информации...' : 'Готов к обработке';
     }
-    const sizeKb = Math.round((info.size || 0) / 1024);
+    const sizeStr = info.size ? formatFileSize(info.size) : '';
     const countStr = info.paragraphCount
       ? `${info.paragraphCount.toLocaleString('ru-RU')} абз.`
       : `${(info.rowCount || 0).toLocaleString('ru-RU')} строк`;
-    return `${countStr} ▪ ${sizeKb} КБ`;
+    return sizeStr ? `${countStr} • ${sizeStr}` : countStr;
   });
 
   const isReady = $derived(
@@ -169,7 +176,7 @@
     <!-- Live Step Status -->
     <div
       id="restore-hero-status"
-      class="flex items-center space-x-2 text-xs font-mono px-4 py-2 bg-[#FAF9F5] border border-[#E8E7E3]"
+      class="flex items-center space-x-2 text-xs font-sans px-4 py-2 bg-[#FAF9F5] border border-[#E8E7E3]"
     >
       <span id="restore-status-dot" class={statusInfo.dotClass}></span>
       <span id="restore-status-text" class={statusInfo.textClass}>{statusInfo.text}</span>
@@ -180,9 +187,9 @@
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
     <!-- Step 1: Data File -->
     <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col h-full min-h-[250px]">
-      <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 font-mono h-6 shrink-0">
-        <span class="font-bold text-[#1C1917]">ШАГ 1. ФАЙЛ ДАННЫХ</span>
-        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C]">XLSX, CSV, DOCX</span>
+      <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 h-6 shrink-0">
+        <span class="font-bold text-[#1C1917] font-sans">ШАГ 1. ФАЙЛ ДАННЫХ</span>
+        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C] font-mono">XLSX, CSV, DOCX</span>
       </div>
 
       <div class="flex-1 flex flex-col">
@@ -221,17 +228,17 @@
             </button>
           </div>
         {:else}
-          <div id="restore-data-info" class="flex-1 flex flex-col justify-between p-4 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-mono">
+          <div id="restore-data-info" class="flex-1 flex flex-col justify-between p-4 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-sans">
             <div>
               <div class="flex items-start justify-between gap-2 mb-2">
                 <div class="flex items-center gap-2 min-w-0">
                   <span class="text-base shrink-0 select-none">📄</span>
-                  <span class="font-bold text-[#1C1917] truncate" id="restore-data-name" title={dataFileName}>
+                  <span class="font-bold text-[#1C1917] truncate font-sans" id="restore-data-name" title={dataFileName}>
                     {dataFileName}
                   </span>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
-                  <span class="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5" id="restore-data-ext">
+                  <span class="text-[10px] font-mono bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5" id="restore-data-ext">
                     {dataFileExt}
                   </span>
                   <button
@@ -253,15 +260,15 @@
               </div>
             </div>
 
-            <div class="pt-3 border-t border-[#E8E7E3] flex items-center justify-between">
-              <span class="text-[11px] text-[#57534E]" id="restore-data-size">
+            <div class="pt-3 border-t border-[#E8E7E3] flex items-center justify-between gap-3 font-sans">
+              <span class="text-[11px] text-[#57534E] truncate min-w-0" id="restore-data-size">
                 {dataStatsText}
               </span>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onclick={() => restoreState.selectDataFile()}
-                  class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer"
+                  class="text-[11px] text-[#1C1917] hover:underline font-semibold cursor-pointer whitespace-nowrap"
                 >
                   Сменить
                 </button>
@@ -270,7 +277,7 @@
                   type="button"
                   id="btn-clear-data-text"
                   onclick={() => restoreState.clearDataFile()}
-                  class="text-[11px] text-[#78716C] hover:text-rose-600 hover:underline cursor-pointer"
+                  class="text-[11px] text-[#78716C] hover:text-rose-600 hover:underline cursor-pointer whitespace-nowrap"
                 >
                   Удалить
                 </button>
@@ -283,9 +290,9 @@
 
     <!-- Step 2: Key File -->
     <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col h-full min-h-[250px]">
-      <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 font-mono h-6 shrink-0">
-        <span class="font-bold text-[#1C1917]">ШАГ 2. ФАЙЛ-КЛЮЧ</span>
-        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C]">.DEPMAP</span>
+      <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 h-6 shrink-0">
+        <span class="font-bold text-[#1C1917] font-sans">ШАГ 2. ФАЙЛ-КЛЮЧ</span>
+        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C] font-mono">.DEPMAP</span>
       </div>
 
       <div class="flex-1 flex flex-col">
@@ -337,14 +344,14 @@
 
     <!-- Step 3: Password & Action -->
     <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col h-full min-h-[250px]">
-      <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 font-mono h-6 shrink-0">
-        <span class="font-bold text-[#1C1917]">ШАГ 3. ПАРОЛЬ КЛЮЧА</span>
-        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C]">AES-256</span>
+      <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 h-6 shrink-0">
+        <span class="font-bold text-[#1C1917] font-sans">ШАГ 3. ПАРОЛЬ КЛЮЧА</span>
+        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C] font-mono">AES-256</span>
       </div>
 
-      <div class="flex-1 flex flex-col justify-between p-4 bg-[#FAF9F5] border border-[#E8E7E3] text-xs">
+      <div class="flex-1 flex flex-col justify-between p-4 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-sans">
         <div>
-          <label for="restore-key-password" class="block text-xs font-semibold text-[#1C1917] mb-2 font-mono">
+          <label for="restore-key-password" class="block text-xs font-semibold text-[#1C1917] mb-2 font-sans">
             Пароль для расшифровки ключа:
           </label>
           <div class="relative">
@@ -385,12 +392,12 @@
           </div>
 
           {#if isPasswordError}
-            <p class="text-[11px] text-rose-600 font-mono mt-1.5 flex items-center gap-1">
+            <p class="text-[11px] text-rose-600 font-sans mt-1.5 flex items-center gap-1">
               <span>⚠</span>
               <span>Неверный пароль ключа</span>
             </p>
           {:else if isKeyValid}
-            <p class="text-[11px] text-emerald-700 font-mono mt-1.5 flex items-center gap-1">
+            <p class="text-[11px] text-emerald-700 font-sans mt-1.5 flex items-center gap-1">
               <span>✔</span>
               <span>Ключ готов к восстановлению</span>
             </p>
@@ -407,7 +414,7 @@
             type="button"
             onclick={executeRestore}
             disabled={!isReady}
-            class="w-full bg-[#1C1917] disabled:bg-[#E8E7E3] disabled:text-[#A8A29E] disabled:cursor-not-allowed hover:bg-[#292524] text-white text-xs font-semibold py-2.5 transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-2xs cursor-pointer"
+            class="w-full bg-[#1C1917] disabled:bg-[#E8E7E3] disabled:text-[#A8A29E] disabled:cursor-not-allowed hover:bg-[#292524] text-white text-xs font-semibold py-2.5 transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-2xs cursor-pointer font-sans"
           >
             <span class="text-xs select-none">🔓</span>
             <span>Восстановить данные</span>
