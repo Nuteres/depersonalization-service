@@ -408,7 +408,14 @@ func (h *ODTHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 	}
 
 	disabledTypes := getDisabledEntityTypes(options)
-	mode := getProcessingMode(options)
+	strategy := getProcessingStrategy(options)
+	salt := ""
+	if options != nil {
+		if s, ok := options["salt"].(string); ok {
+			salt = s
+		}
+	}
+	ts := anonymizer.NewTokenSession(salt)
 
 	origName := "document.odt"
 	if options != nil {
@@ -425,7 +432,7 @@ func (h *ODTHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 	if dm == nil {
 		dm = depmap.New(origName)
 	}
-	dm.Mode = string(mode)
+	dm.Mode = string(strategy)
 
 	updatedXMLs := make(map[string][]byte)
 
@@ -515,9 +522,13 @@ func (h *ODTHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 
 				origVal := string(paraRunes[rStart:rEnd])
 				var replVal string
-				if mode == domain.ModeDelete {
+				if strategy == domain.StrategyDelete {
 					replVal = DeletionMarker
 					dm.PutOrdinal(origVal)
+				} else if strategy == domain.StrategySemanticTokens {
+					tokenType := entityTypeToTokenType(m.entityType)
+					replVal = ts.GenerateToken(tokenType, origVal)
+					dm.Put(replVal, origVal)
 				} else {
 					replVal = generateSynthetic(h.Anon, m.entityType, origVal)
 					dm.Put(replVal, origVal)

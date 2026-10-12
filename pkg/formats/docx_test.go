@@ -1035,6 +1035,50 @@ func TestDOCXHandler_ModeDelete(t *testing.T) {
 	}
 }
 
+func TestDOCX_Process_StrategySemanticTokens(t *testing.T) {
+	anon := anonymizer.New("salt")
+	h := formats.NewDOCXHandler(anon)
+
+	docXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:r><w:t>Сотрудник Иванов Иван Иванович, паспорт 4508 123456</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>`
+
+	data := createTestDocx(docXML)
+	var processedBuf bytes.Buffer
+	dm := depmap.New("test.docx")
+	opts := map[string]interface{}{
+		"strategy": domain.StrategySemanticTokens,
+		"salt":     "salt",
+		"depmap":   dm,
+	}
+
+	_, err := h.Process(context.Background(), bytes.NewReader(data), int64(len(data)), &processedBuf, opts)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	procXML, err := readZipFile(processedBuf.Bytes(), "word/document.xml")
+	if err != nil {
+		t.Fatalf("failed to read processed document.xml: %v", err)
+	}
+
+	if !strings.Contains(procXML, "[ФИО_0001]") {
+		t.Errorf("expected [ФИО_0001] in procXML, got: %s", procXML)
+	}
+	if !strings.Contains(procXML, "[Паспорт_0001]") {
+		t.Errorf("expected [Паспорт_0001] in procXML, got: %s", procXML)
+	}
+	if dm.RecordsCount < 2 {
+		t.Errorf("expected at least 2 records in depmap, got %d", dm.RecordsCount)
+	}
+}
+
+
 
 
 
