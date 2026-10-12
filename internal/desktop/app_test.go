@@ -371,7 +371,7 @@ func TestDesktopApp_ProcessFileWithSheets_ShuffleRows(t *testing.T) {
 		t.Fatalf("failed to write input file: %v", err)
 	}
 
-	res, err := app.ProcessFileWithSheets(inPath, outPath, "app-salt", nil, nil, false, "", "", true)
+	res, err := app.ProcessFileWithSheets(inPath, outPath, "app-salt", nil, nil, false, "", "", true, "")
 	if err != nil {
 		t.Fatalf("ProcessFileWithSheets with shuffleRows failed: %v", err)
 	}
@@ -419,24 +419,35 @@ func TestDesktopApp_ProcessFileWithSheets_ShuffleRows(t *testing.T) {
 func TestDesktopApp_WailsArgumentTypes(t *testing.T) {
 	appType := reflect.TypeOf(&desktop.DesktopApp{})
 
-	// Test ProcessFileWithSheets: 9th arg must be bool for Wails JSON unmarshaling
+	// Test ProcessFileWithSheets: 9th arg must be bool, 10th arg must be string for Wails JSON unmarshaling
 	m, ok := appType.MethodByName("ProcessFileWithSheets")
 	if !ok {
 		t.Fatalf("ProcessFileWithSheets not found on DesktopApp")
 	}
-	if m.Type.NumIn() != 10 && m.Type.NumIn() != 11 {
-		t.Fatalf("expected 10 or 11 inputs (including receiver), got %d", m.Type.NumIn())
+	if m.Type.NumIn() != 11 {
+		t.Fatalf("expected 11 inputs (including receiver), got %d", m.Type.NumIn())
 	}
-	lastParam := m.Type.In(9)
-	if lastParam.Kind() != reflect.Bool {
-		t.Errorf("expected 9th parameter to be bool for Wails RPC compatibility, got %v", lastParam)
+	lastBoolParam := m.Type.In(9)
+	if lastBoolParam.Kind() != reflect.Bool {
+		t.Errorf("expected 9th parameter to be bool for Wails RPC compatibility, got %v", lastBoolParam)
 	}
 
-	// Verify json.Unmarshal into the parameter type succeeds when passed a boolean JSON value
+	// Verify json.Unmarshal into the bool parameter type succeeds when passed a boolean JSON value
 	rawJSON := []byte("false")
-	val := reflect.New(lastParam).Interface()
+	val := reflect.New(lastBoolParam).Interface()
 	if err := json.Unmarshal(rawJSON, val); err != nil {
 		t.Errorf("failed to unmarshal JSON bool into method parameter type: %v", err)
+	}
+
+	// Verify 10th parameter (mode) is string (NOT []string which breaks Wails argument unmarshaling)
+	modeParam := m.Type.In(10)
+	if modeParam.Kind() != reflect.String {
+		t.Errorf("expected 10th parameter of ProcessFileWithSheets to be string for Wails RPC compatibility, got %v", modeParam)
+	}
+	rawStrJSON := []byte(`"tokens"`)
+	strVal := reflect.New(modeParam).Interface()
+	if err := json.Unmarshal(rawStrJSON, strVal); err != nil {
+		t.Errorf("failed to unmarshal JSON string into mode parameter type: %v", err)
 	}
 
 	// Test ProcessFileTo: 8th arg must be bool
@@ -460,9 +471,9 @@ func TestDesktopApp_WailsArgumentTypes(t *testing.T) {
 	if mPrev.Type.NumIn() != 8 {
 		t.Fatalf("expected 8 inputs (including receiver), got %d", mPrev.Type.NumIn())
 	}
-	modeParam := mPrev.Type.In(7)
-	if modeParam.Kind() != reflect.String {
-		t.Errorf("expected 7th parameter of GetSheetRows to be string, got %v", modeParam)
+	sheetModeParam := mPrev.Type.In(7)
+	if sheetModeParam.Kind() != reflect.String {
+		t.Errorf("expected 7th parameter of GetSheetRows to be string, got %v", sheetModeParam)
 	}
 }
 

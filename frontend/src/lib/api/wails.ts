@@ -192,8 +192,16 @@ export async function GetSheetRows(
 
 export async function ProcessFile(path: string, salt: string, mode?: string): Promise<ProcessResult> {
   const app = getApp();
+  const effectiveMode = mode || 'tokens';
   if (app?.ProcessFile) {
-    return await app.ProcessFile(path, salt, mode);
+    try {
+      return await (app.ProcessFile as any)(path, salt, effectiveMode);
+    } catch (e: any) {
+      if (String(e).includes('cannot unmarshal string into Go value of type []string')) {
+        return await (app.ProcessFile as any)(path, salt, [effectiveMode]);
+      }
+      throw e;
+    }
   }
   return {
     success: true,
@@ -218,18 +226,36 @@ export async function ProcessFileTo(
   mode?: string
 ): Promise<ProcessResult> {
   const app = getApp();
+  const effectiveMode = mode || 'tokens';
   if (app?.ProcessFileTo) {
-    return await app.ProcessFileTo(
-      path,
-      outPath,
-      salt,
-      disabledCols,
-      createKey,
-      keyPassword,
-      keyPath,
-      Boolean(shuffleRows),
-      mode
-    );
+    try {
+      return await (app.ProcessFileTo as any)(
+        path,
+        outPath,
+        salt,
+        disabledCols,
+        createKey,
+        keyPassword,
+        keyPath,
+        Boolean(shuffleRows),
+        effectiveMode
+      );
+    } catch (e: any) {
+      if (String(e).includes('cannot unmarshal string into Go value of type []string')) {
+        return await (app.ProcessFileTo as any)(
+          path,
+          outPath,
+          salt,
+          disabledCols,
+          createKey,
+          keyPassword,
+          keyPath,
+          Boolean(shuffleRows),
+          [effectiveMode]
+        );
+      }
+      throw e;
+    }
   }
   const defaultKeyPath = keyPath || `${outPath || path}.depmap`;
   return {
@@ -257,32 +283,68 @@ export async function ProcessFileWithSheets(
   mode?: string
 ): Promise<ProcessResult> {
   const app = getApp();
+  const effectiveMode = mode || 'tokens';
   if (app?.ProcessFileWithSheets) {
-    return await app.ProcessFileWithSheets(
-      path,
-      outPath,
-      salt,
-      disabledCols,
-      disabledBySheet,
-      createKey,
-      keyPassword,
-      keyPath,
-      Boolean(shuffleRows),
-      mode
-    );
+    try {
+      return await (app.ProcessFileWithSheets as any)(
+        path,
+        outPath,
+        salt,
+        disabledCols,
+        disabledBySheet,
+        createKey,
+        keyPassword,
+        keyPath,
+        Boolean(shuffleRows),
+        effectiveMode
+      );
+    } catch (e: any) {
+      if (String(e).includes('cannot unmarshal string into Go value of type []string')) {
+        return await (app.ProcessFileWithSheets as any)(
+          path,
+          outPath,
+          salt,
+          disabledCols,
+          disabledBySheet,
+          createKey,
+          keyPassword,
+          keyPath,
+          Boolean(shuffleRows),
+          [effectiveMode]
+        );
+      }
+      throw e;
+    }
   }
   if (app?.ProcessFileTo) {
-    return await app.ProcessFileTo(
-      path,
-      outPath,
-      salt,
-      disabledCols,
-      createKey,
-      keyPassword,
-      keyPath,
-      Boolean(shuffleRows),
-      mode
-    );
+    try {
+      return await (app.ProcessFileTo as any)(
+        path,
+        outPath,
+        salt,
+        disabledCols,
+        createKey,
+        keyPassword,
+        keyPath,
+        Boolean(shuffleRows),
+        effectiveMode
+      );
+    } catch (e: any) {
+      if (String(e).includes('cannot unmarshal string into Go value of type []string')) {
+        return await (app.ProcessFileTo as any)(
+          path,
+          outPath,
+          salt,
+          disabledCols,
+          createKey,
+          keyPassword,
+          keyPath,
+          Boolean(shuffleRows),
+          [effectiveMode]
+        );
+      }
+      throw e;
+    }
   }
   const defaultKeyPath = keyPath || `${outPath || path}.depmap`;
   return {

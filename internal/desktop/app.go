@@ -160,7 +160,7 @@ func (a *DesktopApp) ProcessFileWithSheets(
 	keyPassword string,
 	keyPath string,
 	shuffleRows bool,
-	mode ...string,
+	mode string,
 ) (*domain.ProcessResult, error) {
 	ctx := a.ctx
 	if ctx == nil {
@@ -180,8 +180,8 @@ func (a *DesktopApp) ProcessFileWithSheets(
 	processingMode := domain.ModeReplace
 	strategy := domain.StrategySemanticTokens
 
-	if len(mode) > 0 && strings.TrimSpace(mode[0]) != "" {
-		m := strings.TrimSpace(mode[0])
+	m := strings.TrimSpace(mode)
+	if m != "" {
 		switch m {
 		case string(domain.StrategyDelete):
 			processingMode = domain.ModeDelete
@@ -196,9 +196,6 @@ func (a *DesktopApp) ProcessFileWithSheets(
 			processingMode = domain.ProcessingMode(m)
 			strategy = domain.StrategySemanticTokens
 		}
-	}
-	if len(mode) > 1 && strings.TrimSpace(mode[1]) != "" {
-		strategy = domain.AnonymizationStrategy(mode[1])
 	}
 
 	reporter := newProcessProgressReporter(a.ctx)

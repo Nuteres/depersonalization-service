@@ -900,7 +900,7 @@ func TestApp_MultiSheetExcel(t *testing.T) {
 		sheet1: {2}, // column 2: СНИЛС
 	}
 
-	procRes, err := app.ProcessFileWithSheets(xlsxPath, anonPath, "multi-salt", nil, disabledBySheet, true, "pass-multi", keyPath, false)
+	procRes, err := app.ProcessFileWithSheets(xlsxPath, anonPath, "multi-salt", nil, disabledBySheet, true, "pass-multi", keyPath, false, "")
 	if err != nil {
 		t.Fatalf("ProcessFileWithSheets failed: %v", err)
 	}

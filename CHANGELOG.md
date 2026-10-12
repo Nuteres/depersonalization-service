@@ -5,6 +5,17 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
 и проект придерживается [Семантического версионирования (SemVer)](https://semver.org/lang/ru/).
 
+## [1.8.5] - 2026-10-12
+
+### Исправлено
+- **Устранена ошибка сохранения файлов при вызове Wails RPC (`cannot unmarshal string into Go value of type []string`)**:
+  - В методе Go-бэкенда `ProcessFileWithSheets` сигнатура аргумента `mode` приведена к явному скалярному типу `string` вместо вариативного `...string`. Ранее из-за механизма рефлексии Wails v2 вариативный срез параметров `...string` требовал массив строк при десериализации JSON, вызывая сбой `json: cannot unmarshal string into Go value of type []string` при передаче строкового режима (`"tokens"`, `"synthetic"` или `"delete"`) из окна сохранения.
+  - В TypeScript API (`wails.ts`) добавлена отказоустойчивая обработка аргументов для `ProcessFileWithSheets`, `ProcessFileTo` и `ProcessFile` с автоматическим fallback-повтором в случае несоответствия типов.
+  - В модальном окне сохранения (`SaveDialogModal.svelte`) обеспечена корректная передача эффективного режима обработки с учётом удаления и токенизации (`effectiveMode = appState.processingMode === 'delete' ? 'delete' : (appState.strategy || 'tokens')`).
+  - Добавлены модульные тесты рефлексии типов Wails (`TestDesktopApp_WailsArgumentTypes`), гарантирующие корректную десериализацию аргументов JSON для всех экспортированных методов Wails.
+
+---
+
 ## [1.8.4] - 2026-10-12
 
 ### Исправлено

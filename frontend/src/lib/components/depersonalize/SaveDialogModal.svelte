@@ -144,6 +144,9 @@
       const globalDisabled = tableState.disabledColumnsBySheet[activeSheetName] || [];
       const disabledBySheet = tableState.disabledColumnsBySheet;
 
+      const effectiveMode =
+        appState.processingMode === 'delete' ? 'delete' : (appState.strategy || 'tokens');
+
       const result = await ProcessFileWithSheets(
         appState.currentFilePath,
         destPath,
@@ -154,7 +157,7 @@
         keyPassword,
         keyPath,
         shuffleRows,
-        appState.strategy
+        effectiveMode
       );
 
       if (result && result.success) {
