@@ -32,7 +32,7 @@ func main() {
 	app := desktop.New(insp, prev, proc, rest, km)
 
 	err := wails.Run(&options.App{
-		Title:  "Деперсонализация ПД (152-ФЗ)",
+		Title:  "Деперсонализация ПД",
 		Width:  1200,
 		Height: 850,
 		AssetServer: &assetserver.Options{
@@ -45,8 +45,8 @@ func main() {
 		Mac: &mac.Options{
 			Appearance: mac.NSAppearanceNameAqua,
 			About: &mac.AboutInfo{
-				Title:   "Деперсонализация ПД (152-ФЗ)",
-				Message: "Автономное приложение для деперсонализации и обратного восстановления ПДн (152-ФЗ)",
+				Title:   "Деперсонализация ПД",
+				Message: "Автономное приложение для деперсонализации и обратного восстановления ПДн",
 				Icon:    appIcon,
 			},
 		},

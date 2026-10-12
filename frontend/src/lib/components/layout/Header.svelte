@@ -15,7 +15,7 @@
     </div>
     <div>
       <div class="flex items-center space-x-2">
-        <span class="text-base font-bold tracking-tight text-[#1C1917]">Деперсонализация ПД (152-ФЗ)</span>
+        <span class="text-base font-bold tracking-tight text-[#1C1917]">Деперсонализация ПД</span>
         <span id="app-env-badge" class="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-[#E8E7E3] text-[#44403C]">
           {envBadge}
         </span>

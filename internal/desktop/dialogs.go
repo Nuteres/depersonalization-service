@@ -177,7 +177,7 @@ func (a *DesktopApp) SaveAuditFileDialog(defaultName string) (string, error) {
 	}
 
 	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "Экспорт журнала аудита (152-ФЗ)",
+		Title:           "Экспорт журнала аудита",
 		DefaultFilename: defaultName,
 		Filters:         filters,
 	})

@@ -111,9 +111,9 @@ let infoPlist = """
     <key>CFBundleIdentifier</key>
     <string>ru.depersonalizer.app</string>
     <key>CFBundleName</key>
-    <string>Деперсонализация ПД (152-ФЗ)</string>
+    <string>Деперсонализация ПД</string>
     <key>CFBundleDisplayName</key>
-    <string>Деперсонализация ПД (152-ФЗ)</string>
+    <string>Деперсонализация ПД</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
