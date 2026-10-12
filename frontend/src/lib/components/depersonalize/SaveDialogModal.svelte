@@ -268,37 +268,6 @@
           </div>
         </div>
 
-        <!-- Salt / Key Field with Random Key Generator -->
-        {#if appState.processingMode === 'replace'}
-          <div class="space-y-2 border border-[#E8E7E3] p-4 bg-white">
-            <div class="flex items-center justify-between">
-              <label
-                for="salt-input"
-                class="block text-[11px] font-mono font-bold text-[#1C1917] uppercase tracking-wider"
-              >
-                Ключ шифрования:
-              </label>
-              <button
-                type="button"
-                onclick={generateRandomSalt}
-                class="text-[11px] text-[#065F46] hover:text-[#047857] font-semibold underline cursor-pointer"
-              >
-                🎲 Случайный ключ
-              </button>
-            </div>
-            <input
-              id="salt-input"
-              type="text"
-              bind:value={salt}
-              placeholder="Введите или сгенерируйте ключ..."
-              class="w-full px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5]"
-            />
-            <div class="text-[11px] text-[#78716C] leading-relaxed">
-              Одинаковый ключ гарантирует одинаковую замену повторяющихся значений.
-            </div>
-          </div>
-        {/if}
-
         <!-- Output Destination File Path -->
         <div class="space-y-1.5 border border-[#E8E7E3] p-4 bg-white">
           <label

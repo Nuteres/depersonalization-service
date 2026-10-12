@@ -1,7 +1,6 @@
 <script lang="ts">
   import { appState } from '../../stores/appState.svelte';
   import HeroBanner from './HeroBanner.svelte';
-  import ModeSelectorBar from './ModeSelectorBar.svelte';
   import SheetTabs from './SheetTabs.svelte';
   import EntityGrid from './EntityGrid.svelte';
   import TableView from './TableView.svelte';
@@ -24,8 +23,6 @@
   <HeroBanner onOpenSaveModal={openSaveModal} />
 
   {#if appState.currentFileInfo}
-    <ModeSelectorBar />
-
     {#if appState.currentFileInfo.sheets && appState.currentFileInfo.sheets.length > 1}
       <SheetTabs />
     {/if}
