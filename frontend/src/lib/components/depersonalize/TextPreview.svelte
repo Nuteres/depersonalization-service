@@ -300,32 +300,8 @@
         {/if}
       </div>
 
-      <!-- Controls Right: Mode Switcher & Before/After Toggle -->
+      <!-- Controls Right: View Mode & Before/After Toggle -->
       <div class="flex items-center flex-wrap gap-3">
-        <!-- Segmented Mode Switcher: [ Замена | Удаление ] -->
-        <div class="flex items-center gap-1.5">
-          <span class="text-xs font-medium text-[#78716C]">Режим:</span>
-          <div class="flex items-center bg-[#F0EFEB] p-0.5 border border-[#E8E7E3] text-xs">
-            <button
-              type="button"
-              onclick={() => appState.setProcessingMode('replace')}
-              class={appState.processingMode === 'replace'
-                ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
-                : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
-            >
-              Замена
-            </button>
-            <button
-              type="button"
-              onclick={() => appState.setProcessingMode('delete')}
-              class={appState.processingMode === 'delete'
-                ? 'px-2.5 py-1 bg-[#1C1917] text-white font-medium shadow-xs cursor-pointer'
-                : 'px-2.5 py-1 text-[#78716C] hover:text-[#1C1917] cursor-pointer'}
-            >
-              Удаление
-            </button>
-          </div>
-        </div>
 
         <!-- View Mode: Word Sheet vs Snippet Cards -->
         <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
