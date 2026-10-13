@@ -8,10 +8,8 @@
     TextParagraphSegment
   } from '../../types/domain';
 
-  // View modes
-  let viewMode = $state<'doc' | 'snippets'>('doc');
+  // View state
   let isBefore = $state(false); // false = Anonymized, true = Original
-  let selectedEntityType = $state<string>('ALL');
   let currentActiveChangeIdx = $state<number>(1);
   let hoveredEntity = $state<{
     type: string;
@@ -179,27 +177,6 @@
     return map;
   });
 
-  const filteredEntityMarks = $derived.by<FlatEntityMark[]>(() => {
-    if (selectedEntityType === 'ALL') {
-      return allEntityMarks;
-    }
-    return allEntityMarks.filter((m) => m.type === selectedEntityType);
-  });
-
-  // Entity types available in document
-  const availableEntityTypes = $derived.by(() => {
-    const map = new Map<string, number>();
-    for (const m of allEntityMarks) {
-      map.set(m.type, (map.get(m.type) || 0) + 1);
-    }
-    return Array.from(map.entries()).map(([type, count]) => ({
-      type,
-      name: getEntityTypeName(type),
-      count,
-      disabled: isEntityTypeDisabled(type)
-    }));
-  });
-
   function scrollToEntity(globalIdx: number) {
     if (globalIdx < 1 || globalIdx > allEntityMarks.length) return;
     currentActiveChangeIdx = globalIdx;
@@ -214,17 +191,17 @@
   }
 
   function nextChange() {
-    if (filteredEntityMarks.length === 0) return;
-    const currentPos = filteredEntityMarks.findIndex(
+    if (allEntityMarks.length === 0) return;
+    const currentPos = allEntityMarks.findIndex(
       (m) => m.globalIndex === currentActiveChangeIdx
     );
-    if (currentPos === -1 || currentPos >= filteredEntityMarks.length - 1) {
-      const first = filteredEntityMarks[0];
+    if (currentPos === -1 || currentPos >= allEntityMarks.length - 1) {
+      const first = allEntityMarks[0];
       if (first) {
         scrollToEntity(first.globalIndex);
       }
     } else {
-      const next = filteredEntityMarks[currentPos + 1];
+      const next = allEntityMarks[currentPos + 1];
       if (next) {
         scrollToEntity(next.globalIndex);
       }
@@ -232,17 +209,17 @@
   }
 
   function prevChange() {
-    if (filteredEntityMarks.length === 0) return;
-    const currentPos = filteredEntityMarks.findIndex(
+    if (allEntityMarks.length === 0) return;
+    const currentPos = allEntityMarks.findIndex(
       (m) => m.globalIndex === currentActiveChangeIdx
     );
     if (currentPos <= 0) {
-      const last = filteredEntityMarks[filteredEntityMarks.length - 1];
+      const last = allEntityMarks[allEntityMarks.length - 1];
       if (last) {
         scrollToEntity(last.globalIndex);
       }
     } else {
-      const prev = filteredEntityMarks[currentPos - 1];
+      const prev = allEntityMarks[currentPos - 1];
       if (prev) {
         scrollToEntity(prev.globalIndex);
       }
@@ -276,67 +253,55 @@
     id="text-inspection-box"
     class="bg-white border border-[#E8E7E3] shadow-sm flex flex-col select-text"
   >
-    <!-- Top Main Header Toolbar -->
+    <!-- Compact Header Toolbar (Single Row) -->
     <div
-      class="px-5 py-3.5 border-b border-[#E8E7E3] flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 bg-[#FAF9F5]"
+      class="px-5 py-3 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]"
     >
       <!-- Title & Document Stats -->
-      <div class="flex items-center flex-wrap gap-2.5">
-        <div class="flex items-center space-x-2">
-          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-          <span
-            class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
-          >
-            Предпросмотр документа ({fileInfo.format.toUpperCase()})
-          </span>
-        </div>
+      <div class="flex items-center space-x-2">
+        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span
+          class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
+        >
+          Предпросмотр документа ({fileInfo.format.toUpperCase()})
+        </span>
         <span class="text-xs text-[#78716C] font-mono">
           ▪ {allEntityMarks.length > 0 ? allEntityMarks.length : snippets.length} фрагментов ПДн
         </span>
-        {#if fileInfo.paragraphCount}
-          <span class="text-xs text-[#A8A29E] font-mono">
-            ▪ {fileInfo.paragraphCount} абзацев
-          </span>
-        {/if}
       </div>
 
-      <!-- Controls Right: View Mode & Before/After Toggle -->
-      <div class="flex items-center flex-wrap gap-3">
-
-        <!-- View Mode: Word Sheet vs Snippet Cards -->
-        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
-          <button
-            type="button"
-            onclick={() => (viewMode = 'doc')}
-            class="flex items-center space-x-1.5 px-3 py-1.5 {viewMode === 'doc'
-              ? 'bg-[#1C1917] text-white font-semibold shadow-xs'
-              : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <span>Вид документа</span>
-          </button>
-          <button
-            type="button"
-            onclick={() => (viewMode = 'snippets')}
-            class="flex items-center space-x-1.5 px-3 py-1.5 {viewMode === 'snippets'
-              ? 'bg-[#1C1917] text-white font-semibold shadow-xs'
-              : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-            <span>Список замен</span>
-          </button>
-        </div>
+      <!-- Controls Right: Change Navigator & Before/After Toggle -->
+      <div class="flex items-center space-x-3">
+        {#if allEntityMarks.length > 0}
+          <div class="inline-flex items-center border border-[#E8E7E3] bg-white text-xs font-mono shadow-2xs">
+            <button
+              type="button"
+              onclick={prevChange}
+              title="Предыдущий фрагмент ПДн"
+              class="px-2.5 py-1 text-[#57534E] hover:text-[#1C1917] hover:bg-[#FAF9F5] transition cursor-pointer border-r border-[#E8E7E3] select-none"
+            >
+              ◀
+            </button>
+            <span class="px-2.5 py-1 text-[11px] text-[#1C1917] font-medium select-none whitespace-nowrap">
+              {currentActiveChangeIdx} / {allEntityMarks.length}
+            </span>
+            <button
+              type="button"
+              onclick={nextChange}
+              title="Следующий фрагмент ПДн"
+              class="px-2.5 py-1 text-[#57534E] hover:text-[#1C1917] hover:bg-[#FAF9F5] transition cursor-pointer border-l border-[#E8E7E3] select-none"
+            >
+              ▶
+            </button>
+          </div>
+        {/if}
 
         <!-- Toggle: Cleaned vs Original -->
-        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
+        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium shadow-2xs">
           <button
             type="button"
             onclick={() => (isBefore = false)}
-            class="flex items-center space-x-1 px-3 py-1.5 {!isBefore
+            class="flex items-center space-x-1.5 px-3 py-1 {!isBefore
               ? 'bg-emerald-700 text-white font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
@@ -346,95 +311,16 @@
           <button
             type="button"
             onclick={() => (isBefore = true)}
-            class="flex items-center space-x-1 px-3 py-1.5 {isBefore
+            class="flex items-center space-x-1.5 px-3 py-1 {isBefore
               ? 'bg-amber-700 text-white font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
             <span class="w-1.5 h-1.5 rounded-full {isBefore ? 'bg-amber-300' : 'bg-amber-500'}"></span>
-            <span>Исходный вид с ПДн</span>
+            <span>Исходный вид</span>
           </button>
         </div>
       </div>
     </div>
-
-    {#if viewMode === 'doc'}
-      <!-- Secondary Sub-toolbar: Entity Filter Pills & Change Navigator -->
-      <div
-        class="px-5 py-2.5 border-b border-[#E8E7E3] bg-[#F5F4F0] flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
-      >
-        <!-- Category Filter Pills with status -->
-        <div class="flex items-center flex-wrap gap-1.5">
-          <span class="text-[11px] font-mono text-[#78716C] mr-1 uppercase font-medium">
-            Фильтр:
-          </span>
-          <button
-            type="button"
-            onclick={() => {
-              selectedEntityType = 'ALL';
-              currentActiveChangeIdx = 1;
-            }}
-            class="px-2.5 py-1 text-[11px] font-mono transition cursor-pointer rounded-none border {selectedEntityType ===
-            'ALL'
-              ? 'bg-[#1C1917] text-white border-[#1C1917] font-semibold'
-              : 'bg-white text-[#78716C] border-[#E8E7E3] hover:text-[#1C1917] hover:border-[#1C1917]'}"
-          >
-            Все ({allEntityMarks.length})
-          </button>
-
-          {#each availableEntityTypes as et}
-            <button
-              type="button"
-              onclick={() => {
-                selectedEntityType = et.type;
-                const first = allEntityMarks.find((m) => m.type === et.type);
-                if (first) scrollToEntity(first.globalIndex);
-              }}
-              title={et.disabled ? 'Деперсонализация отключена' : 'Деперсонализация активна'}
-              class="flex items-center space-x-1.5 px-2.5 py-1 text-[11px] font-mono transition cursor-pointer rounded-none border {selectedEntityType ===
-              et.type
-                ? 'bg-[#1C1917] text-white border-[#1C1917] font-semibold'
-                : 'bg-white text-[#78716C] border-[#E8E7E3] hover:text-[#1C1917] hover:border-[#1C1917]'} {et.disabled ? 'opacity-70' : ''}"
-            >
-              <span
-                class="w-1.5 h-1.5 rounded-full {et.disabled ? 'bg-stone-400' : 'bg-emerald-500'}"
-              ></span>
-              <span class={et.disabled ? 'line-through' : ''}>{et.name} ({et.count})</span>
-            </button>
-          {/each}
-        </div>
-
-        <!-- Jump to Next/Prev Change Buttons -->
-        {#if filteredEntityMarks.length > 0}
-          <div class="flex items-center space-x-2 shrink-0 self-end md:self-center">
-            <span class="text-[11px] text-[#78716C] font-mono hidden lg:inline mr-1">
-              (клик на текст переключает замену)
-            </span>
-            <button
-              type="button"
-              onclick={prevChange}
-              title="Предыдущая замена"
-              class="px-2.5 py-1 bg-white border border-[#E8E7E3] hover:bg-[#FAF9F5] hover:border-[#1C1917] text-[#1C1917] font-mono text-[11px] flex items-center space-x-1 transition cursor-pointer"
-            >
-              <span>◀</span>
-              <span>Назад</span>
-            </button>
-
-            <span class="font-mono text-[11px] text-[#78716C] px-1 font-medium">
-              {currentActiveChangeIdx} / {allEntityMarks.length}
-            </span>
-
-            <button
-              type="button"
-              onclick={nextChange}
-              title="Следующая замена"
-              class="px-2.5 py-1 bg-white border border-[#E8E7E3] hover:bg-[#FAF9F5] hover:border-[#1C1917] text-[#1C1917] font-mono text-[11px] flex items-center space-x-1 transition cursor-pointer"
-            >
-              <span>Вперёд</span>
-              <span>▶</span>
-            </button>
-          </div>
-        {/if}
-      </div>
 
       <!-- Word-like Document Canvas (Block-based scrolling container, no height collapse) -->
       <div
@@ -452,7 +338,7 @@
               {#each documentBlocks as block, bIdx}
                 {#if block.type === 'heading' && block.segments}
                   <h3 class="mt-5 mb-2 font-bold text-[16px] sm:text-[17px] text-[#1C1917] tracking-tight break-words">
-                    {#each block.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}{@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
+                    {#each block.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
                         ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
                         : !isBefore
                         ? appState.processingMode === 'delete'
@@ -467,13 +353,13 @@
                           currentActiveChangeIdx = gIdx;
                           toggleEntityType(seg.type || '');
                         }}
-                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
+                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
                         title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                       >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                   </h3>
                 {:else if block.type === 'paragraph' && block.segments}
                   <p class="mb-3 whitespace-pre-wrap leading-relaxed text-justify break-words">
-                    {#each block.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}{@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
+                    {#each block.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
                         ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
                         : !isBefore
                         ? appState.processingMode === 'delete'
@@ -488,7 +374,7 @@
                           currentActiveChangeIdx = gIdx;
                           toggleEntityType(seg.type || '');
                         }}
-                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
+                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
                         title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                       >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                   </p>
@@ -501,7 +387,7 @@
                           <tr class="{row.isHeader ? 'bg-[#F5F4F0] font-semibold text-[#1C1917] border-b-2 border-[#D5D3CC]' : 'border-b border-[#E8E7E3] hover:bg-[#FAF9F5]/70'}">
                             {#each row.cells as cell, cIdx}
                               <td class="p-2 sm:p-2.5 border-r border-[#E8E7E3] last:border-r-0 align-top break-words whitespace-pre-wrap">
-                                {#each cell.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${rIdx}_${cIdx}_${sIdx}`] || 0}{@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
+                                {#each cell.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${rIdx}_${cIdx}_${sIdx}`] || 0}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
                                     ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
                                     : !isBefore
                                     ? appState.processingMode === 'delete'
@@ -516,7 +402,7 @@
                                       currentActiveChangeIdx = gIdx;
                                       toggleEntityType(seg.type || '');
                                     }}
-                                    class="inline px-1 py-0.5 rounded-[3px] border font-medium text-[12px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
+                                    class="inline px-1 py-0.5 rounded-[3px] border font-medium text-[12px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
                                     title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                                   >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                               </td>
@@ -539,7 +425,6 @@
                       <span>{seg.text}</span>
                     {:else}
                       {@const gIdx = entityIndexMap[`${pIdx}_${sIdx}`] || 0}
-                      {@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}
                       {@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}
                       {@const markClass = isTypeDisabled
                         ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
@@ -558,7 +443,7 @@
                           currentActiveChangeIdx = gIdx;
                           toggleEntityType(seg.type || '');
                         }}
-                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
+                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
                         title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                       >
                         {#if isTypeDisabled}
@@ -670,115 +555,5 @@
           </div>
         {/if}
       </div>
-
-    {:else}
-      <!-- Snippet Cards View -->
-      <div
-        id="text-snippets-container"
-        class="p-5 space-y-3.5 max-h-[560px] overflow-y-auto custom-scrollbar bg-[#FAF9F5]/40 divide-y divide-[#F0EFEB]"
-      >
-        {#if snippets.length === 0}
-          <div class="text-center py-8 text-xs text-[#78716C] font-mono">
-            В документе не обнаружено фрагментов персональных данных для замены
-          </div>
-        {:else}
-          {#each snippets as snip, idx}
-            {@const typeName = getEntityTypeName(snip.type)}
-            {@const isTypeDisabled = isEntityTypeDisabled(snip.type)}
-            <div class="pt-3.5 first:pt-0">
-              <div
-                class="flex items-center justify-between mb-1.5 font-mono text-[11px]"
-              >
-                <div class="flex items-center space-x-2">
-                  <span
-                    class="px-2 py-0.5 bg-[#FAF9F5] border border-[#E8E7E3] text-[#1C1917] font-semibold text-[10px] uppercase"
-                  >
-                    {typeName}
-                  </span>
-                  <span class="text-[#78716C]">Фрагмент #{idx + 1}</span>
-                  <button
-                    type="button"
-                    onclick={() => toggleEntityType(snip.type)}
-                    class="px-2 py-0.5 text-[10px] font-mono cursor-pointer transition rounded {isTypeDisabled
-                      ? 'bg-stone-100 text-stone-500 border border-stone-300'
-                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}"
-                  >
-                    {isTypeDisabled ? '○ Отключено' : '● Активно'}
-                  </button>
-                </div>
-                <span class="text-[10px] text-[#A8A29E]">
-                  {isBefore ? 'Исходный вид' : 'Обезличенный вид'}
-                </span>
-              </div>
-
-              <div
-                class="bg-white border border-[#E8E7E3] p-3 text-xs leading-relaxed text-[#1C1917] font-sans"
-              >
-                {#if isTypeDisabled}
-                  <div class="space-y-1">
-                    <div class="text-[11px] text-[#78716C] font-mono flex items-center justify-between">
-                      <span>Деперсонализация отключена (сохраняется исходное значение):</span>
-                      <button
-                        type="button"
-                        onclick={() => toggleEntityType(snip.type)}
-                        class="text-indigo-600 hover:underline cursor-pointer"
-                      >
-                        Включить замену
-                      </button>
-                    </div>
-                    <div
-                      class="p-2 bg-stone-50 border border-stone-200 text-stone-700 rounded-none font-mono text-[11px] break-words"
-                    >
-                      {snip.original}
-                    </div>
-                  </div>
-                {:else if !isBefore}
-                  <div
-                    class="flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                  >
-                    <div class="space-y-1 flex-1 min-w-0">
-                      <div class="text-[11px] text-[#78716C] font-mono">
-                        До деперсонализации:
-                      </div>
-                      <div
-                        class="p-2 bg-rose-50/50 border border-rose-200/60 text-rose-900 rounded-none font-mono text-[11px] break-words"
-                      >
-                        {snip.original}
-                      </div>
-                    </div>
-                    <div
-                      class="text-center text-[#78716C] font-bold text-xs shrink-0 self-center px-1"
-                    >
-                      ➔
-                    </div>
-                    <div class="space-y-1 flex-1 min-w-0">
-                      <div class="text-[11px] text-[#78716C] font-mono">
-                        {appState.processingMode === 'delete' ? 'После удаления:' : 'После деперсонализации:'}
-                      </div>
-                      <div
-                        class="p-2 {appState.processingMode === 'delete' ? 'bg-rose-50/60 border-rose-200 text-rose-950' : 'bg-emerald-50/60 border-emerald-200 text-emerald-950'} border rounded-none font-mono text-[11px] break-words"
-                      >
-                        {appState.processingMode === 'delete' ? '[УДАЛЕНО]' : snip.anonymized}
-                      </div>
-                    </div>
-                  </div>
-                {:else}
-                  <div class="space-y-1">
-                    <div class="text-[11px] text-[#78716C] font-mono">
-                      Исходный фрагмент:
-                    </div>
-                    <div
-                      class="p-2 bg-rose-50/50 border border-rose-200/60 text-rose-900 rounded-none font-mono text-[11px] break-words"
-                    >
-                      {snip.original}
-                    </div>
-                  </div>
-                {/if}
-              </div>
-            </div>
-          {/each}
-        {/if}
-      </div>
-    {/if}
   </div>
 {/if}

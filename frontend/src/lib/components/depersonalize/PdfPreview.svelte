@@ -3,10 +3,8 @@
   import { tableState } from '../../stores/tableState.svelte';
   import type { DocxTextSnippet, TextParagraphPreview, TextParagraphSegment } from '../../types/domain';
 
-  // View modes
-  let viewMode = $state<'doc' | 'snippets'>('doc');
+  // View state
   let isBefore = $state(false); // false = Blackout Redacted, true = Original
-  let selectedEntityType = $state<string>('ALL');
   let currentActiveChangeIdx = $state<number>(1);
   let hoveredEntity = $state<{
     type: string;
@@ -131,26 +129,6 @@
     return map;
   });
 
-  const filteredEntityMarks = $derived.by<FlatEntityMark[]>(() => {
-    if (selectedEntityType === 'ALL') {
-      return allEntityMarks;
-    }
-    return allEntityMarks.filter((m) => m.type === selectedEntityType);
-  });
-
-  const availableEntityTypes = $derived.by(() => {
-    const map = new Map<string, number>();
-    for (const m of allEntityMarks) {
-      map.set(m.type, (map.get(m.type) || 0) + 1);
-    }
-    return Array.from(map.entries()).map(([type, count]) => ({
-      type,
-      name: getEntityTypeName(type),
-      count,
-      disabled: isEntityTypeDisabled(type)
-    }));
-  });
-
   function scrollToEntity(globalIdx: number) {
     if (globalIdx < 1 || globalIdx > allEntityMarks.length) return;
     currentActiveChangeIdx = globalIdx;
@@ -165,17 +143,17 @@
   }
 
   function nextChange() {
-    if (filteredEntityMarks.length === 0) return;
-    const currentPos = filteredEntityMarks.findIndex(
+    if (allEntityMarks.length === 0) return;
+    const currentPos = allEntityMarks.findIndex(
       (m) => m.globalIndex === currentActiveChangeIdx
     );
-    if (currentPos === -1 || currentPos >= filteredEntityMarks.length - 1) {
-      const first = filteredEntityMarks[0];
+    if (currentPos === -1 || currentPos >= allEntityMarks.length - 1) {
+      const first = allEntityMarks[0];
       if (first) {
         scrollToEntity(first.globalIndex);
       }
     } else {
-      const next = filteredEntityMarks[currentPos + 1];
+      const next = allEntityMarks[currentPos + 1];
       if (next) {
         scrollToEntity(next.globalIndex);
       }
@@ -183,17 +161,17 @@
   }
 
   function prevChange() {
-    if (filteredEntityMarks.length === 0) return;
-    const currentPos = filteredEntityMarks.findIndex(
+    if (allEntityMarks.length === 0) return;
+    const currentPos = allEntityMarks.findIndex(
       (m) => m.globalIndex === currentActiveChangeIdx
     );
     if (currentPos <= 0) {
-      const last = filteredEntityMarks[filteredEntityMarks.length - 1];
+      const last = allEntityMarks[allEntityMarks.length - 1];
       if (last) {
         scrollToEntity(last.globalIndex);
       }
     } else {
-      const prev = filteredEntityMarks[currentPos - 1];
+      const prev = allEntityMarks[currentPos - 1];
       if (prev) {
         scrollToEntity(prev.globalIndex);
       }
@@ -224,71 +202,55 @@
     id="pdf-inspection-box"
     class="bg-white border border-[#E8E7E3] shadow-sm flex flex-col select-text"
   >
-    <!-- Top Main Header Toolbar -->
+    <!-- Compact Header Toolbar (Single Row) -->
     <div
-      class="px-5 py-3.5 border-b border-[#E8E7E3] flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 bg-[#FAF9F5]"
+      class="px-5 py-3 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]"
     >
       <!-- Title & Document Stats -->
-      <div class="flex items-center flex-wrap gap-2.5">
-        <div class="flex items-center space-x-2">
-          <span class="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
-          <span
-            class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
-          >
-            Предпросмотр PDF (Векторные плашки Blackout)
-          </span>
-        </div>
+      <div class="flex items-center space-x-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
+        <span
+          class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
+        >
+          Предпросмотр PDF (Векторные плашки Blackout)
+        </span>
         <span class="text-xs text-[#78716C] font-mono">
           ▪ {allEntityMarks.length} плашек ПДн
         </span>
-        {#if fileInfo.pageCount}
-          <span class="text-xs text-[#A8A29E] font-mono">
-            ▪ {fileInfo.pageCount} {fileInfo.pageCount === 1 ? 'страница' : 'страницы'}
-          </span>
-        {/if}
-        {#if paragraphPreviews.length}
-          <span class="text-xs text-[#A8A29E] font-mono">
-            ▪ {paragraphPreviews.length} строк/абзацев
-          </span>
-        {/if}
       </div>
 
-      <!-- Controls Right: Mode Switcher & Before/After Toggle -->
-      <div class="flex items-center flex-wrap gap-3">
-        <!-- View Mode: Document Sheet vs Snippet Cards -->
-        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
-          <button
-            type="button"
-            onclick={() => (viewMode = 'doc')}
-            class="flex items-center space-x-1.5 px-3 py-1.5 {viewMode === 'doc'
-              ? 'bg-[#1C1917] text-white font-semibold shadow-xs'
-              : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <span>Вид документа PDF</span>
-          </button>
-          <button
-            type="button"
-            onclick={() => (viewMode = 'snippets')}
-            class="flex items-center space-x-1.5 px-3 py-1.5 {viewMode === 'snippets'
-              ? 'bg-[#1C1917] text-white font-semibold shadow-xs'
-              : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-            <span>Реестр плашек ({allEntityMarks.length})</span>
-          </button>
-        </div>
+      <!-- Controls Right: Change Navigator & Before/After Toggle -->
+      <div class="flex items-center space-x-3">
+        {#if allEntityMarks.length > 0}
+          <div class="inline-flex items-center border border-[#E8E7E3] bg-white text-xs font-mono shadow-2xs">
+            <button
+              type="button"
+              onclick={prevChange}
+              title="Предыдущая плашка"
+              class="px-2.5 py-1 text-[#57534E] hover:text-[#1C1917] hover:bg-[#FAF9F5] transition cursor-pointer border-r border-[#E8E7E3] select-none"
+            >
+              ◀
+            </button>
+            <span class="px-2.5 py-1 text-[11px] text-[#1C1917] font-medium select-none whitespace-nowrap">
+              {currentActiveChangeIdx} / {allEntityMarks.length}
+            </span>
+            <button
+              type="button"
+              onclick={nextChange}
+              title="Следующая плашка"
+              class="px-2.5 py-1 text-[#57534E] hover:text-[#1C1917] hover:bg-[#FAF9F5] transition cursor-pointer border-l border-[#E8E7E3] select-none"
+            >
+              ▶
+            </button>
+          </div>
+        {/if}
 
         <!-- Toggle: Cleaned vs Original -->
-        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
+        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium shadow-2xs">
           <button
             type="button"
             onclick={() => (isBefore = false)}
-            class="flex items-center space-x-1 px-3 py-1.5 {!isBefore
+            class="flex items-center space-x-1.5 px-3 py-1 {!isBefore
               ? 'bg-neutral-900 text-white font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
@@ -298,7 +260,7 @@
           <button
             type="button"
             onclick={() => (isBefore = true)}
-            class="flex items-center space-x-1 px-3 py-1.5 {isBefore
+            class="flex items-center space-x-1.5 px-3 py-1 {isBefore
               ? 'bg-amber-700 text-white font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
@@ -308,87 +270,6 @@
         </div>
       </div>
     </div>
-
-    {#if viewMode === 'doc'}
-      <!-- Secondary Sub-toolbar: Entity Filter Pills & Change Navigator -->
-      <div
-        class="px-5 py-2.5 border-b border-[#E8E7E3] bg-[#F5F4F0] flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
-      >
-        <!-- Category Filter Pills with status -->
-        <div class="flex items-center flex-wrap gap-1.5">
-          <span class="text-[11px] font-mono text-[#78716C] mr-1 uppercase font-medium">
-            Фильтр:
-          </span>
-          <button
-            type="button"
-            onclick={() => {
-              selectedEntityType = 'ALL';
-              currentActiveChangeIdx = 1;
-            }}
-            class="px-2.5 py-1 text-[11px] font-mono transition cursor-pointer rounded-none border {selectedEntityType ===
-            'ALL'
-              ? 'bg-[#1C1917] text-white border-[#1C1917] font-semibold'
-              : 'bg-white text-[#78716C] border-[#E8E7E3] hover:text-[#1C1917] hover:border-[#1C1917]'}"
-          >
-            Все ({allEntityMarks.length})
-          </button>
-
-          {#each availableEntityTypes as et}
-            <button
-              type="button"
-              onclick={() => {
-                selectedEntityType = et.type;
-                const first = allEntityMarks.find((m) => m.type === et.type);
-                if (first) scrollToEntity(first.globalIndex);
-              }}
-              title={et.disabled ? 'Плашка отключена (данные не закрываются)' : 'Плашка активна (данные закрываются)'}
-              class="flex items-center space-x-1.5 px-2.5 py-1 text-[11px] font-mono transition cursor-pointer rounded-none border {selectedEntityType ===
-              et.type
-                ? 'bg-[#1C1917] text-white border-[#1C1917] font-semibold'
-                : 'bg-white text-[#78716C] border-[#E8E7E3] hover:text-[#1C1917] hover:border-[#1C1917]'} {et.disabled ? 'opacity-70' : ''}"
-            >
-              <span
-                class="w-1.5 h-1.5 rounded-full {et.disabled
-                  ? 'bg-stone-400'
-                  : 'bg-emerald-500'}"
-              ></span>
-              <span>{et.name} ({et.count})</span>
-              {#if et.disabled}
-                <span class="text-[9px] text-stone-500 font-sans">(откл)</span>
-              {/if}
-            </button>
-          {/each}
-        </div>
-
-        <!-- Linear Change Navigator -->
-        {#if filteredEntityMarks.length > 0}
-          <div class="flex items-center space-x-2 shrink-0">
-            <span class="text-[11px] font-mono text-[#78716C]">
-              Плашка {filteredEntityMarks.findIndex(
-                (m) => m.globalIndex === currentActiveChangeIdx
-              ) + 1} из {filteredEntityMarks.length}
-            </span>
-            <div class="inline-flex border border-[#E8E7E3] bg-white">
-              <button
-                type="button"
-                onclick={prevChange}
-                title="Предыдущая плашка"
-                class="px-2 py-1 text-xs text-[#78716C] hover:text-[#1C1917] hover:bg-[#FAF9F5] border-r border-[#E8E7E3] cursor-pointer"
-              >
-                ◀
-              </button>
-              <button
-                type="button"
-                onclick={nextChange}
-                title="Следующая плашка"
-                class="px-2 py-1 text-xs text-[#78716C] hover:text-[#1C1917] hover:bg-[#FAF9F5] cursor-pointer"
-              >
-                ▶
-              </button>
-            </div>
-          </div>
-        {/if}
-      </div>
 
       <!-- Main Clean Paper Document View (Scrollable Page Container) -->
       <div
@@ -470,90 +351,7 @@
           {/if}
         </div>
       </div>
-    {:else}
-      <!-- Snippet Cards Mode (List of Redactions) -->
-      <div class="p-6 bg-[#FAF9F5]">
-        <div class="flex items-center justify-between mb-4">
-          <div class="text-xs font-bold font-mono text-[#1C1917] uppercase tracking-wider">
-            Реестр обнаруженных плашек ({snippets.length})
-          </div>
-          <div class="text-xs text-[#78716C]">
-            Нажмите на карточку для включения или отключения закрытия плашкой
-          </div>
-        </div>
 
-        {#if snippets.length > 0}
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
-            {#each snippets as snip}
-              {@const entType = snip.type || 'FIO'}
-              {@const disabled = isEntityTypeDisabled(entType)}
-              <div
-                class="bg-white border {disabled
-                  ? 'border-dashed border-stone-300 opacity-75'
-                  : 'border-[#E8E7E3] hover:border-[#1C1917]'} p-4 shadow-xs flex flex-col justify-between transition-all cursor-pointer select-none"
-                onclick={() => toggleEntityType(entType)}
-                role="button"
-                tabindex="0"
-                onkeydown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') toggleEntityType(entType);
-                }}
-              >
-                <div>
-                  <div class="flex items-center justify-between mb-2">
-                    <span
-                      class="px-2 py-0.5 text-[10px] font-mono uppercase font-bold rounded-xs {disabled
-                        ? 'bg-stone-100 text-stone-500'
-                        : 'bg-neutral-900 text-white'}"
-                    >
-                      {getEntityTypeName(entType)}
-                    </span>
-                    <span
-                      class="text-[11px] font-mono {disabled
-                        ? 'text-stone-400'
-                        : 'text-emerald-700 font-semibold'}"
-                    >
-                      {disabled ? '○ Отключено' : '● Плашка активна'}
-                    </span>
-                  </div>
-
-                  <div class="space-y-1.5 my-3">
-                    <div class="text-xs">
-                      <span class="text-[#A8A29E] text-[10px] font-mono block">Исходное значение:</span>
-                      <span class="font-medium text-[#1C1917] bg-stone-50 px-1.5 py-0.5 rounded border border-stone-200 inline-block">
-                        {snip.original}
-                      </span>
-                    </div>
-                    <div class="text-xs">
-                      <span class="text-[#A8A29E] text-[10px] font-mono block">Результат в PDF:</span>
-                      {#if disabled}
-                        <span class="text-stone-600 font-mono text-xs">
-                          {snip.original} (без изменений)
-                        </span>
-                      {:else}
-                        <span class="inline-block bg-[#1C1917] text-white font-mono text-xs px-2 py-0.5 rounded">
-                          [ ПДн СКРЫТО ]
-                        </span>
-                      {/if}
-                    </div>
-                  </div>
-                </div>
-
-                <div class="pt-2 border-t border-[#F5F4F0] flex items-center justify-between text-[11px] text-[#78716C]">
-                  <span>Действие: {getEntityAction(entType)}</span>
-                  <span class="text-indigo-600 hover:underline font-mono text-[10px]">
-                    {disabled ? 'Включить плашку' : 'Отключить'}
-                  </span>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="p-8 text-center text-xs text-[#78716C] bg-white border border-[#E8E7E3]">
-            Плашек персональных данных не обнаружено
-          </div>
-        {/if}
-      </div>
-    {/if}
 
     <!-- Hover Floating Tooltip on Entity Blackout Plate -->
     {#if hoveredEntity}
