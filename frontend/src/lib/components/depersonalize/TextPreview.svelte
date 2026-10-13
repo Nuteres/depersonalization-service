@@ -500,7 +500,7 @@
                         {#each block.table.rows as row, rIdx}
                           <tr class="{row.isHeader ? 'bg-[#F5F4F0] font-semibold text-[#1C1917] border-b-2 border-[#D5D3CC]' : 'border-b border-[#E8E7E3] hover:bg-[#FAF9F5]/70'}">
                             {#each row.cells as cell, cIdx}
-                              <td class="p-2 sm:p-2.5 border-r border-[#E8E7E3] last:border-r-0 align-top break-words">
+                              <td class="p-2 sm:p-2.5 border-r border-[#E8E7E3] last:border-r-0 align-top break-words whitespace-pre-wrap">
                                 {#each cell.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${rIdx}_${cIdx}_${sIdx}`] || 0}{@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
                                     ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
                                     : !isBefore

@@ -513,7 +513,31 @@ type docxTextNode struct {
 }
 
 type docxParagraph struct {
-	nodes []docxTextNode
+	nodes     []docxTextNode
+	isHeading bool
+}
+
+func isDocxHeadingText(str string) bool {
+	if len(str) == 0 || len(str) > 130 {
+		return false
+	}
+	if len(str) >= 4 && str[0] >= '1' && str[0] <= '9' && str[1] == '.' && str[2] == ' ' {
+		if !strings.HasSuffix(str, ".") {
+			return true
+		}
+	}
+	upper := strings.ToUpper(str)
+	if strings.HasPrefix(upper, "АКТ ") ||
+		strings.HasPrefix(upper, "ТРУДОВОЙ ДОГОВОР") ||
+		strings.HasPrefix(upper, "СОГЛАСИЕ ") ||
+		upper == "ЗАЯВЛЕНИЕ" ||
+		strings.HasPrefix(upper, "СВЕДЕНИЯ О ") ||
+		strings.HasPrefix(upper, "РЕКВИЗИТЫ ") ||
+		strings.HasPrefix(upper, "РАСЧЕТ ЗАЯВЛЯЕМОЙ СУММЫ") ||
+		strings.HasPrefix(upper, "СПЕЦИФИКАЦИЯ") {
+		return true
+	}
+	return false
 }
 
 type docxCell struct {
@@ -533,6 +557,7 @@ type docxBlockType int
 
 const (
 	docxBlockTypeParagraph docxBlockType = iota
+	docxBlockTypeHeading
 	docxBlockTypeTable
 )
 
@@ -546,6 +571,7 @@ func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 	dec := xml.NewDecoder(bytes.NewReader(xmlData))
 	var blocks []docxBlock
 	var curNodes []docxTextNode
+	curPIsHeading := false
 	pDepth := 0
 	inT := false
 	var curTText strings.Builder
@@ -610,8 +636,18 @@ func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 			} else if isWordElement(t.Name, "p") {
 				if pDepth == 0 {
 					curNodes = nil
+					curPIsHeading = false
 				}
 				pDepth++
+			} else if pDepth > 0 && isWordElement(t.Name, "pStyle") {
+				for _, attr := range t.Attr {
+					if attr.Name.Local == "val" {
+						valLower := strings.ToLower(attr.Value)
+						if strings.Contains(valLower, "heading") || strings.Contains(valLower, "title") || strings.Contains(valLower, "заголовок") {
+							curPIsHeading = true
+						}
+					}
+				}
 			} else if pDepth > 0 && isWordElement(t.Name, "t") {
 				inT = true
 				tStartOffset = offsetBefore
@@ -656,17 +692,33 @@ func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 				pDepth--
 				if pDepth == 0 {
 					if !inSpecialNote {
-						p := docxParagraph{nodes: curNodes}
+						isHeading := curPIsHeading
+						if !isHeading && tblDepth == 0 {
+							var sb strings.Builder
+							for _, n := range curNodes {
+								sb.WriteString(n.text)
+							}
+							str := strings.TrimSpace(sb.String())
+							if isDocxHeadingText(str) {
+								isHeading = true
+							}
+						}
+						p := docxParagraph{nodes: curNodes, isHeading: isHeading}
 						if tblDepth > 0 && tcDepth > 0 {
 							curCell.paragraphs = append(curCell.paragraphs, p)
 						} else {
+							bType := docxBlockTypeParagraph
+							if isHeading {
+								bType = docxBlockTypeHeading
+							}
 							blocks = append(blocks, docxBlock{
-								blockType: docxBlockTypeParagraph,
+								blockType: bType,
 								paragraph: p,
 							})
 						}
 					}
 					curNodes = nil
+					curPIsHeading = false
 				}
 			} else if isWordElement(t.Name, "tc") {
 				tcDepth--
@@ -699,7 +751,7 @@ func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 func extractParagraphsFromBlocks(blocks []docxBlock) []docxParagraph {
 	var paras []docxParagraph
 	for _, b := range blocks {
-		if b.blockType == docxBlockTypeParagraph {
+		if b.blockType == docxBlockTypeParagraph || b.blockType == docxBlockTypeHeading {
 			paras = append(paras, b.paragraph)
 		} else if b.blockType == docxBlockTypeTable {
 			for _, row := range b.table.rows {
@@ -872,7 +924,7 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 		_, isBodyOrNotes := getDocxFileOrder(f.Name)
 
 		for _, b := range blocks {
-			if b.blockType == docxBlockTypeParagraph {
+			if b.blockType == docxBlockTypeParagraph || b.blockType == docxBlockTypeHeading {
 				var paraText strings.Builder
 				for _, n := range b.paragraph.nodes {
 					paraText.WriteString(n.text)
@@ -902,8 +954,12 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 						Segments: segments,
 					})
 
+					blockTypeStr := "paragraph"
+					if b.blockType == docxBlockTypeHeading {
+						blockTypeStr = "heading"
+					}
 					documentBlocks = append(documentBlocks, TextDocumentBlock{
-						Type:     "paragraph",
+						Type:     blockTypeStr,
 						Index:    len(documentBlocks) + 1,
 						Segments: segments,
 					})

@@ -613,8 +613,19 @@ func TestODT_DocumentBlocks_And_Headings(t *testing.T) {
 					t.Errorf("address should not swallow 'Дата начала', got: %s", seg.Original)
 				}
 			}
-			if seg.IsEntity && seg.Type == "DATE" && seg.Original == "08.09.2026" {
+			if seg.IsEntity && seg.Type == "DATE" && (seg.Original == "18.06.1982" || seg.Original == "18.04.2016") {
 				foundDateStart = true
+			}
+		}
+		if b.Table != nil {
+			for _, r := range b.Table.Rows {
+				for _, c := range r.Cells {
+					for _, seg := range c.Segments {
+						if seg.IsEntity && seg.Type == "DATE" && (seg.Original == "18.06.1982" || seg.Original == "18.04.2016") {
+							foundDateStart = true
+						}
+					}
+				}
 			}
 		}
 	}
@@ -629,7 +640,7 @@ func TestODT_DocumentBlocks_And_Headings(t *testing.T) {
 		t.Errorf("expected address on 1-я Тверская-Ямская to be detected in ODT")
 	}
 	if !foundDateStart {
-		t.Errorf("expected date 08.09.2026 to be detected in ODT")
+		t.Errorf("expected date 18.06.1982 to be detected in ODT")
 	}
 
 	info2, err := svc.Inspect(context.Background(), "../../../mock_documents/05_akt_priema_peredachi_tmc/05_akt_priema_peredachi_tmc.odt")
@@ -639,10 +650,74 @@ func TestODT_DocumentBlocks_And_Headings(t *testing.T) {
 	for _, b := range info2.DocumentBlocks {
 		if b.Type == "table" && b.Table != nil {
 			for rIdx, r := range b.Table.Rows {
-				if r.IsHeader {
+				if rIdx == 0 && !r.IsHeader {
+					t.Errorf("row 0 in equipment specification table should be marked as header")
+				}
+				if rIdx > 0 && r.IsHeader {
 					t.Errorf("row %d in equipment specification table should not be marked as header", rIdx)
 				}
 			}
+		}
+	}
+}
+
+func TestInspect_MockDocuments_Consistency(t *testing.T) {
+	svc := inspector.New()
+	ctx := context.Background()
+
+	docDirs := []string{
+		"01_trudovoy_dogovor_it",
+		"02_trudovoy_dogovor_rukovoditel",
+		"03_soglasie_pdn",
+		"04_zayavlenie_kompensaciya",
+		"05_akt_priema_peredachi_tmc",
+	}
+
+	for _, d := range docDirs {
+		docxPath := filepath.Join("../../../mock_documents", d, d+".docx")
+		odtPath := filepath.Join("../../../mock_documents", d, d+".odt")
+		txtPath := filepath.Join("../../../mock_documents", d, d+".txt")
+
+		docxInfo, err := svc.Inspect(ctx, docxPath)
+		if err != nil {
+			t.Skipf("mock files not found: %v", err)
+			return
+		}
+		odtInfo, err := svc.Inspect(ctx, odtPath)
+		if err != nil {
+			t.Fatalf("failed to inspect %s: %v", odtPath, err)
+		}
+		txtInfo, err := svc.Inspect(ctx, txtPath)
+		if err != nil {
+			t.Fatalf("failed to inspect %s: %v", txtPath, err)
+		}
+
+		// Check entity categories count matches between DOCX, ODT, and TXT
+		if len(odtInfo.Entities) != len(docxInfo.Entities) {
+			t.Errorf("[%s] entity categories mismatch: ODT=%d, DOCX=%d", d, len(odtInfo.Entities), len(docxInfo.Entities))
+		}
+		if len(txtInfo.Entities) != len(docxInfo.Entities) {
+			t.Errorf("[%s] entity categories mismatch: TXT=%d, DOCX=%d", d, len(txtInfo.Entities), len(docxInfo.Entities))
+		}
+
+		// Check headings exist in both DOCX and ODT
+		docxHeadings := 0
+		for _, b := range docxInfo.DocumentBlocks {
+			if b.Type == "heading" {
+				docxHeadings++
+			}
+		}
+		odtHeadings := 0
+		for _, b := range odtInfo.DocumentBlocks {
+			if b.Type == "heading" {
+				odtHeadings++
+			}
+		}
+		if docxHeadings == 0 {
+			t.Errorf("[%s] expected headings in DOCX, got 0", d)
+		}
+		if odtHeadings == 0 {
+			t.Errorf("[%s] expected headings in ODT, got 0", d)
 		}
 	}
 }

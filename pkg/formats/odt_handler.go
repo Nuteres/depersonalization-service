@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -40,6 +41,7 @@ type odtTextNode struct {
 	startOffset int64
 	endOffset   int64
 	text        string
+	isElement   bool
 }
 
 type odtParagraph struct {
@@ -126,18 +128,30 @@ func parseODTXML(data []byte) ([]odtBlock, error) {
 					curPara = &odtParagraph{isHeading: (t.Name.Local == "h")}
 				}
 				inParaDepth++
-			} else if inParaDepth > 0 && (t.Name.Local == "line-break" || t.Name.Local == "tab") {
+			} else if inParaDepth > 0 && (t.Name.Local == "line-break" || t.Name.Local == "tab" || t.Name.Local == "s") {
 				textVal := "\n"
 				if t.Name.Local == "tab" {
 					textVal = "\t"
+				} else if t.Name.Local == "s" {
+					count := 1
+					for _, attr := range t.Attr {
+						if attr.Name.Local == "c" {
+							if c, err := strconv.Atoi(attr.Value); err == nil && c > 0 {
+								count = c
+							}
+						}
+					}
+					textVal = strings.Repeat(" ", count)
 				}
 				if curPara != nil {
 					curPara.nodes = append(curPara.nodes, odtTextNode{
 						startOffset: startOffset,
 						endOffset:   endOffset,
 						text:        textVal,
+						isElement:   true,
 					})
 				}
+				inParaDepth++
 			} else if inParaDepth > 0 {
 				inParaDepth++
 			}
@@ -153,6 +167,14 @@ func parseODTXML(data []byte) ([]odtBlock, error) {
 						bType := odtBlockTypeParagraph
 						if p.isHeading {
 							bType = odtBlockTypeHeading
+						} else if tblDepth == 0 {
+							var sb strings.Builder
+							for _, n := range p.nodes {
+								sb.WriteString(n.text)
+							}
+							if isDocxHeadingText(strings.TrimSpace(sb.String())) {
+								bType = odtBlockTypeHeading
+							}
 						}
 						blocks = append(blocks, odtBlock{
 							blockType: bType,
@@ -560,6 +582,9 @@ func (h *ODTHandler) Process(ctx context.Context, r io.ReaderAt, size int64, w i
 
 			// 4. Project replacements onto nodes
 			for idx, n := range p.nodes {
+				if n.isElement {
+					continue
+				}
 				nStart := nodeRuneStarts[idx]
 				nEnd := nodeRuneEnds[idx]
 
