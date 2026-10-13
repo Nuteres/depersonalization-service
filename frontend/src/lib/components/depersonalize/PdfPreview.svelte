@@ -211,9 +211,9 @@
         >
           <!-- Paragraphs Render Area -->
           {#if paragraphPreviews.length > 0}
-            <div class="space-y-1">
+            <div class="space-y-3">
               {#each paragraphPreviews as para, pIdx}
-                <p class="mb-1.5 whitespace-pre-wrap leading-relaxed text-left break-words">
+                <p class="mb-3 whitespace-pre-wrap leading-relaxed text-justify break-words">
                   {#each para.segments as seg, sIdx}
                     {#if seg.isEntity}
                       {@const globalIdx = entityIndexMap[`${pIdx}_${sIdx}`]}

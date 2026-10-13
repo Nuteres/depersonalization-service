@@ -170,7 +170,7 @@
 {:else}
   <!-- FILE SELECTED: File Info Card & Hero Action Bar -->
   <div
-    class="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-2"
+    class="flex flex-col gap-2 pb-2"
     ondragover={handleDragOver}
     ondragenter={handleDragEnter}
     ondragleave={handleDragLeave}
@@ -178,70 +178,73 @@
     role="region"
     aria-label="Загруженный файл"
   >
-    <div class="flex-1 min-w-0">
-      <div id="file-meta-bar" class="flex flex-wrap items-center gap-2 text-xs font-mono text-[#78716C] uppercase mb-1.5">
-        <span>Файл загружен</span>
+    <!-- Top metadata bar -->
+    <div id="file-meta-bar" class="flex flex-wrap items-center gap-2 text-xs font-mono text-[#78716C] uppercase">
+      <span>Файл загружен</span>
+      <span>▪</span>
+      <span>{unitsLabel}</span>
+      {#if fileSizeLabel}
         <span>▪</span>
-        <span>{unitsLabel}</span>
-        {#if fileSizeLabel}
-          <span>▪</span>
-          <span>{fileSizeLabel}</span>
-        {/if}
-        {#if formatLabel}
-          <span>▪</span>
-          <span>{formatLabel}</span>
-        {/if}
-      </div>
+        <span>{fileSizeLabel}</span>
+      {/if}
+      {#if formatLabel}
+        <span>▪</span>
+        <span>{formatLabel}</span>
+      {/if}
+    </div>
 
+    <!-- Main Row: Title (Name) and Action Buttons symmetrical on the same horizontal row -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
       <h2
         id="file-name-title"
-        class="text-xl sm:text-2xl font-bold tracking-tight text-[#1C1917] flex items-start gap-2 break-words"
+        class="text-xl sm:text-2xl font-bold tracking-tight text-[#1C1917] flex items-center gap-2 break-words min-w-0"
       >
-        <span class="text-xl shrink-0 mt-0.5 select-none">📄</span>
+        <span class="text-xl shrink-0 select-none">📄</span>
         <span class="break-words" title={appState.currentFileInfo.name}>{appState.currentFileInfo.name}</span>
       </h2>
 
-      <p id="file-desc-text" class="text-sm text-[#78716C] mt-1 max-w-2xl leading-relaxed">
-        {descLabel}
-      </p>
+      <!-- Action Toolbar in Hero -->
+      <div class="flex flex-wrap items-center gap-3 shrink-0">
+        <button
+          id="btn-change-file-hero"
+          type="button"
+          onclick={handleSelectFile}
+          class="px-3.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold shadow-xs transition flex items-center gap-1.5 active:scale-[0.99] cursor-pointer"
+          title="Выбрать другой файл"
+        >
+          <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">📁</span>
+          <span>Сменить файл...</span>
+        </button>
+
+        <button
+          id="btn-close-file-hero"
+          type="button"
+          onclick={clearCurrentFile}
+          class="px-3 py-2 bg-white border border-[#E8E7E3] hover:border-rose-400 hover:text-rose-600 text-[#78716C] text-xs font-semibold shadow-xs transition flex items-center gap-1.5 active:scale-[0.99] cursor-pointer"
+          title="Удалить прикрепленный файл"
+        >
+          <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">✕</span>
+          <span>Удалить</span>
+        </button>
+
+        <button
+          id="btn-save"
+          type="button"
+          onclick={onOpenSaveModal}
+          class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-5 py-2 transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-sm whitespace-nowrap cursor-pointer"
+        >
+          <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">💾</span>
+          <span class="inline-flex items-baseline gap-1.5">
+            <span>Сохранить и обезличить</span>
+            <span class="font-mono text-xs text-[#A8A29E] font-medium">({fileExtBadge})</span>
+          </span>
+        </button>
+      </div>
     </div>
 
-    <!-- Action Toolbar in Hero -->
-    <div class="flex flex-wrap items-center gap-3 self-start md:self-end shrink-0">
-      <button
-        id="btn-change-file-hero"
-        type="button"
-        onclick={handleSelectFile}
-        class="px-3.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold shadow-xs transition flex items-center gap-1.5 active:scale-[0.99] cursor-pointer"
-        title="Выбрать другой файл"
-      >
-        <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">📁</span>
-        <span>Сменить файл...</span>
-      </button>
-
-      <button
-        id="btn-close-file-hero"
-        type="button"
-        onclick={clearCurrentFile}
-        class="px-3 py-2 bg-white border border-[#E8E7E3] hover:border-rose-400 hover:text-rose-600 text-[#78716C] text-xs font-semibold shadow-xs transition flex items-center gap-1.5 active:scale-[0.99] cursor-pointer"
-        title="Удалить прикрепленный файл"
-      >
-        <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">✕</span>
-        <span>Удалить</span>
-      </button>
-
-      <button
-        id="btn-save"
-        type="button"
-        onclick={onOpenSaveModal}
-        class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-5 py-2 transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-sm whitespace-nowrap cursor-pointer"
-      >
-        <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">💾</span>
-        <span class="inline-flex items-baseline gap-1.5">
-          <span>Сохранить и обезличить</span>
-          <span class="font-mono text-xs text-[#A8A29E] font-medium">({fileExtBadge})</span>
-        </span>
-      </button>
-    </div>
+    <!-- Description underneath -->
+    <p id="file-desc-text" class="text-sm text-[#78716C] max-w-3xl leading-relaxed">
+      {descLabel}
+    </p>
   </div>
 {/if}
