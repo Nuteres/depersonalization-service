@@ -586,6 +586,67 @@ func TestInspectODT(t *testing.T) {
 	}
 }
 
+func TestODT_DocumentBlocks_And_Headings(t *testing.T) {
+	svc := inspector.New()
+	info, err := svc.Inspect(context.Background(), "../../../mock_documents/02_trudovoy_dogovor_rukovoditel/02_trudovoy_dogovor_rukovoditel.odt")
+	if err != nil {
+		t.Skip("skipping mock document test if file not found")
+		return
+	}
+
+	foundHeading := false
+	foundFIOVoronov := false
+	foundAddressTverskaya := false
+	foundDateStart := false
+
+	for _, b := range info.DocumentBlocks {
+		if b.Type == "heading" {
+			foundHeading = true
+		}
+		for _, seg := range b.Segments {
+			if seg.IsEntity && seg.Type == "FIO" && strings.Contains(seg.Original, "Воронова") {
+				foundFIOVoronov = true
+			}
+			if seg.IsEntity && seg.Type == "ADDRESS" && strings.Contains(seg.Original, "1-я Тверская-Ямская") {
+				foundAddressTverskaya = true
+				if strings.Contains(seg.Original, "Дата начала") {
+					t.Errorf("address should not swallow 'Дата начала', got: %s", seg.Original)
+				}
+			}
+			if seg.IsEntity && seg.Type == "DATE" && seg.Original == "08.09.2026" {
+				foundDateStart = true
+			}
+		}
+	}
+
+	if !foundHeading {
+		t.Errorf("expected heading blocks in ODT, found none")
+	}
+	if !foundFIOVoronov {
+		t.Errorf("expected FIO Воронова Сергея Алексеевича to be detected in ODT")
+	}
+	if !foundAddressTverskaya {
+		t.Errorf("expected address on 1-я Тверская-Ямская to be detected in ODT")
+	}
+	if !foundDateStart {
+		t.Errorf("expected date 08.09.2026 to be detected in ODT")
+	}
+
+	info2, err := svc.Inspect(context.Background(), "../../../mock_documents/05_akt_priema_peredachi_tmc/05_akt_priema_peredachi_tmc.odt")
+	if err != nil {
+		return
+	}
+	for _, b := range info2.DocumentBlocks {
+		if b.Type == "table" && b.Table != nil {
+			for rIdx, r := range b.Table.Rows {
+				if r.IsHeader {
+					t.Errorf("row %d in equipment specification table should not be marked as header", rIdx)
+				}
+			}
+		}
+	}
+}
+
 func buildTestPDF(contentStream string) []byte {
 	var b bytes.Buffer
 	b.WriteString("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")

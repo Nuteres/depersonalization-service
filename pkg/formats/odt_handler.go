@@ -43,7 +43,8 @@ type odtTextNode struct {
 }
 
 type odtParagraph struct {
-	nodes []odtTextNode
+	nodes     []odtTextNode
+	isHeading bool
 }
 
 type odtCell struct {
@@ -51,7 +52,8 @@ type odtCell struct {
 }
 
 type odtRow struct {
-	cells []odtCell
+	cells    []odtCell
+	isHeader bool
 }
 
 type odtTable struct {
@@ -62,6 +64,7 @@ type odtBlockType int
 
 const (
 	odtBlockTypeParagraph odtBlockType = iota
+	odtBlockTypeHeading
 	odtBlockTypeTable
 )
 
@@ -78,6 +81,7 @@ func parseODTXML(data []byte) ([]odtBlock, error) {
 	var blocks []odtBlock
 	var curPara *odtParagraph
 	inParaDepth := 0
+	inHeaderRowsDepth := 0
 
 	tblDepth := 0
 	trDepth := 0
@@ -100,14 +104,16 @@ func parseODTXML(data []byte) ([]odtBlock, error) {
 
 		switch t := tok.(type) {
 		case xml.StartElement:
-			if t.Name.Local == "table" {
+			if t.Name.Local == "table-header-rows" {
+				inHeaderRowsDepth++
+			} else if t.Name.Local == "table" {
 				if tblDepth == 0 {
 					curTable = odtTable{}
 				}
 				tblDepth++
 			} else if t.Name.Local == "table-row" {
 				if tblDepth > 0 && trDepth == 0 {
-					curRow = odtRow{}
+					curRow = odtRow{isHeader: inHeaderRowsDepth > 0}
 				}
 				trDepth++
 			} else if t.Name.Local == "table-cell" {
@@ -117,7 +123,7 @@ func parseODTXML(data []byte) ([]odtBlock, error) {
 				tcDepth++
 			} else if (t.Name.Local == "p" || t.Name.Local == "h") && (t.Name.Space == "urn:oasis:names:tc:opendocument:xmlns:text:1.0" || strings.HasPrefix(t.Name.Space, "http") || t.Name.Space == "" || t.Name.Space == "text") {
 				if inParaDepth == 0 {
-					curPara = &odtParagraph{}
+					curPara = &odtParagraph{isHeading: (t.Name.Local == "h")}
 				}
 				inParaDepth++
 			} else if inParaDepth > 0 && (t.Name.Local == "line-break" || t.Name.Local == "tab") {
@@ -144,13 +150,19 @@ func parseODTXML(data []byte) ([]odtBlock, error) {
 					if tblDepth > 0 && tcDepth > 0 {
 						curCell.paragraphs = append(curCell.paragraphs, p)
 					} else {
+						bType := odtBlockTypeParagraph
+						if p.isHeading {
+							bType = odtBlockTypeHeading
+						}
 						blocks = append(blocks, odtBlock{
-							blockType: odtBlockTypeParagraph,
+							blockType: bType,
 							paragraph: p,
 						})
 					}
 					curPara = nil
 				}
+			} else if t.Name.Local == "table-header-rows" {
+				inHeaderRowsDepth--
 			} else if t.Name.Local == "table-cell" {
 				tcDepth--
 				if tcDepth == 0 && tblDepth > 0 && trDepth > 0 {
@@ -192,7 +204,7 @@ func parseODTXML(data []byte) ([]odtBlock, error) {
 func extractODTParagraphsFromBlocks(blocks []odtBlock) []odtParagraph {
 	var paras []odtParagraph
 	for _, b := range blocks {
-		if b.blockType == odtBlockTypeParagraph {
+		if b.blockType == odtBlockTypeParagraph || b.blockType == odtBlockTypeHeading {
 			paras = append(paras, b.paragraph)
 		} else if b.blockType == odtBlockTypeTable {
 			for _, row := range b.table.rows {
@@ -253,7 +265,7 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 		isMainBody := (f.Name == "content.xml")
 
 		for _, b := range blocks {
-			if b.blockType == odtBlockTypeParagraph {
+			if b.blockType == odtBlockTypeParagraph || b.blockType == odtBlockTypeHeading {
 				if len(b.paragraph.nodes) == 0 {
 					continue
 				}
@@ -291,8 +303,13 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 						Segments: segments,
 					})
 
+					blockType := "paragraph"
+					if b.blockType == odtBlockTypeHeading {
+						blockType = "heading"
+					}
+
 					documentBlocks = append(documentBlocks, TextDocumentBlock{
-						Type:     "paragraph",
+						Type:     blockType,
 						Index:    len(documentBlocks) + 1,
 						Segments: segments,
 					})
@@ -346,7 +363,8 @@ func (h *ODTHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []D
 					}
 					if isMainBody {
 						rowPreviews = append(rowPreviews, TextTableRowPreview{
-							Cells: cellPreviews,
+							IsHeader: r.isHeader,
+							Cells:    cellPreviews,
 						})
 					}
 				}

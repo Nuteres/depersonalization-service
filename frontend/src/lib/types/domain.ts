@@ -45,6 +45,7 @@ export interface TextTableCellPreview {
 }
 
 export interface TextTableRowPreview {
+  isHeader?: boolean;
   cells: TextTableCellPreview[];
 }
 
@@ -53,7 +54,7 @@ export interface TextTablePreview {
 }
 
 export interface TextDocumentBlock {
-  type: 'paragraph' | 'table' | string;
+  type: 'paragraph' | 'heading' | 'table' | string;
   index: number;
   segments?: TextParagraphSegment[];
   table?: TextTablePreview;

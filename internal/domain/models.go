@@ -75,7 +75,8 @@ type TextTableCellPreview struct {
 
 // TextTableRowPreview represents a table row for Word-like preview.
 type TextTableRowPreview struct {
-	Cells []TextTableCellPreview `json:"cells"`
+	IsHeader bool                   `json:"isHeader,omitempty"`
+	Cells    []TextTableCellPreview `json:"cells"`
 }
 
 // TextTablePreview represents a structured table for Word-like preview.

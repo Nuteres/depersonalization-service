@@ -86,8 +86,8 @@ var (
 
 	docxEmail            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})`)
 
-	docxFIOPatronymic    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична|оглы|кызы|уулу|инична))`)
-	docxFIOPrefixed      = regexp.MustCompile(`(?i:(?:сотрудник|клиент|пациент|фио|работник|физлицо|подписал|сдал|принял|ип|арендодатель|арендатор|(?:гражданин|гражданка)(?:\s+(?:российской\s+федерации|рф))?|предприниматель|директор|гендиректор|руководитель|представитель)[:\s]+)([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})`)
+	docxFIOPatronymic    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:овича|евича|ича|овны|евны|ичны|овичу|евичу|ичу|овне|евне|ичне|овичем|евичем|ичем|овной|евной|ичной|овиче|евиче|иче|ович|евич|ич|овна|евна|ична|оглы|кызы|уулу|инична))`)
+	docxFIOPrefixed      = regexp.MustCompile(`(?i:(?:сотрудник(?:а|у|ом|е)?|клиент(?:а|у|ом|е)?|пациент(?:а|у|ом|е)?|фио|работник(?:а|у|ом|е)?|физлиц(?:о|а|у|ом|е)|подписал|сдал|принял|ип|арендодател(?:ь|я|ю|ем|е)|арендатор(?:а|у|ом|е)?|(?:гражданин(?:а|у|ом|е)?|гражданк(?:а|и|е|у|ой))(?:\s+(?:российской\s+федерации|рф))?|предпринимател(?:ь|я|ю|ем|е)|директор(?:а|у|ом|е)?|гендиректор(?:а|у|ом|е)?|руководител(?:ь|я|ю|ем|е)|представител(?:ь|я|ю|ем|е))[:\s]+)([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})`)
 	docxFIOInitials1     = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ]\.\s*[А-ЯЁ]\.|\s+[А-ЯЁ]\.))`)
 	docxFIOInitials2     = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:[А-ЯЁ]\.\s*[А-ЯЁ]\.|\s*[А-ЯЁ]\.)\s+[А-ЯЁ][а-яё]+)`)
 
@@ -132,12 +132,31 @@ func trimDocxAddress(s string) string {
 		", именуем", ", Именуем", ", р/с", ", Р/с", ", счет", ", Счет",
 		", проживающ", ", Проживающ", ", зарегистрирован", ", Зарегистрирован",
 		", адрес", ", Адрес", ", место", ", Место",
+		". Дата", ". дата", ". Срок", ". срок", ". Оплата", ". оплата",
+		". Начало", ". начало", ". Должность", ". должность",
+		". Телефон", ". телефон", ". Тел", ". тел", ". Email", ". email",
+		". ИНН", ". инн", ". СНИЛС", ". снилс", ". Паспорт", ". паспорт",
+		". Режим", ". режим", ". Работник", ". работник",
+		". Работодатель", ". работодатель", ". Условия", ". условия",
+		"; ИНН", "; СНИЛС", "; Тел", "; Email", "; Паспорт",
 	}
 	for _, marker := range stopMarkers {
 		if idx := strings.Index(s, marker); idx != -1 {
 			s = strings.TrimSpace(s[:idx])
 		}
 	}
+
+	// Terminate if sentence ends: ". [Capitalized non-address word]"
+	sentenceBreakRe := regexp.MustCompile(`\.\s+([А-ЯЁ][а-яё]+)`)
+	if loc := sentenceBreakRe.FindStringSubmatchIndex(s); len(loc) >= 4 {
+		word := s[loc[2]:loc[3]]
+		wordUpper := strings.ToUpper(word)
+		// Check if it's not a common street or city name word
+		if !docxNonFIOKeywords[wordUpper] && !strings.HasPrefix(wordUpper, "УЛ") && !strings.HasPrefix(wordUpper, "ПРОСП") {
+			s = strings.TrimSpace(s[:loc[0]])
+		}
+	}
+
 	return strings.TrimRight(s, " ,.-—\t")
 }
 
@@ -502,7 +521,8 @@ type docxCell struct {
 }
 
 type docxRow struct {
-	cells []docxCell
+	cells    []docxCell
+	isHeader bool
 }
 
 type docxTable struct {
@@ -580,6 +600,8 @@ func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 					curRow = docxRow{}
 				}
 				trDepth++
+			} else if isWordElement(t.Name, "tblHeader") && trDepth > 0 {
+				curRow.isHeader = true
 			} else if isWordElement(t.Name, "tc") {
 				if tblDepth > 0 && trDepth > 0 && tcDepth == 0 {
 					curCell = docxCell{}
@@ -931,7 +953,8 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 					}
 					if isBodyOrNotes {
 						rowPreviews = append(rowPreviews, TextTableRowPreview{
-							Cells: cellPreviews,
+							IsHeader: r.isHeader,
+							Cells:    cellPreviews,
 						})
 					}
 				}

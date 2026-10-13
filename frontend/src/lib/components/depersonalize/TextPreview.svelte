@@ -115,7 +115,7 @@
 
     if (documentBlocks.length > 0) {
       documentBlocks.forEach((block, bIdx) => {
-        if (block.type === 'paragraph' && block.segments) {
+        if ((block.type === 'paragraph' || block.type === 'heading') && block.segments) {
           block.segments.forEach((seg, sIdx) => {
             if (seg.isEntity) {
               gIdx++;
@@ -315,7 +315,7 @@
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            <span>Вид документа (Word)</span>
+            <span>Вид документа</span>
           </button>
           <button
             type="button"
@@ -447,95 +447,78 @@
           class="mx-auto w-full max-w-3xl bg-white shadow-lg border border-[#D5D3CC] p-6 sm:p-10 md:p-12 text-[#1C1917] font-sans text-[14px] sm:text-[15px] leading-[1.8] min-h-[300px] h-auto"
         >
           {#if documentBlocks.length > 0}
-            <!-- Structured Document Blocks: Paragraphs and Word Tables -->
+            <!-- Structured Document Blocks: Paragraphs, Headings and Tables -->
             <div class="space-y-3">
               {#each documentBlocks as block, bIdx}
-                {#if block.type === 'paragraph' && block.segments}
+                {#if block.type === 'heading' && block.segments}
+                  <h3 class="mt-5 mb-2 font-bold text-[16px] sm:text-[17px] text-[#1C1917] tracking-tight break-words">
+                    {#each block.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}{@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
+                        ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
+                        : !isBefore
+                        ? appState.processingMode === 'delete'
+                          ? 'bg-rose-100/95 text-rose-950 border-rose-400 hover:bg-rose-200'
+                          : 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
+                        : 'bg-amber-100/95 text-amber-950 border-amber-400 hover:bg-amber-200'}<button
+                        type="button"
+                        id="doc-entity-mark-{gIdx}"
+                        onmouseenter={(e) => handleMarkHover(e, seg)}
+                        onmouseleave={handleMarkLeave}
+                        onclick={() => {
+                          currentActiveChangeIdx = gIdx;
+                          toggleEntityType(seg.type || '');
+                        }}
+                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
+                        title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
+                      >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
+                  </h3>
+                {:else if block.type === 'paragraph' && block.segments}
                   <p class="mb-3 whitespace-pre-wrap leading-relaxed text-justify break-words">
-                    {#each block.segments as seg, sIdx}
-                      {#if !seg.isEntity}
-                        <span>{seg.text}</span>
-                      {:else}
-                        {@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}
-                        {@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}
-                        {@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}
-                        {@const markClass = isTypeDisabled
-                          ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
-                          : !isBefore
-                          ? appState.processingMode === 'delete'
-                            ? 'bg-rose-100/95 text-rose-950 border-rose-400 hover:bg-rose-200'
-                            : 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
-                          : 'bg-amber-100/95 text-amber-950 border-amber-400 hover:bg-amber-200'}
-                        
-                        <button
-                          type="button"
-                          id="doc-entity-mark-{gIdx}"
-                          onmouseenter={(e) => handleMarkHover(e, seg)}
-                          onmouseleave={handleMarkLeave}
-                          onclick={() => {
-                            currentActiveChangeIdx = gIdx;
-                            toggleEntityType(seg.type || '');
-                          }}
-                          class="inline px-1.5 py-0.5 mx-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
-                          title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
-                        >
-                          {#if isTypeDisabled}
-                            <span class="line-through decoration-stone-400">{seg.original || seg.text}</span>
-                          {:else if !isBefore}
-                            {appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}
-                          {:else}
-                            {seg.original || seg.text}
-                          {/if}
-                        </button>
-                      {/if}
-                    {/each}
+                    {#each block.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}{@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
+                        ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
+                        : !isBefore
+                        ? appState.processingMode === 'delete'
+                          ? 'bg-rose-100/95 text-rose-950 border-rose-400 hover:bg-rose-200'
+                          : 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
+                        : 'bg-amber-100/95 text-amber-950 border-amber-400 hover:bg-amber-200'}<button
+                        type="button"
+                        id="doc-entity-mark-{gIdx}"
+                        onmouseenter={(e) => handleMarkHover(e, seg)}
+                        onmouseleave={handleMarkLeave}
+                        onclick={() => {
+                          currentActiveChangeIdx = gIdx;
+                          toggleEntityType(seg.type || '');
+                        }}
+                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
+                        title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
+                      >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                   </p>
                 {:else if block.type === 'table' && block.table}
-                  <!-- Word Table Simulation -->
+                  <!-- Word/ODT Table Simulation -->
                   <div class="my-5 overflow-x-auto border border-[#D5D3CC] shadow-xs bg-white rounded-none">
                     <table class="w-full border-collapse text-left text-xs font-sans">
                       <tbody>
                         {#each block.table.rows as row, rIdx}
-                          <tr class="{rIdx === 0 ? 'bg-[#F5F4F0] font-semibold text-[#1C1917] border-b-2 border-[#D5D3CC]' : 'border-b border-[#E8E7E3] hover:bg-[#FAF9F5]/70'}">
+                          <tr class="{row.isHeader ? 'bg-[#F5F4F0] font-semibold text-[#1C1917] border-b-2 border-[#D5D3CC]' : 'border-b border-[#E8E7E3] hover:bg-[#FAF9F5]/70'}">
                             {#each row.cells as cell, cIdx}
                               <td class="p-2 sm:p-2.5 border-r border-[#E8E7E3] last:border-r-0 align-top break-words">
-                                {#each cell.segments as seg, sIdx}
-                                  {#if !seg.isEntity}
-                                    <span>{seg.text}</span>
-                                  {:else}
-                                    {@const gIdx = entityIndexMap[`${bIdx}_${rIdx}_${cIdx}_${sIdx}`] || 0}
-                                    {@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}
-                                    {@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}
-                                    {@const markClass = isTypeDisabled
-                                      ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
-                                      : !isBefore
-                                      ? appState.processingMode === 'delete'
-                                        ? 'bg-rose-100/95 text-rose-950 border-rose-400 hover:bg-rose-200'
-                                        : 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
-                                      : 'bg-amber-100/95 text-amber-950 border-amber-400 hover:bg-amber-200'}
-
-                                    <button
-                                      type="button"
-                                      id="doc-entity-mark-{gIdx}"
-                                      onmouseenter={(e) => handleMarkHover(e, seg)}
-                                      onmouseleave={handleMarkLeave}
-                                      onclick={() => {
-                                        currentActiveChangeIdx = gIdx;
-                                        toggleEntityType(seg.type || '');
-                                      }}
-                                      class="inline px-1 py-0.5 mx-0.5 rounded-[3px] border font-medium text-[12px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
-                                      title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
-                                    >
-                                      {#if isTypeDisabled}
-                                        <span class="line-through decoration-stone-400">{seg.original || seg.text}</span>
-                                      {:else if !isBefore}
-                                        {appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}
-                                      {:else}
-                                        {seg.original || seg.text}
-                                      {/if}
-                                    </button>
-                                  {/if}
-                                {/each}
+                                {#each cell.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${rIdx}_${cIdx}_${sIdx}`] || 0}{@const isTypeMatch = selectedEntityType === 'ALL' || seg.type === selectedEntityType}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
+                                    ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
+                                    : !isBefore
+                                    ? appState.processingMode === 'delete'
+                                      ? 'bg-rose-100/95 text-rose-950 border-rose-400 hover:bg-rose-200'
+                                      : 'bg-emerald-100/95 text-emerald-950 border-emerald-400 hover:bg-emerald-200'
+                                    : 'bg-amber-100/95 text-amber-950 border-amber-400 hover:bg-amber-200'}<button
+                                    type="button"
+                                    id="doc-entity-mark-{gIdx}"
+                                    onmouseenter={(e) => handleMarkHover(e, seg)}
+                                    onmouseleave={handleMarkLeave}
+                                    onclick={() => {
+                                      currentActiveChangeIdx = gIdx;
+                                      toggleEntityType(seg.type || '');
+                                    }}
+                                    class="inline px-1 py-0.5 rounded-[3px] border font-medium text-[12px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
+                                    title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
+                                  >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                               </td>
                             {/each}
                           </tr>
@@ -575,7 +558,7 @@
                           currentActiveChangeIdx = gIdx;
                           toggleEntityType(seg.type || '');
                         }}
-                        class="inline px-1.5 py-0.5 mx-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
+                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {isTypeMatch ? 'opacity-100' : 'opacity-40 grayscale'} hover:scale-[1.02]"
                         title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                       >
                         {#if isTypeDisabled}
