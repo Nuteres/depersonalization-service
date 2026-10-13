@@ -855,7 +855,7 @@ func TestInspect_UserMockXLS(t *testing.T) {
 }
 
 func TestInspect_UserMockPDF(t *testing.T) {
-	mockPath := filepath.Join("..", "..", "..", "Трудовой_договор_с_сотрудником_МОК.pdf")
+	mockPath := filepath.Join("..", "..", "..", "mock_documents", "05_akt_priema_peredachi_tmc", "05_akt_priema_peredachi_tmc.pdf")
 	if _, err := os.Stat(mockPath); err != nil {
 		t.Skip("mock pdf file not found, skipping")
 	}

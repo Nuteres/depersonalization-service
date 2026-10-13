@@ -5,7 +5,6 @@
 
   // View state
   let isBefore = $state(false); // false = Blackout Redacted, true = Original
-  let currentActiveChangeIdx = $state<number>(1);
   let hoveredEntity = $state<{
     type: string;
     original: string;
@@ -129,54 +128,7 @@
     return map;
   });
 
-  function scrollToEntity(globalIdx: number) {
-    if (globalIdx < 1 || globalIdx > allEntityMarks.length) return;
-    currentActiveChangeIdx = globalIdx;
-    const elem = document.getElementById(`pdf-entity-mark-${globalIdx}`);
-    if (elem) {
-      elem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      elem.classList.add('ring-4', 'ring-indigo-500/80', 'ring-offset-2');
-      setTimeout(() => {
-        elem.classList.remove('ring-4', 'ring-indigo-500/80', 'ring-offset-2');
-      }, 1800);
-    }
-  }
 
-  function nextChange() {
-    if (allEntityMarks.length === 0) return;
-    const currentPos = allEntityMarks.findIndex(
-      (m) => m.globalIndex === currentActiveChangeIdx
-    );
-    if (currentPos === -1 || currentPos >= allEntityMarks.length - 1) {
-      const first = allEntityMarks[0];
-      if (first) {
-        scrollToEntity(first.globalIndex);
-      }
-    } else {
-      const next = allEntityMarks[currentPos + 1];
-      if (next) {
-        scrollToEntity(next.globalIndex);
-      }
-    }
-  }
-
-  function prevChange() {
-    if (allEntityMarks.length === 0) return;
-    const currentPos = allEntityMarks.findIndex(
-      (m) => m.globalIndex === currentActiveChangeIdx
-    );
-    if (currentPos <= 0) {
-      const last = allEntityMarks[allEntityMarks.length - 1];
-      if (last) {
-        scrollToEntity(last.globalIndex);
-      }
-    } else {
-      const prev = allEntityMarks[currentPos - 1];
-      if (prev) {
-        scrollToEntity(prev.globalIndex);
-      }
-    }
-  }
 
   function handleMarkHover(event: MouseEvent, seg: TextParagraphSegment) {
     const target = event.currentTarget as HTMLElement;
@@ -212,39 +164,15 @@
         <span
           class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
         >
-          Предпросмотр PDF (Векторные плашки Blackout)
+          Предпросмотр PDF
         </span>
         <span class="text-xs text-[#78716C] font-mono">
           ▪ {allEntityMarks.length} плашек ПДн
         </span>
       </div>
 
-      <!-- Controls Right: Change Navigator & Before/After Toggle -->
+      <!-- Controls Right: Before/After Toggle -->
       <div class="flex items-center space-x-3">
-        {#if allEntityMarks.length > 0}
-          <div class="inline-flex items-center border border-[#E8E7E3] bg-white text-xs font-mono shadow-2xs">
-            <button
-              type="button"
-              onclick={prevChange}
-              title="Предыдущая плашка"
-              class="px-2.5 py-1 text-[#57534E] hover:text-[#1C1917] hover:bg-[#FAF9F5] transition cursor-pointer border-r border-[#E8E7E3] select-none"
-            >
-              ◀
-            </button>
-            <span class="px-2.5 py-1 text-[11px] text-[#1C1917] font-medium select-none whitespace-nowrap">
-              {currentActiveChangeIdx} / {allEntityMarks.length}
-            </span>
-            <button
-              type="button"
-              onclick={nextChange}
-              title="Следующая плашка"
-              class="px-2.5 py-1 text-[#57534E] hover:text-[#1C1917] hover:bg-[#FAF9F5] transition cursor-pointer border-l border-[#E8E7E3] select-none"
-            >
-              ▶
-            </button>
-          </div>
-        {/if}
-
         <!-- Toggle: Cleaned vs Original -->
         <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium shadow-2xs">
           <button
@@ -255,7 +183,7 @@
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
             <span class="w-1.5 h-1.5 rounded-none {!isBefore ? 'bg-emerald-400' : 'bg-neutral-400'}"></span>
-            <span>С плашками [ ПДн СКРЫТО ]</span>
+            <span>С плашками</span>
           </button>
           <button
             type="button"
@@ -283,9 +211,9 @@
         >
           <!-- Paragraphs Render Area -->
           {#if paragraphPreviews.length > 0}
-            <div class="space-y-3">
+            <div class="space-y-1">
               {#each paragraphPreviews as para, pIdx}
-                <p class="mb-3 whitespace-pre-wrap leading-relaxed text-justify break-words">
+                <p class="mb-1.5 whitespace-pre-wrap leading-relaxed text-left break-words">
                   {#each para.segments as seg, sIdx}
                     {#if seg.isEntity}
                       {@const globalIdx = entityIndexMap[`${pIdx}_${sIdx}`]}
@@ -296,7 +224,7 @@
                         <!-- Original text mode -->
                         <span
                           id={`pdf-entity-mark-${globalIdx}`}
-                          class="font-semibold bg-amber-50 text-amber-900 px-1 py-0.5 rounded-xs border-b-2 border-amber-500 transition-colors"
+                          class="font-semibold bg-amber-50 text-amber-900 px-1 py-0.5 rounded-none border-b-2 border-amber-500 transition-colors"
                         >
                           {seg.original || seg.text}
                         </span>
@@ -308,10 +236,10 @@
                           onclick={() => toggleEntityType(entType)}
                           onmouseenter={(e) => handleMarkHover(e, seg)}
                           onmouseleave={handleMarkLeave}
-                          class="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 bg-stone-100 border border-dashed border-stone-400 text-stone-700 font-mono text-xs rounded transition-all cursor-pointer hover:bg-stone-200 hover:border-stone-600 align-baseline select-none"
+                          class="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 bg-stone-100 border border-dashed border-stone-400 text-stone-700 font-mono text-xs rounded-none transition-all cursor-pointer hover:bg-stone-200 hover:border-stone-600 align-baseline select-none"
                         >
                           <span class="font-sans font-medium text-stone-900">{seg.original || seg.text}</span>
-                          <span class="text-[9px] text-stone-500 font-mono bg-stone-200 px-1 rounded">
+                          <span class="text-[9px] text-stone-500 font-mono bg-stone-200 px-1 rounded-none">
                             ▫ Без плашки
                           </span>
                         </button>
@@ -323,11 +251,11 @@
                           onclick={() => toggleEntityType(entType)}
                           onmouseenter={(e) => handleMarkHover(e, seg)}
                           onmouseleave={handleMarkLeave}
-                          class="inline-flex items-center gap-1.5 px-2 py-0.5 mx-0.5 bg-[#1C1917] hover:bg-neutral-800 text-white font-mono text-[11px] font-bold rounded shadow-xs transition-all cursor-pointer hover:ring-2 hover:ring-indigo-500 hover:ring-offset-1 align-baseline select-none"
+                          class="inline-flex items-center gap-1.5 px-2 py-0.5 mx-0.5 bg-[#1C1917] hover:bg-neutral-800 text-white font-mono text-[11px] font-bold rounded-none shadow-xs transition-all cursor-pointer hover:ring-2 hover:ring-indigo-500 hover:ring-offset-1 align-baseline select-none"
                         >
                           <span class="tracking-wider">[ ПДн СКРЫТО ]</span>
                           <span
-                            class="text-[9px] uppercase px-1 py-0.2 bg-neutral-700 text-neutral-200 font-mono font-normal rounded-xs"
+                            class="text-[9px] uppercase px-1 py-0.2 bg-neutral-700 text-neutral-200 font-mono font-normal rounded-none"
                           >
                             {getEntityTypeName(entType)}
                           </span>
@@ -354,15 +282,15 @@
     <!-- Hover Floating Tooltip on Entity Blackout Plate -->
     {#if hoveredEntity}
       <div
-        class="fixed z-50 transform -translate-x-1/2 -translate-y-full pointer-events-none bg-[#1C1917] text-white p-3 shadow-2xl border border-neutral-700 text-xs rounded max-w-xs transition-opacity duration-150"
+        class="fixed z-50 transform -translate-x-1/2 -translate-y-full pointer-events-none bg-[#1C1917] text-white p-3 shadow-2xl border border-neutral-700 text-xs rounded-none min-w-[280px] max-w-sm transition-opacity duration-150"
         style="left: {hoveredEntity.x}px; top: {hoveredEntity.y}px;"
       >
-        <div class="flex items-center justify-between gap-3 mb-1.5 pb-1 border-b border-neutral-700">
+        <div class="flex items-center justify-between gap-3 mb-2 pb-1.5 border-b border-neutral-700">
           <span class="font-bold text-[11px] uppercase tracking-wider text-emerald-400 font-mono">
             {getEntityTypeName(hoveredEntity.type)}
           </span>
           <span
-            class="text-[10px] font-mono px-1.5 py-0.2 rounded {hoveredEntity.isDisabled
+            class="text-[10px] font-mono px-1.5 py-0.5 rounded-none {hoveredEntity.isDisabled
               ? 'bg-stone-700 text-stone-300'
               : 'bg-emerald-950 text-emerald-300 border border-emerald-700'}"
           >
@@ -370,7 +298,7 @@
           </span>
         </div>
 
-        <div class="space-y-1 font-mono text-[11px] leading-tight">
+        <div class="space-y-1.5 font-mono text-[11px] leading-snug">
           <div class="text-neutral-400">
             Исходное: <span class="text-neutral-100 font-semibold">{hoveredEntity.original}</span>
           </div>
@@ -382,9 +310,9 @@
           </div>
         </div>
 
-        <div class="mt-2 pt-1 border-t border-neutral-800 text-[10px] text-neutral-400 flex items-center justify-between">
+        <div class="mt-2.5 pt-1.5 border-t border-neutral-800 text-[10px] text-neutral-400 flex items-center gap-1.5">
+          <span class="text-emerald-400">💡</span>
           <span>Нажмите на плашку для переключения</span>
-          <span class="text-emerald-400 font-mono">Клик ↲</span>
         </div>
       </div>
     {/if}
