@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -908,7 +909,10 @@ func isContentStream(dictHeader []byte) bool {
 	if bytes.Contains(dictHeader, []byte("/Type /FontDescriptor")) || bytes.Contains(dictHeader, []byte("/Type/FontDescriptor")) {
 		return false
 	}
-	if bytes.Contains(dictHeader, []byte("/FontFile")) {
+	if bytes.Contains(dictHeader, []byte("/FontFile")) || bytes.Contains(dictHeader, []byte("/Length1")) {
+		return false
+	}
+	if bytes.Contains(dictHeader, []byte("/Type /CMap")) || bytes.Contains(dictHeader, []byte("/Type/CMap")) {
 		return false
 	}
 	if bytes.Contains(dictHeader, []byte("/Type /Metadata")) || bytes.Contains(dictHeader, []byte("/Type/Metadata")) {
@@ -1170,3 +1174,599 @@ func writePDF(w io.Writer, objects []pdfObject, rootRef string) error {
 	_, err := w.Write(buf.Bytes())
 	return err
 }
+
+type pdfCMap struct {
+	mapping   map[uint32]string
+	codeBytes int
+}
+
+func parseCMapStream(data []byte) *pdfCMap {
+	cmap := &pdfCMap{
+		mapping:   make(map[uint32]string),
+		codeBytes: 2,
+	}
+
+	reCodeSpace := regexp.MustCompile(`<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>`)
+	csIdx := bytes.Index(data, []byte("begincodespacerange"))
+	if csIdx != -1 {
+		csEnd := bytes.Index(data[csIdx:], []byte("endcodespacerange"))
+		if csEnd != -1 {
+			csBlock := data[csIdx : csIdx+csEnd]
+			if m := reCodeSpace.FindSubmatch(csBlock); len(m) > 1 {
+				cmap.codeBytes = len(m[1]) / 2
+				if cmap.codeBytes <= 0 {
+					cmap.codeBytes = 2
+				}
+			}
+		}
+	}
+
+	reBfCharSection := regexp.MustCompile(`(?s)\d+\s+beginbfchar\s+(.*?)\s+endbfchar`)
+	for _, m := range reBfCharSection.FindAllSubmatch(data, -1) {
+		lines := strings.Split(string(m[1]), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			rePairs := regexp.MustCompile(`<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>`)
+			for _, p := range rePairs.FindAllStringSubmatch(line, -1) {
+				srcHex := p[1]
+				dstHex := p[2]
+				srcVal, err := strconv.ParseUint(srcHex, 16, 32)
+				if err == nil {
+					cmap.mapping[uint32(srcVal)] = decodeHexUTF16(dstHex)
+				}
+			}
+		}
+	}
+
+	reBfRangeSection := regexp.MustCompile(`(?s)\d+\s+beginbfrange\s+(.*?)\s+endbfrange`)
+	for _, m := range reBfRangeSection.FindAllSubmatch(data, -1) {
+		lines := strings.Split(string(m[1]), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			if strings.Contains(line, "[") {
+				reArr := regexp.MustCompile(`<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\[(.*?)\]`)
+				if arrMatch := reArr.FindStringSubmatch(line); len(arrMatch) > 3 {
+					startVal, err1 := strconv.ParseUint(arrMatch[1], 16, 32)
+					endVal, err2 := strconv.ParseUint(arrMatch[2], 16, 32)
+					if err1 == nil && err2 == nil {
+						reHex := regexp.MustCompile(`<([0-9A-Fa-f]+)>`)
+						dstMatches := reHex.FindAllStringSubmatch(arrMatch[3], -1)
+						for i, dm := range dstMatches {
+							srcCode := uint32(startVal) + uint32(i)
+							if srcCode <= uint32(endVal) {
+								cmap.mapping[srcCode] = decodeHexUTF16(dm[1])
+							}
+						}
+					}
+				}
+				continue
+			}
+
+			reRange := regexp.MustCompile(`<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>`)
+			if rMatch := reRange.FindStringSubmatch(line); len(rMatch) > 3 {
+				startVal, err1 := strconv.ParseUint(rMatch[1], 16, 32)
+				endVal, err2 := strconv.ParseUint(rMatch[2], 16, 32)
+				dstStartVal, err3 := strconv.ParseUint(rMatch[3], 16, 32)
+				if err1 == nil && err2 == nil && err3 == nil {
+					count := int(endVal - startVal)
+					for i := 0; i <= count; i++ {
+						srcCode := uint32(startVal) + uint32(i)
+						dstCode := uint32(dstStartVal) + uint32(i)
+						cmap.mapping[srcCode] = string(utf16.Decode([]uint16{uint16(dstCode)}))
+					}
+				}
+			}
+		}
+	}
+
+	return cmap
+}
+
+func decodeHexUTF16(hexStr string) string {
+	if len(hexStr)%2 != 0 {
+		hexStr = "0" + hexStr
+	}
+	raw, err := hex.DecodeString(hexStr)
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+	if len(raw)%2 != 0 {
+		raw = append([]byte{0}, raw...)
+	}
+	u16s := make([]uint16, len(raw)/2)
+	for i := 0; i < len(u16s); i++ {
+		u16s[i] = binary.BigEndian.Uint16(raw[i*2 : i*2+2])
+	}
+	return string(utf16.Decode(u16s))
+}
+
+func (cm *pdfCMap) decodeHex(hexStr string) string {
+	if cm == nil || len(cm.mapping) == 0 {
+		return decodeHexUTF16(hexStr)
+	}
+	var sb strings.Builder
+	step := cm.codeBytes * 2
+	if step <= 0 {
+		step = 4
+	}
+	for i := 0; i+step <= len(hexStr); i += step {
+		chunk := hexStr[i : i+step]
+		code, err := strconv.ParseUint(chunk, 16, 32)
+		if err == nil {
+			if s, ok := cm.mapping[uint32(code)]; ok {
+				sb.WriteString(s)
+			} else {
+				if code == 3 || code == 32 {
+					sb.WriteString(" ")
+				}
+			}
+		}
+	}
+	return sb.String()
+}
+
+func unescapePDFString(s string) string {
+	s = strings.ReplaceAll(s, `\n`, "\n")
+	s = strings.ReplaceAll(s, `\r`, "")
+	s = strings.ReplaceAll(s, `\t`, " ")
+	s = strings.ReplaceAll(s, `\(`, "(")
+	s = strings.ReplaceAll(s, `\)`, ")")
+	s = strings.ReplaceAll(s, `\\`, "\\")
+	return s
+}
+
+func decodePDFString(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	if len(raw) >= 2 && raw[0] == 0xFE && raw[1] == 0xFF {
+		u16 := make([]uint16, (len(raw)-2)/2)
+		for j := 0; j < len(u16); j++ {
+			u16[j] = binary.BigEndian.Uint16(raw[2+j*2:])
+		}
+		return string(utf16.Decode(u16))
+	}
+	if utf8.Valid(raw) {
+		return string(raw)
+	}
+	hasHighBytes := false
+	for _, b := range raw {
+		if b >= 0x80 {
+			hasHighBytes = true
+			break
+		}
+	}
+	if hasHighBytes {
+		if cp1251, err := charmap.Windows1251.NewDecoder().Bytes(raw); err == nil && utf8.Valid(cp1251) {
+			return string(cp1251)
+		}
+	}
+	return string(raw)
+}
+
+func isSectionOrBulletStart(s string) bool {
+	if strings.HasPrefix(s, "- ") || strings.HasPrefix(s, "• ") || strings.HasPrefix(s, "– ") || strings.HasPrefix(s, "— ") {
+		return true
+	}
+	reSection := regexp.MustCompile(`^\d+(\.\d+)*\.?\s+`)
+	return reSection.MatchString(s)
+}
+
+type pdfLine struct {
+	text string
+	page int
+	y    float64
+	dy   float64
+}
+
+// ExtractPDFParagraphs extracts clean, ordered text paragraphs from a PDF document,
+// resolving ToUnicode CMaps, font resources, XObject forms, and spatial coordinates.
+func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
+	if !bytes.HasPrefix(pdfBytes, []byte("%PDF-")) {
+		return 0, nil, errors.New("invalid PDF: missing %PDF- header")
+	}
+
+	objects, _, err := parsePDF(pdfBytes)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	objMap := make(map[int]*pdfObject, len(objects))
+	for i := range objects {
+		objMap[objects[i].ID] = &objects[i]
+	}
+
+	// 1. Parse all ToUnicode CMaps
+	cmaps := make(map[int]*pdfCMap)
+	for id, obj := range objMap {
+		if !obj.HasStream || len(obj.StreamData) == 0 {
+			continue
+		}
+		streamData := obj.StreamData
+		if obj.Compressed {
+			zr, err := zlib.NewReader(bytes.NewReader(streamData))
+			if err == nil {
+				decomp, readErr := io.ReadAll(zr)
+				_ = zr.Close()
+				if readErr == nil {
+					streamData = decomp
+				}
+			}
+		}
+		if bytes.Contains(streamData, []byte("begincmap")) {
+			cmaps[id] = parseCMapStream(streamData)
+		}
+	}
+
+	// 2. Map Font Names (/F1, /TT1, etc.) to CMaps
+	fontCMaps := make(map[string]*pdfCMap)
+	reFontInRes := regexp.MustCompile(`/([A-Za-z0-9_-]+)\s+(\d+)\s+0\s+R`)
+	reFontDict := regexp.MustCompile(`(?s)/Font\s*<<([^>]*)>>`)
+	reToUnicode := regexp.MustCompile(`/ToUnicode\s+(\d+)\s+0\s+R`)
+
+	for _, obj := range objMap {
+		if fm := reFontDict.FindStringSubmatch(string(obj.DictHeader)); len(fm) > 1 {
+			for _, item := range reFontInRes.FindAllStringSubmatch(fm[1], -1) {
+				fontName := item[1]
+				fontObjID, _ := strconv.Atoi(item[2])
+				if fObj, ok := objMap[fontObjID]; ok {
+					if tuMatch := reToUnicode.FindStringSubmatch(string(fObj.DictHeader)); len(tuMatch) > 1 {
+						tuID, _ := strconv.Atoi(tuMatch[1])
+						if cm, ok := cmaps[tuID]; ok {
+							fontCMaps[fontName] = cm
+						}
+					}
+				}
+			}
+		}
+	}
+
+	var defaultCMap *pdfCMap
+	for _, cm := range cmaps {
+		defaultCMap = cm
+		break
+	}
+
+	// 3. Traverse Page Tree: Catalog -> Pages -> Page
+	type pageEntry struct {
+		num         int
+		contentRefs []int
+	}
+	var pages []pageEntry
+
+	rePagesRef := regexp.MustCompile(`/Pages\s+(\d+)\s+0\s+R`)
+	reKids := regexp.MustCompile(`(?s)/Kids\s*\[(.*?)\]`)
+	reRef := regexp.MustCompile(`(\d+)\s+0\s+R`)
+	reContents := regexp.MustCompile(`/Contents\s+(\d+)\s+0\s+R`)
+	reContentsArr := regexp.MustCompile(`(?s)/Contents\s*\[(.*?)\]`)
+	reResRef := regexp.MustCompile(`/Resources\s+(\d+)\s+0\s+R`)
+	reXObjectDict := regexp.MustCompile(`(?s)/XObject\s*<<([^>]*)>>`)
+
+	rootID := 0
+	reRoot := regexp.MustCompile(`/Root\s+(\d+)\s+0\s+R`)
+	if rm := reRoot.FindSubmatch(pdfBytes); len(rm) > 1 {
+		rootID, _ = strconv.Atoi(string(rm[1]))
+	}
+
+	pagesRootID := 0
+	if rootObj, ok := objMap[rootID]; ok {
+		if pm := rePagesRef.FindStringSubmatch(string(rootObj.DictHeader)); len(pm) > 1 {
+			pagesRootID, _ = strconv.Atoi(pm[1])
+		}
+	}
+
+	visitedPages := make(map[int]bool)
+	var collectPages func(nodeID int)
+	collectPages = func(nodeID int) {
+		if visitedPages[nodeID] {
+			return
+		}
+		visitedPages[nodeID] = true
+		node, ok := objMap[nodeID]
+		if !ok {
+			return
+		}
+		dictStr := string(node.DictHeader)
+		isPage := strings.Contains(dictStr, "/Type /Page\b") || strings.Contains(dictStr, "/Type/Page\b") ||
+			(!strings.Contains(dictStr, "/Type /Pages") && !strings.Contains(dictStr, "/Type/Pages") && strings.Contains(dictStr, "/Contents"))
+
+		if isPage {
+			var cRefs []int
+			if cmArr := reContentsArr.FindStringSubmatch(dictStr); len(cmArr) > 1 {
+				for _, r := range reRef.FindAllStringSubmatch(cmArr[1], -1) {
+					cID, _ := strconv.Atoi(r[1])
+					cRefs = append(cRefs, cID)
+				}
+			} else if cm := reContents.FindStringSubmatch(dictStr); len(cm) > 1 {
+				cID, _ := strconv.Atoi(cm[1])
+				cRefs = append(cRefs, cID)
+			}
+
+			resDict := dictStr
+			if rrm := reResRef.FindStringSubmatch(dictStr); len(rrm) > 1 {
+				rID, _ := strconv.Atoi(rrm[1])
+				if rObj, ok := objMap[rID]; ok {
+					resDict += " " + string(rObj.DictHeader)
+				}
+			}
+			if xm := reXObjectDict.FindStringSubmatch(resDict); len(xm) > 1 {
+				for _, xr := range reRef.FindAllStringSubmatch(xm[1], -1) {
+					xID, _ := strconv.Atoi(xr[1])
+					if xObj, ok := objMap[xID]; ok {
+						xDict := string(xObj.DictHeader)
+						if strings.Contains(xDict, "/Subtype /Form") || strings.Contains(xDict, "/Subtype/Form") || bytes.Contains(xObj.StreamData, []byte("BT")) {
+							cRefs = append(cRefs, xID)
+						}
+					}
+				}
+			}
+
+			pages = append(pages, pageEntry{num: len(pages) + 1, contentRefs: cRefs})
+			return
+		}
+
+		if km := reKids.FindStringSubmatch(dictStr); len(km) > 1 {
+			for _, r := range reRef.FindAllStringSubmatch(km[1], -1) {
+				kidID, _ := strconv.Atoi(r[1])
+				collectPages(kidID)
+			}
+		}
+	}
+
+	if pagesRootID > 0 {
+		collectPages(pagesRootID)
+	}
+
+	if len(pages) == 0 {
+		var fallbackRefs []int
+		for _, obj := range objects {
+			if isContentStream(obj.DictHeader) && obj.HasStream && len(obj.StreamData) > 0 {
+				fallbackRefs = append(fallbackRefs, obj.ID)
+			}
+		}
+		if len(fallbackRefs) > 0 {
+			pages = append(pages, pageEntry{num: 1, contentRefs: fallbackRefs})
+		}
+	}
+
+	pageCount := len(pages)
+	if pageCount == 0 {
+		pageCount = 1
+	}
+
+	// 5. Extract text lines from streams in page order
+	reTf := regexp.MustCompile(`/([A-Za-z0-9_-]+)\s+[\d\.]+\s+Tf`)
+	reTJ := regexp.MustCompile(`\[(.*?)\]\s*TJ`)
+	reTjHex := regexp.MustCompile(`<([0-9A-Fa-f]+)>\s*Tj`)
+	reTjLit := regexp.MustCompile(`\((.*?)\)\s*Tj`)
+	reTm := regexp.MustCompile(`([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+Tm`)
+	reTd := regexp.MustCompile(`([-\d\.]+)\s+([-\d\.]+)\s+Td`)
+
+	var extractedLines []pdfLine
+
+	for _, page := range pages {
+		for _, sID := range page.contentRefs {
+			obj, ok := objMap[sID]
+			if !ok || !obj.HasStream || len(obj.StreamData) == 0 {
+				continue
+			}
+			if !isContentStream(obj.DictHeader) {
+				continue
+			}
+
+			streamData := obj.StreamData
+			if obj.Compressed {
+				zr, err := zlib.NewReader(bytes.NewReader(streamData))
+				if err == nil {
+					decomp, readErr := io.ReadAll(zr)
+					_ = zr.Close()
+					if readErr == nil {
+						streamData = decomp
+					}
+				}
+			}
+
+			if !bytes.Contains(streamData, []byte("BT")) && !bytes.Contains(streamData, []byte("Tj")) && !bytes.Contains(streamData, []byte("TJ")) {
+				continue
+			}
+
+			streamStr := string(streamData)
+			lines := strings.Split(streamStr, "\n")
+			var curLine strings.Builder
+			var curFont string
+			var curY float64
+			var lastLineY float64
+			hasCurY := false
+			hasLastLineY := false
+
+			flushLine := func() {
+				s := strings.TrimSpace(curLine.String())
+				if s != "" {
+					dy := 0.0
+					if hasLastLineY {
+						dy = math.Abs(lastLineY - curY)
+					}
+					extractedLines = append(extractedLines, pdfLine{
+						text: s,
+						page: page.num,
+						y:    curY,
+						dy:   dy,
+					})
+					lastLineY = curY
+					hasLastLineY = true
+				}
+				curLine.Reset()
+			}
+
+			for _, l := range lines {
+				l = strings.TrimSpace(l)
+				if l == "" || strings.HasPrefix(l, "%") {
+					continue
+				}
+
+				if tfm := reTf.FindStringSubmatch(l); len(tfm) > 1 {
+					curFont = tfm[1]
+				}
+
+				activeCMap := fontCMaps[curFont]
+				if activeCMap == nil {
+					activeCMap = defaultCMap
+				}
+
+				if tmm := reTm.FindStringSubmatch(l); len(tmm) > 6 {
+					y, _ := strconv.ParseFloat(tmm[6], 64)
+					if hasCurY && math.Abs(y-curY) > 2.5 {
+						flushLine()
+					}
+					curY = y
+					hasCurY = true
+				}
+
+				if tdm := reTd.FindStringSubmatch(l); len(tdm) > 2 {
+					ty, _ := strconv.ParseFloat(tdm[2], 64)
+					if math.Abs(ty) > 2.5 {
+						flushLine()
+						curY += ty
+					} else {
+						tx, _ := strconv.ParseFloat(tdm[1], 64)
+						if tx > 0.2 && curLine.Len() > 0 && !strings.HasSuffix(curLine.String(), " ") {
+							curLine.WriteString(" ")
+						}
+					}
+				}
+
+				if strings.Contains(l, "T*") {
+					flushLine()
+				}
+
+				if tjMatches := reTJ.FindAllStringSubmatch(l, -1); len(tjMatches) > 0 {
+					for _, tjm := range tjMatches {
+						inner := tjm[1]
+						i := 0
+						for i < len(inner) {
+							if inner[i] == '<' {
+								end := strings.IndexByte(inner[i:], '>')
+								if end != -1 {
+									hexPart := inner[i+1 : i+end]
+									text := ""
+									if activeCMap != nil {
+										text = activeCMap.decodeHex(hexPart)
+									} else {
+										text = decodeHexUTF16(hexPart)
+									}
+									curLine.WriteString(text)
+									i += end + 1
+								} else {
+									i++
+								}
+							} else if inner[i] == '(' {
+								j := i + 1
+								depth := 1
+								for j < len(inner) && depth > 0 {
+									if inner[j] == '\\' {
+										j += 2
+										continue
+									}
+									if inner[j] == '(' {
+										depth++
+									} else if inner[j] == ')' {
+										depth--
+									}
+									j++
+								}
+								lit := inner[i+1 : j-1]
+								lit = unescapePDFString(lit)
+								curLine.WriteString(decodePDFString([]byte(lit)))
+								i = j
+							} else if (inner[i] >= '0' && inner[i] <= '9') || inner[i] == '-' {
+								j := i
+								for j < len(inner) && ((inner[j] >= '0' && inner[j] <= '9') || inner[j] == '-' || inner[j] == '.') {
+									j++
+								}
+								val, _ := strconv.ParseFloat(inner[i:j], 64)
+								if val < -150 {
+									if curLine.Len() > 0 && !strings.HasSuffix(curLine.String(), " ") {
+										curLine.WriteString(" ")
+									}
+								}
+								i = j
+							} else {
+								i++
+							}
+						}
+					}
+				}
+
+				if hexMatches := reTjHex.FindAllStringSubmatch(l, -1); len(hexMatches) > 0 {
+					for _, hm := range hexMatches {
+						if activeCMap != nil {
+							curLine.WriteString(activeCMap.decodeHex(hm[1]))
+						} else {
+							curLine.WriteString(decodeHexUTF16(hm[1]))
+						}
+					}
+				}
+
+				if litMatches := reTjLit.FindAllStringSubmatch(l, -1); len(litMatches) > 0 {
+					for _, lm := range litMatches {
+						lit := unescapePDFString(lm[1])
+						curLine.WriteString(decodePDFString([]byte(lit)))
+					}
+				}
+			}
+			flushLine()
+		}
+	}
+
+	// 6. Group lines into clean paragraphs
+	var paragraphs []string
+	var curPara strings.Builder
+	prevPage := 0
+
+	for _, line := range extractedLines {
+		txt := strings.TrimSpace(line.text)
+		if txt == "" {
+			continue
+		}
+
+		shouldBreak := false
+		if prevPage != 0 && line.page != prevPage {
+			shouldBreak = true
+		} else if curPara.Len() > 0 {
+			if line.dy > 20.0 {
+				shouldBreak = true
+			} else {
+				curStr := curPara.String()
+				if strings.HasSuffix(curStr, ":") || strings.HasSuffix(curStr, "__________") {
+					shouldBreak = true
+				} else if isSectionOrBulletStart(txt) {
+					shouldBreak = true
+				}
+			}
+		}
+
+		if shouldBreak && curPara.Len() > 0 {
+			paragraphs = append(paragraphs, curPara.String())
+			curPara.Reset()
+		}
+
+		if curPara.Len() > 0 {
+			curPara.WriteString(" ")
+		}
+		curPara.WriteString(txt)
+		prevPage = line.page
+	}
+
+	if curPara.Len() > 0 {
+		paragraphs = append(paragraphs, curPara.String())
+	}
+
+	return pageCount, paragraphs, nil
+}
+

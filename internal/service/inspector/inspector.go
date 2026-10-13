@@ -2,7 +2,6 @@ package inspector
 
 import (
 	"bytes"
-	"compress/zlib"
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode"
 
@@ -966,13 +964,10 @@ func inspectPDF(ctx context.Context, path string) (*domain.FileInfo, error) {
 		return nil, ctx.Err()
 	}
 
-	pageMatches := rePage.FindAll(pdfBytes, -1)
-	pageCount := len(pageMatches)
-	if pageCount == 0 {
+	paragraphPreviews, snippets, entities, fullBefore, fullAfter, pageCount := extractPDFParagraphs(ctx, pdfBytes)
+	if pageCount <= 0 {
 		pageCount = 1
 	}
-
-	paragraphPreviews, snippets, entities, fullBefore, fullAfter := extractPDFParagraphs(ctx, pdfBytes)
 
 	return &domain.FileInfo{
 		Path:                   path,
@@ -1175,114 +1170,10 @@ func buildPDFParagraphSegments(text string, matches []pdfEntityMatch) []formats.
 	return segments
 }
 
-func extractPDFParagraphs(ctx context.Context, pdfBytes []byte) ([]formats.TextParagraphPreview, []formats.DocxTextSnippet, []domain.EntityInfo, string, string) {
-	var rawLines []string
-	idx := 0
-
-	for {
-		if ctx != nil && ctx.Err() != nil {
-			break
-		}
-		sPos := bytes.Index(pdfBytes[idx:], []byte("stream"))
-		if sPos == -1 {
-			break
-		}
-		streamStart := idx + sPos + len("stream")
-		if streamStart < len(pdfBytes) && pdfBytes[streamStart] == '\r' {
-			streamStart++
-		}
-		if streamStart < len(pdfBytes) && pdfBytes[streamStart] == '\n' {
-			streamStart++
-		}
-
-		ePos := bytes.Index(pdfBytes[streamStart:], []byte("endstream"))
-		if ePos == -1 {
-			break
-		}
-		streamEnd := streamStart + ePos
-
-		dictStart := idx + sPos - 250
-		if dictStart < 0 {
-			dictStart = 0
-		}
-		dictHeader := pdfBytes[dictStart : idx+sPos]
-
-		var streamData []byte
-		if lenMatch := reLen.FindSubmatch(dictHeader); len(lenMatch) > 1 {
-			if l, err := strconv.Atoi(string(lenMatch[1])); err == nil && l >= 0 && streamStart+l <= len(pdfBytes) {
-				streamData = pdfBytes[streamStart : streamStart+l]
-			}
-		}
-		if streamData == nil {
-			rawEnd := streamEnd
-			if rawEnd > streamStart && pdfBytes[rawEnd-1] == '\n' {
-				rawEnd--
-				if rawEnd > streamStart && pdfBytes[rawEnd-1] == '\r' {
-					rawEnd--
-				}
-			} else if rawEnd > streamStart && pdfBytes[rawEnd-1] == '\r' {
-				rawEnd--
-			}
-			streamData = pdfBytes[streamStart:rawEnd]
-		}
-
-		if bytes.Contains(dictHeader, []byte("/FlateDecode")) {
-			zr, err := zlib.NewReader(bytes.NewReader(streamData))
-			if err == nil {
-				decomp, readErr := io.ReadAll(zr)
-				_ = zr.Close()
-				if readErr == nil {
-					streamData = decomp
-				}
-			}
-		}
-
-		var curLine strings.Builder
-		streamStr := string(streamData)
-		lines := strings.Split(streamStr, "\n")
-		for _, rl := range lines {
-			rl = strings.TrimSpace(rl)
-			if strings.HasPrefix(rl, "%") {
-				continue
-			}
-			litMatches := reLit.FindAllStringSubmatch(rl, -1)
-			if len(litMatches) > 0 {
-				for _, m := range litMatches {
-					if len(m) > 1 {
-						s := m[1]
-						s = strings.ReplaceAll(s, `\n`, "\n")
-						s = strings.ReplaceAll(s, `\r`, "")
-						s = strings.ReplaceAll(s, `\t`, " ")
-						s = strings.ReplaceAll(s, `\(`, "(")
-						s = strings.ReplaceAll(s, `\)`, ")")
-						s = strings.ReplaceAll(s, `\\`, "\\")
-						s = strings.TrimSpace(s)
-						if s != "" {
-							if curLine.Len() > 0 {
-								curLine.WriteString(" ")
-							}
-							curLine.WriteString(s)
-						}
-					}
-				}
-			}
-			if strings.Contains(rl, "T*") || strings.Contains(rl, "ET") || strings.Contains(rl, "Td") || strings.Contains(rl, "TD") {
-				if curLine.Len() > 0 {
-					rawLines = append(rawLines, curLine.String())
-					curLine.Reset()
-				}
-			}
-		}
-		if curLine.Len() > 0 {
-			rawLines = append(rawLines, curLine.String())
-			curLine.Reset()
-		}
-
-		idx = streamEnd + len("endstream")
-	}
-
-	if len(rawLines) == 0 {
-		rawLines = []string{string(pdfBytes)}
+func extractPDFParagraphs(ctx context.Context, pdfBytes []byte) ([]formats.TextParagraphPreview, []formats.DocxTextSnippet, []domain.EntityInfo, string, string, int) {
+	pageCount, rawParas, err := formats.ExtractPDFParagraphs(pdfBytes)
+	if err != nil || len(rawParas) == 0 {
+		return nil, nil, nil, "", "", pageCount
 	}
 
 	var paragraphPreviews []formats.TextParagraphPreview
@@ -1291,29 +1182,20 @@ func extractPDFParagraphs(ctx context.Context, pdfBytes []byte) ([]formats.TextP
 	var fullTextBefore strings.Builder
 	var fullTextAfter strings.Builder
 
-	globalSnippetIdx := 1
-	for pIdx, lineText := range rawLines {
-		matches := findPDFSensitiveMatches(lineText)
-		segments := buildPDFParagraphSegments(lineText, matches)
+	for pIdx, paraText := range rawParas {
+		if ctx != nil && ctx.Err() != nil {
+			break
+		}
+		matches := findPDFSensitiveMatches(paraText)
+		segments := buildPDFParagraphSegments(paraText, matches)
 
 		for _, m := range matches {
 			entityTypeCounts[m.entityType]++
-
-			ctxStart := m.start - 25
-			if ctxStart < 0 {
-				ctxStart = 0
-			}
-			ctxEnd := m.end + 25
-			if ctxEnd > len(lineText) {
-				ctxEnd = len(lineText)
-			}
-
 			snippets = append(snippets, formats.DocxTextSnippet{
 				Original:   m.value,
 				Anonymized: formats.BlackoutMarker,
 				Type:       m.entityType,
 			})
-			globalSnippetIdx++
 		}
 
 		paragraphPreviews = append(paragraphPreviews, formats.TextParagraphPreview{
@@ -1325,7 +1207,7 @@ func extractPDFParagraphs(ctx context.Context, pdfBytes []byte) ([]formats.TextP
 			fullTextBefore.WriteString("\n\n")
 			fullTextAfter.WriteString("\n\n")
 		}
-		fullTextBefore.WriteString(lineText)
+		fullTextBefore.WriteString(paraText)
 
 		var redPara strings.Builder
 		for _, seg := range segments {
@@ -1378,5 +1260,5 @@ func extractPDFParagraphs(ctx context.Context, pdfBytes []byte) ([]formats.TextP
 		}
 	}
 
-	return paragraphPreviews, snippets, entities, fullTextBefore.String(), fullTextAfter.String()
+	return paragraphPreviews, snippets, entities, fullTextBefore.String(), fullTextAfter.String(), pageCount
 }
