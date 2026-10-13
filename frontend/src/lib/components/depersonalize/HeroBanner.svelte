@@ -52,18 +52,18 @@
     const info = appState.currentFileInfo;
     if (!info) return '';
     const entityCount = info.entities ? info.entities.length : 0;
+    if (info.fileType === 'pdf') {
+      return '';
+    }
     if (info.fileType === 'text') {
-      return `Документ содержит ${info.paragraphCount || info.rowCount} абзацев. Найдено ${entityCount} категорий ПДн. Форматирование, шрифты и стили документа сохраняются без изменений.`;
+      return `Документ содержит ${info.paragraphCount || info.rowCount} абзацев. Найдено ${entityCount} категорий ПДн.`;
     }
     if (info.sheets && info.sheets.length > 1) {
       const totalEntities = info.sheets.reduce(
         (acc, s) => acc + (s.entities ? s.entities.length : 0),
         0
       );
-      return `Книга Excel содержит ${info.sheets.length} листа. Всего найдено ${totalEntities} категорий ПДн. Переключайтесь между вкладками листов для настройки колонок каждого листа.`;
-    }
-    if (info.fileType === 'pdf') {
-      return 'Чувствительные персональные данные вырезаются физически и закрываются плашками.';
+      return `Книга Excel содержит ${info.sheets.length} листа. Всего найдено ${totalEntities} категорий ПДн.`;
     }
     return `Обнаружено категорий ПДн: ${entityCount}.`;
   });
@@ -243,8 +243,10 @@
     </div>
 
     <!-- Description underneath -->
-    <p id="file-desc-text" class="text-sm text-[#78716C] max-w-3xl leading-relaxed">
-      {descLabel}
-    </p>
+    {#if descLabel}
+      <p id="file-desc-text" class="text-sm text-[#78716C] max-w-3xl leading-relaxed">
+        {descLabel}
+      </p>
+    {/if}
   </div>
 {/if}

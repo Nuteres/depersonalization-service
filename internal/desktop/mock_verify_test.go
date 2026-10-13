@@ -115,8 +115,10 @@ func TestMockDocumentsWithDesktopApp(t *testing.T) {
 			if _, err := os.Stat(outPath); err != nil {
 				t.Fatalf("Output anonymized file does not exist: %v", err)
 			}
-			if _, err := os.Stat(keyPath); err != nil {
-				t.Fatalf("Key file (.depmap) was not created: %v", err)
+			if strings.ToLower(ext) != ".pdf" {
+				if _, err := os.Stat(keyPath); err != nil {
+					t.Fatalf("Key file (.depmap) was not created: %v", err)
+				}
 			}
 
 			// 4. Test RestoreFile if format supports restoration

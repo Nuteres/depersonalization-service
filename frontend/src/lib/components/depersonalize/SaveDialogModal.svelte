@@ -54,7 +54,12 @@
     }
   });
 
-  const isPasswordValid = $derived(!createKey || !keyPassword.trim() || passwordValidation.valid);
+  const isPasswordValid = $derived(
+    appState.currentFileInfo?.fileType === 'pdf' ||
+    !createKey ||
+    !keyPassword.trim() ||
+    passwordValidation.valid
+  );
 
   // Generate random salt on open if not already set
   $effect(() => {
@@ -73,6 +78,9 @@
       if (appState.currentFileInfo.fileType !== 'table') {
         shuffleRows = false;
       }
+      if (appState.currentFileInfo.fileType === 'pdf') {
+        createKey = false;
+      }
     }
   });
 
@@ -89,12 +97,12 @@
   const formatHint = $derived.by(() => {
     const origExt = (appState.currentFileInfo?.extension || '').replace('.', '').toLowerCase();
     if (origExt === 'xls' || origExt === 'xlsb') {
-      return 'Бинарный формат Excel конвертируется в современный открытый стандарт .xlsx без потери данных.';
+      return 'Бинарный формат Excel конвертируется в открытый формат .xlsx.';
     }
     if (selectedExportFormat === origExt) {
-      return 'Формат файла сохраняется. Все стили, структура и шрифты остаются исходными.';
+      return '';
     }
-    return `Данные будут сохранены и преобразованы в формат .${selectedExportFormat}.`;
+    return `Данные будут сохранены в формат .${selectedExportFormat}.`;
   });
 
   function getFormatDisplayName(fmt: string): string {
@@ -190,15 +198,20 @@
       const effectiveShuffle =
         appState.currentFileInfo.fileType === 'table' ? shuffleRows : false;
 
+      const isPdf = appState.currentFileInfo.fileType === 'pdf';
+      const effectiveCreateKey = isPdf ? false : createKey;
+      const effectiveKeyPassword = effectiveCreateKey ? keyPassword : '';
+      const effectiveKeyPath = effectiveCreateKey ? keyPath : '';
+
       const result = await ProcessFileWithSheets(
         appState.currentFilePath,
         destPath,
         salt,
         globalDisabled,
         disabledBySheet,
-        createKey,
-        keyPassword,
-        keyPath,
+        effectiveCreateKey,
+        effectiveKeyPassword,
+        effectiveKeyPath,
         effectiveShuffle,
         effectiveMode
       );
@@ -309,9 +322,11 @@
               <option value={fmt}>{getFormatDisplayName(fmt)}</option>
             {/each}
           </select>
-          <div class="text-[11px] text-[#78716C] mt-1 font-sans">
-            {formatHint}
-          </div>
+          {#if formatHint}
+            <div class="text-[11px] text-[#78716C] mt-1 font-sans">
+              {formatHint}
+            </div>
+          {/if}
         </div>
 
         <!-- Output Destination File Path -->
@@ -367,8 +382,9 @@
           </div>
         {/if}
 
-        <!-- Key Generation Option -->
-        <div class="space-y-3 border border-[#E8E7E3] p-4 bg-white">
+        <!-- Key Generation Option (Only for non-PDF files: tables and text) -->
+        {#if appState.currentFileInfo.fileType !== 'pdf'}
+          <div class="space-y-3 border border-[#E8E7E3] p-4 bg-white">
           <label class="flex items-start space-x-2.5 cursor-pointer select-none">
             <input
               id="create-key-checkbox"
@@ -523,7 +539,8 @@
             </div>
           {/if}
         </div>
-      </div>
+      {/if}
+    </div>
 
       <!-- Footer Buttons -->
       <div class="flex items-center justify-end space-x-2 pt-3 border-t border-[#F0EFEB]">

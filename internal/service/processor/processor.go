@@ -254,6 +254,10 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 		}
 	}
 
+	if ext == ".pdf" {
+		opts.CreateKey = false
+	}
+
 	inFile, err := os.Open(opts.InputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read input file: %w", err)
