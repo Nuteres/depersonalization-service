@@ -188,8 +188,12 @@
     <!-- Step 1: Data File -->
     <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col h-full min-h-[250px]">
       <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 h-6 shrink-0">
-        <span class="font-bold text-[#1C1917] font-sans">ШАГ 1. ФАЙЛ ДАННЫХ</span>
-        <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C] font-mono">XLSX, CSV, DOCX</span>
+        <span
+          class="font-bold text-[#1C1917] font-sans"
+          title="Поддерживаемые форматы: XLSX, XLSB, ODS, XODS, XLS, CSV, DOCX, ODT, TXT"
+        >
+          ШАГ 1. ФАЙЛ ДАННЫХ
+        </span>
       </div>
 
       <div class="flex-1 flex flex-col">
