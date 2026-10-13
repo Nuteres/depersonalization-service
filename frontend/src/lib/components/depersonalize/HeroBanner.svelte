@@ -142,7 +142,7 @@
       {isDraggingOver ? 'Отпустите файл для загрузки' : 'Выберите файл или перетащите его сюда'}
     </div>
     <div class="text-xs text-[#78716C] max-w-md leading-relaxed">
-      Поддерживаются таблицы Excel (.xlsx, .xlsb, .xls), OpenDocument (.ods, .xods), Word (.docx, .odt), текст (.txt), CSV (.csv) и документы PDF (.pdf). Все данные обрабатываются локально без выхода в сеть.
+      Все данные обрабатываются локально без выхода в сеть.
     </div>
 
     <!-- Format pill badges -->
