@@ -10,7 +10,6 @@
 
   // View state
   let isBefore = $state(false); // false = Anonymized, true = Original
-  let currentActiveChangeIdx = $state<number>(1);
   let hoveredEntity = $state<{
     type: string;
     original: string;
@@ -177,54 +176,6 @@
     return map;
   });
 
-  function scrollToEntity(globalIdx: number) {
-    if (globalIdx < 1 || globalIdx > allEntityMarks.length) return;
-    currentActiveChangeIdx = globalIdx;
-    const elem = document.getElementById(`doc-entity-mark-${globalIdx}`);
-    if (elem) {
-      elem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      elem.classList.add('ring-4', 'ring-indigo-500/70', 'ring-offset-2');
-      setTimeout(() => {
-        elem.classList.remove('ring-4', 'ring-indigo-500/70', 'ring-offset-2');
-      }, 1800);
-    }
-  }
-
-  function nextChange() {
-    if (allEntityMarks.length === 0) return;
-    const currentPos = allEntityMarks.findIndex(
-      (m) => m.globalIndex === currentActiveChangeIdx
-    );
-    if (currentPos === -1 || currentPos >= allEntityMarks.length - 1) {
-      const first = allEntityMarks[0];
-      if (first) {
-        scrollToEntity(first.globalIndex);
-      }
-    } else {
-      const next = allEntityMarks[currentPos + 1];
-      if (next) {
-        scrollToEntity(next.globalIndex);
-      }
-    }
-  }
-
-  function prevChange() {
-    if (allEntityMarks.length === 0) return;
-    const currentPos = allEntityMarks.findIndex(
-      (m) => m.globalIndex === currentActiveChangeIdx
-    );
-    if (currentPos <= 0) {
-      const last = allEntityMarks[allEntityMarks.length - 1];
-      if (last) {
-        scrollToEntity(last.globalIndex);
-      }
-    } else {
-      const prev = allEntityMarks[currentPos - 1];
-      if (prev) {
-        scrollToEntity(prev.globalIndex);
-      }
-    }
-  }
 
   function handleMarkHover(
     event: MouseEvent,
@@ -270,32 +221,8 @@
         </span>
       </div>
 
-      <!-- Controls Right: Change Navigator & Before/After Toggle -->
+      <!-- Controls Right: Before/After Toggle -->
       <div class="flex items-center space-x-3">
-        {#if allEntityMarks.length > 0}
-          <div class="inline-flex items-center border border-[#E8E7E3] bg-white text-xs font-mono shadow-2xs">
-            <button
-              type="button"
-              onclick={prevChange}
-              title="Предыдущий фрагмент ПДн"
-              class="px-2.5 py-1 text-[#57534E] hover:text-[#1C1917] hover:bg-[#FAF9F5] transition cursor-pointer border-r border-[#E8E7E3] select-none"
-            >
-              ◀
-            </button>
-            <span class="px-2.5 py-1 text-[11px] text-[#1C1917] font-medium select-none whitespace-nowrap">
-              {currentActiveChangeIdx} / {allEntityMarks.length}
-            </span>
-            <button
-              type="button"
-              onclick={nextChange}
-              title="Следующий фрагмент ПДн"
-              class="px-2.5 py-1 text-[#57534E] hover:text-[#1C1917] hover:bg-[#FAF9F5] transition cursor-pointer border-l border-[#E8E7E3] select-none"
-            >
-              ▶
-            </button>
-          </div>
-        {/if}
-
         <!-- Toggle: Cleaned vs Original -->
         <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium shadow-2xs">
           <button
@@ -349,10 +276,7 @@
                         id="doc-entity-mark-{gIdx}"
                         onmouseenter={(e) => handleMarkHover(e, seg)}
                         onmouseleave={handleMarkLeave}
-                        onclick={() => {
-                          currentActiveChangeIdx = gIdx;
-                          toggleEntityType(seg.type || '');
-                        }}
+                        onclick={() => toggleEntityType(seg.type || '')}
                         class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
                       >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                   </h3>
@@ -369,10 +293,7 @@
                         id="doc-entity-mark-{gIdx}"
                         onmouseenter={(e) => handleMarkHover(e, seg)}
                         onmouseleave={handleMarkLeave}
-                        onclick={() => {
-                          currentActiveChangeIdx = gIdx;
-                          toggleEntityType(seg.type || '');
-                        }}
+                        onclick={() => toggleEntityType(seg.type || '')}
                         class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
                       >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                   </p>
@@ -396,10 +317,7 @@
                                     id="doc-entity-mark-{gIdx}"
                                     onmouseenter={(e) => handleMarkHover(e, seg)}
                                     onmouseleave={handleMarkLeave}
-                                    onclick={() => {
-                                      currentActiveChangeIdx = gIdx;
-                                      toggleEntityType(seg.type || '');
-                                    }}
+                                    onclick={() => toggleEntityType(seg.type || '')}
                                     class="inline px-1 py-0.5 rounded-[3px] border font-medium text-[12px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
                                   >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                               </td>
@@ -436,10 +354,7 @@
                         id="doc-entity-mark-{gIdx}"
                         onmouseenter={(e) => handleMarkHover(e, seg)}
                         onmouseleave={handleMarkLeave}
-                        onclick={() => {
-                          currentActiveChangeIdx = gIdx;
-                          toggleEntityType(seg.type || '');
-                        }}
+                        onclick={() => toggleEntityType(seg.type || '')}
                         class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
                       >
                         {#if isTypeDisabled}
