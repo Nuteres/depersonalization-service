@@ -208,7 +208,7 @@
     >
       <!-- Title & Document Stats -->
       <div class="flex items-center space-x-2">
-        <span class="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
+        <span class="w-2 h-2 rounded-none bg-emerald-600 animate-pulse"></span>
         <span
           class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
         >
@@ -254,7 +254,7 @@
               ? 'bg-neutral-900 text-white font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            <span class="w-1.5 h-1.5 rounded-full {!isBefore ? 'bg-emerald-400' : 'bg-neutral-400'}"></span>
+            <span class="w-1.5 h-1.5 rounded-none {!isBefore ? 'bg-emerald-400' : 'bg-neutral-400'}"></span>
             <span>С плашками [ ПДн СКРЫТО ]</span>
           </button>
           <button
@@ -264,7 +264,7 @@
               ? 'bg-amber-700 text-white font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            <span class="w-1.5 h-1.5 rounded-full {isBefore ? 'bg-amber-300' : 'bg-amber-500'}"></span>
+            <span class="w-1.5 h-1.5 rounded-none {isBefore ? 'bg-amber-300' : 'bg-amber-500'}"></span>
             <span>Исходный текст</span>
           </button>
         </div>
@@ -312,7 +312,7 @@
                         >
                           <span class="font-sans font-medium text-stone-900">{seg.original || seg.text}</span>
                           <span class="text-[9px] text-stone-500 font-mono bg-stone-200 px-1 rounded">
-                            ○ Без плашки
+                            ▫ Без плашки
                           </span>
                         </button>
                       {:else}
@@ -366,7 +366,7 @@
               ? 'bg-stone-700 text-stone-300'
               : 'bg-emerald-950 text-emerald-300 border border-emerald-700'}"
           >
-            {hoveredEntity.isDisabled ? '○ Плашка снята' : '● Закрыто плашкой'}
+            {hoveredEntity.isDisabled ? '▫ Плашка снята' : '▪ Закрыто плашкой'}
           </span>
         </div>
 

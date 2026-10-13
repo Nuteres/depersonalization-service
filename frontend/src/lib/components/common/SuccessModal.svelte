@@ -102,7 +102,7 @@
       <!-- Modal Header -->
       <div class="flex items-center justify-between border-b border-[#F0EFEB] pb-3">
         <div class="flex items-center space-x-2.5">
-          <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
+          <span class="inline-flex items-center justify-center w-5 h-5 rounded-none bg-emerald-100 text-emerald-700 text-xs font-bold">
             ✔
           </span>
           <h2 id="success-modal-title" class="text-sm font-bold text-[#1C1917]">{modalTitle}</h2>

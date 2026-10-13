@@ -482,27 +482,27 @@
                     <div class="font-medium text-[#44403C] mb-1.5 text-[10.5px]">Требования к паролю:</div>
                     <div class="grid grid-cols-2 gap-x-2 gap-y-1">
                       <div class="flex items-center space-x-1.5 {passwordValidation.minLength ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.minLength ? '✓' : '•'}</span>
+                        <span>{passwordValidation.minLength ? '✓' : '▪'}</span>
                         <span>12+ символов</span>
                       </div>
                       <div class="flex items-center space-x-1.5 {passwordValidation.onlyLatin ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.onlyLatin ? '✓' : '•'}</span>
+                        <span>{passwordValidation.onlyLatin ? '✓' : '▪'}</span>
                         <span>Только латиница</span>
                       </div>
                       <div class="flex items-center space-x-1.5 {passwordValidation.hasUppercase ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.hasUppercase ? '✓' : '•'}</span>
+                        <span>{passwordValidation.hasUppercase ? '✓' : '▪'}</span>
                         <span>Заглавные (A-Z)</span>
                       </div>
                       <div class="flex items-center space-x-1.5 {passwordValidation.hasLowercase ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.hasLowercase ? '✓' : '•'}</span>
+                        <span>{passwordValidation.hasLowercase ? '✓' : '▪'}</span>
                         <span>Строчные (a-z)</span>
                       </div>
                       <div class="flex items-center space-x-1.5 {passwordValidation.hasDigit ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.hasDigit ? '✓' : '•'}</span>
+                        <span>{passwordValidation.hasDigit ? '✓' : '▪'}</span>
                         <span>Цифры (0-9)</span>
                       </div>
                       <div class="flex items-center space-x-1.5 {passwordValidation.hasSpecial ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.hasSpecial ? '✓' : '•'}</span>
+                        <span>{passwordValidation.hasSpecial ? '✓' : '▪'}</span>
                         <span>Спецсимволы (!@#$%...)</span>
                       </div>
                     </div>

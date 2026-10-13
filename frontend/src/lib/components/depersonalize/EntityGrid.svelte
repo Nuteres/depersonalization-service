@@ -107,7 +107,7 @@
                 {appState.currentFileInfo?.fileType === 'text' ? 'КАТЕГОРИЯ' : 'КОЛОНКА'} #{ent.columnIndex}
               </span>
 
-              <!-- Notion-like Toggle Switch -->
+              <!-- Square Toggle Switch -->
               <button
                 type="button"
                 onclick={(e) => {
@@ -115,12 +115,12 @@
                   toggle(ent.columnIndex);
                 }}
                 title={isDisabled ? 'Включить в обработку' : 'Исключить из обработки'}
-                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {isDisabled
+                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-none border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {isDisabled
                   ? 'bg-stone-300'
                   : 'bg-emerald-600'}"
               >
                 <span
-                  class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out {isDisabled
+                  class="pointer-events-none inline-block h-4 w-4 transform rounded-none bg-white shadow-sm ring-0 transition duration-200 ease-in-out {isDisabled
                     ? 'translate-x-0'
                     : 'translate-x-4'}"
                 ></span>

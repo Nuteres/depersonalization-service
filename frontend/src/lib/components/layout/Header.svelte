@@ -16,7 +16,7 @@
     <div>
       <div class="flex items-center space-x-2">
         <span class="text-base font-bold tracking-tight text-[#1C1917]">Деперсонализация ПД</span>
-        <span id="app-env-badge" class="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-[#E8E7E3] text-[#44403C]">
+        <span id="app-env-badge" class="text-[10px] font-mono font-medium px-2 py-0.5 rounded-none bg-[#E8E7E3] text-[#44403C]">
           {envBadge}
         </span>
       </div>
@@ -34,7 +34,7 @@
           ? 'px-3.5 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition flex items-center space-x-1.5 cursor-pointer'
           : 'px-3.5 py-1.5 text-[#78716C] hover:text-[#1C1917] transition flex items-center space-x-1.5 cursor-pointer'}
       >
-        <span class="w-2 h-2 rounded-full {appState.currentAppMode === 'depersonalize' ? 'bg-emerald-600' : 'bg-stone-400'}"></span>
+        <span class="w-2 h-2 rounded-none {appState.currentAppMode === 'depersonalize' ? 'bg-emerald-600' : 'bg-stone-400'}"></span>
         <span>Деперсонализация ПД</span>
       </button>
       <button
@@ -45,7 +45,7 @@
           ? 'px-3.5 py-1.5 bg-white text-[#1C1917] shadow-sm font-semibold transition flex items-center space-x-1.5 cursor-pointer'
           : 'px-3.5 py-1.5 text-[#78716C] hover:text-[#1C1917] transition flex items-center space-x-1.5 cursor-pointer'}
       >
-        <span class="w-2 h-2 rounded-full {appState.currentAppMode === 'restore' ? 'bg-emerald-600' : 'bg-stone-400'}"></span>
+        <span class="w-2 h-2 rounded-none {appState.currentAppMode === 'restore' ? 'bg-emerald-600' : 'bg-stone-400'}"></span>
         <span>Восстановление данных</span>
       </button>
     </div>

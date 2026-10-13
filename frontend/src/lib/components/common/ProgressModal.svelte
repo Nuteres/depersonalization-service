@@ -54,7 +54,7 @@
     <div class="bg-white border border-[#E8E7E3] shadow-2xl max-w-md w-full p-6 flex flex-col gap-4">
       <div class="flex items-center justify-between border-b border-[#F0EFEB] pb-3">
         <div class="flex items-center space-x-2">
-          <span id="progress-indicator" class="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
+          <span id="progress-indicator" class="w-2.5 h-2.5 rounded-none bg-emerald-600 animate-pulse"></span>
           <h2 id="progress-modal-title" class="text-sm font-bold text-[#1C1917]">{modalTitle}</h2>
         </div>
         <span id="progress-pct-badge" class="font-mono text-xs font-bold text-[#1C1917] bg-[#F0EFEB] px-2 py-0.5">

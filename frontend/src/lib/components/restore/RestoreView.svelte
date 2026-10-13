@@ -28,7 +28,7 @@
     const countStr = info.paragraphCount
       ? `${info.paragraphCount.toLocaleString('ru-RU')} абз.`
       : `${(info.rowCount || 0).toLocaleString('ru-RU')} строк`;
-    return sizeStr ? `${countStr} • ${sizeStr}` : countStr;
+    return sizeStr ? `${countStr} ▪ ${sizeStr}` : countStr;
   });
 
   const isReady = $derived(
@@ -48,28 +48,28 @@
   const statusInfo = $derived.by(() => {
     if (isReady) {
       return {
-        dotClass: 'w-2 h-2 rounded-full bg-emerald-600',
+        dotClass: 'w-2 h-2 rounded-none bg-emerald-600',
         text: '✔ Готово к восстановлению данных',
         textClass: 'text-[#065F46] font-semibold'
       };
     }
     if (!restoreState.dataPath && !restoreState.keyPath) {
       return {
-        dotClass: 'w-2 h-2 rounded-full bg-stone-400',
+        dotClass: 'w-2 h-2 rounded-none bg-stone-400',
         text: 'Шаг 1 из 3: выберите файл данных',
         textClass: 'text-[#78716C]'
       };
     }
     if (!restoreState.dataPath) {
       return {
-        dotClass: 'w-2 h-2 rounded-full bg-amber-500',
+        dotClass: 'w-2 h-2 rounded-none bg-amber-500',
         text: 'Шаг 1: выберите файл данных',
         textClass: 'text-[#78716C]'
       };
     }
     if (!restoreState.keyPath) {
       return {
-        dotClass: 'w-2 h-2 rounded-full bg-amber-500',
+        dotClass: 'w-2 h-2 rounded-none bg-amber-500',
         text: 'Шаг 2: выберите ключ (.depmap)',
         textClass: 'text-[#78716C]'
       };
@@ -77,19 +77,19 @@
     if (restoreState.keyInfo && !restoreState.keyInfo.valid) {
       if (!restoreState.password) {
         return {
-          dotClass: 'w-2 h-2 rounded-full bg-amber-500',
+          dotClass: 'w-2 h-2 rounded-none bg-amber-500',
           text: 'Шаг 3: введите пароль ключа',
           textClass: 'text-[#78716C]'
         };
       }
       return {
-        dotClass: 'w-2 h-2 rounded-full bg-rose-500',
+        dotClass: 'w-2 h-2 rounded-none bg-rose-500',
         text: 'Ошибка: неверный пароль ключа',
         textClass: 'text-rose-700 font-semibold'
       };
     }
     return {
-      dotClass: 'w-2 h-2 rounded-full bg-stone-400',
+      dotClass: 'w-2 h-2 rounded-none bg-stone-400',
       text: 'Шаг 1 из 3: выберите файл данных',
       textClass: 'text-[#78716C]'
     };

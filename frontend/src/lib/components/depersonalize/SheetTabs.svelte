@@ -39,7 +39,7 @@
               : "px-3 py-1.5 bg-transparent border border-transparent hover:border-[#D6D3D1] hover:bg-white text-[#78716C] hover:text-[#1C1917] text-xs font-medium transition flex items-center space-x-1.5 cursor-pointer"}
           >
             {#if isActive}
-              <span class="w-2 h-2 rounded-full bg-emerald-600"></span>
+              <span class="w-2 h-2 rounded-none bg-emerald-600"></span>
             {/if}
             <span class="truncate max-w-[180px]" title={sheet.name}>{sheet.name}</span>
             <span

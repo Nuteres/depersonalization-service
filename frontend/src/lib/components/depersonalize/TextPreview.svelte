@@ -210,7 +210,7 @@
     >
       <!-- Title & Document Stats -->
       <div class="flex items-center space-x-2">
-        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span class="w-2 h-2 rounded-none bg-emerald-500"></span>
         <span
           class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
         >
@@ -232,7 +232,7 @@
               ? 'bg-emerald-700 text-white font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            <span class="w-1.5 h-1.5 rounded-full {!isBefore ? 'bg-emerald-300' : 'bg-emerald-500'}"></span>
+            <span class="w-1.5 h-1.5 rounded-none {!isBefore ? 'bg-emerald-300' : 'bg-emerald-500'}"></span>
             <span>Обезличенный вид</span>
           </button>
           <button
@@ -242,7 +242,7 @@
               ? 'bg-amber-700 text-white font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            <span class="w-1.5 h-1.5 rounded-full {isBefore ? 'bg-amber-300' : 'bg-amber-500'}"></span>
+            <span class="w-1.5 h-1.5 rounded-none {isBefore ? 'bg-amber-300' : 'bg-amber-500'}"></span>
             <span>Исходный вид</span>
           </button>
         </div>
@@ -434,7 +434,7 @@
                       ? 'bg-rose-950 border border-rose-600 text-rose-300'
                       : 'bg-emerald-950 border border-emerald-600 text-emerald-300'} text-[9px] font-bold"
                 >
-                  {hoveredEntity.isDisabled ? '○ ОТКЛЮЧЕНО' : appState.processingMode === 'delete' ? '● УДАЛЯЕТСЯ' : '● ЗАМЕНЯЕТСЯ'}
+                  {hoveredEntity.isDisabled ? '▫ ОТКЛЮЧЕНО' : appState.processingMode === 'delete' ? '▪ УДАЛЯЕТСЯ' : '▪ ЗАМЕНЯЕТСЯ'}
                 </span>
               </div>
               <span class="text-stone-400 text-[10px]">
