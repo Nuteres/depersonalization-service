@@ -309,7 +309,6 @@
                           onmouseenter={(e) => handleMarkHover(e, seg)}
                           onmouseleave={handleMarkLeave}
                           class="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 bg-stone-100 border border-dashed border-stone-400 text-stone-700 font-mono text-xs rounded transition-all cursor-pointer hover:bg-stone-200 hover:border-stone-600 align-baseline select-none"
-                          title="Плашка снята. Нажмите для повторного закрытия плашкой"
                         >
                           <span class="font-sans font-medium text-stone-900">{seg.original || seg.text}</span>
                           <span class="text-[9px] text-stone-500 font-mono bg-stone-200 px-1 rounded">
@@ -325,7 +324,6 @@
                           onmouseenter={(e) => handleMarkHover(e, seg)}
                           onmouseleave={handleMarkLeave}
                           class="inline-flex items-center gap-1.5 px-2 py-0.5 mx-0.5 bg-[#1C1917] hover:bg-neutral-800 text-white font-mono text-[11px] font-bold rounded shadow-xs transition-all cursor-pointer hover:ring-2 hover:ring-indigo-500 hover:ring-offset-1 align-baseline select-none"
-                          title={`Закрыто плашкой [ ${getEntityTypeName(entType)} ]. Нажмите для снятия плашки.`}
                         >
                           <span class="tracking-wider">[ ПДн СКРЫТО ]</span>
                           <span

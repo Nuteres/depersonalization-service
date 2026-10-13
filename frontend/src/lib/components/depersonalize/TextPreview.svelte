@@ -354,7 +354,6 @@
                           toggleEntityType(seg.type || '');
                         }}
                         class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
-                        title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                       >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                   </h3>
                 {:else if block.type === 'paragraph' && block.segments}
@@ -375,7 +374,6 @@
                           toggleEntityType(seg.type || '');
                         }}
                         class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
-                        title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                       >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                   </p>
                 {:else if block.type === 'table' && block.table}
@@ -403,7 +401,6 @@
                                       toggleEntityType(seg.type || '');
                                     }}
                                     class="inline px-1 py-0.5 rounded-[3px] border font-medium text-[12px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
-                                    title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                                   >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                               </td>
                             {/each}
@@ -444,7 +441,6 @@
                           toggleEntityType(seg.type || '');
                         }}
                         class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
-                        title="{getEntityTypeName(seg.type || '')}: {isTypeDisabled ? 'Отключено (исходный текст)' : appState.processingMode === 'delete' ? 'Удалено' : 'Заменено'}. Нажмите для переключения."
                       >
                         {#if isTypeDisabled}
                           <!-- When disabled, always show original text -->
@@ -475,7 +471,6 @@
                       type="button"
                       onclick={() => toggleEntityType(snip.type)}
                       class="bg-stone-100 text-stone-600 font-medium px-1.5 py-0.5 rounded-[3px] border border-dashed border-stone-400 transition hover:bg-stone-200 cursor-pointer font-mono text-[13px] line-through"
-                      title="Деперсонализация отключена. Нажмите, чтобы включить."
                     >
                       {snip.original}
                     </button>
@@ -484,7 +479,6 @@
                       type="button"
                       onclick={() => toggleEntityType(snip.type)}
                       class="{appState.processingMode === 'delete' ? 'bg-rose-100/90 text-rose-950 border-rose-300 hover:bg-rose-200' : 'bg-emerald-100/90 text-emerald-950 border-emerald-300 hover:bg-emerald-200'} font-medium px-1.5 py-0.5 rounded-[3px] border transition cursor-pointer font-mono text-[13px]"
-                      title="Деперсонализация активна. Нажмите, чтобы отключить замену."
                     >
                       {appState.processingMode === 'delete' ? '[УДАЛЕНО]' : snip.anonymized}
                     </button>
@@ -493,7 +487,6 @@
                       type="button"
                       onclick={() => toggleEntityType(snip.type)}
                       class="bg-amber-100/90 text-amber-950 font-medium px-1.5 py-0.5 rounded-[3px] border border-amber-300 transition hover:bg-amber-200 cursor-pointer font-mono text-[13px]"
-                      title="Исходный вид. Нажмите, чтобы переключить."
                     >
                       {snip.original}
                     </button>
