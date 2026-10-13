@@ -229,13 +229,16 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 		}
 	}
 
+	isTableFormat := ext == ".csv" || ext == ".tsv" || ext == ".xlsx" || ext == ".xlsm" || ext == ".xltx" || ext == ".xltm" || ext == ".ods" || ext == ".xods" || ext == ".xlsb" || ext == ".xls"
+	effectiveShuffle := opts.ShuffleRows && isTableFormat
+
 	options := map[string]interface{}{
 		"mode":                      opts.Mode,
 		"strategy":                  opts.Strategy,
 		"disabled_columns":          opts.DisabledCols,
 		"disabled_columns_by_sheet": opts.DisabledBySheet,
 		"progress_callback":         progressCallback,
-		"shuffle_rows":              opts.ShuffleRows,
+		"shuffle_rows":              effectiveShuffle,
 		"salt":                      salt,
 	}
 

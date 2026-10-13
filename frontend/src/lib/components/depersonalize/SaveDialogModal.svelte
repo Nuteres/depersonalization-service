@@ -70,6 +70,9 @@
     if (appState.currentFileInfo) {
       const ext = (appState.currentFileInfo.extension || 'xlsx').replace('.', '').toLowerCase();
       selectedExportFormat = ext === 'xls' || ext === 'xlsb' ? 'xlsx' : ext;
+      if (appState.currentFileInfo.fileType !== 'table') {
+        shuffleRows = false;
+      }
     }
   });
 
@@ -184,6 +187,8 @@
 
       const effectiveMode =
         appState.processingMode === 'delete' ? 'delete' : (appState.strategy || 'tokens');
+      const effectiveShuffle =
+        appState.currentFileInfo.fileType === 'table' ? shuffleRows : false;
 
       const result = await ProcessFileWithSheets(
         appState.currentFilePath,
@@ -194,7 +199,7 @@
         createKey,
         keyPassword,
         keyPath,
-        shuffleRows,
+        effectiveShuffle,
         effectiveMode
       );
 
@@ -335,20 +340,32 @@
           </div>
         </div>
 
-        <!-- Shuffle Rows Toggle -->
-        <div class="border border-[#E8E7E3] p-4 bg-white">
-          <label class="flex items-center space-x-2.5 cursor-pointer select-none">
-            <input
-              id="shuffle-rows-checkbox"
-              type="checkbox"
-              bind:checked={shuffleRows}
-              class="accent-[#1C1917] h-4 w-4 rounded-none cursor-pointer"
-            />
-            <span class="font-bold text-[#1C1917] text-xs">
-              Перемешать строки
-            </span>
-          </label>
-        </div>
+        <!-- Shuffle Rows Toggle (Only for tabular files: Excel, CSV, ODS) -->
+        {#if appState.currentFileInfo.fileType === 'table'}
+          <div class="border border-[#E8E7E3] p-4 bg-white">
+            <label class="flex items-start space-x-2.5 cursor-pointer select-none">
+              <input
+                id="shuffle-rows-checkbox"
+                type="checkbox"
+                bind:checked={shuffleRows}
+                class="mt-0.5 accent-[#1C1917] h-4 w-4 rounded-none cursor-pointer"
+              />
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-[#1C1917] text-xs">
+                    Перемешать строки
+                  </span>
+                  <span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono font-medium bg-stone-100 text-stone-600 border border-stone-200">
+                    РКН № 140
+                  </span>
+                </div>
+                <div class="text-[11px] text-[#78716C] mt-1 leading-relaxed font-sans">
+                  Случайный порядок записей (метод перемешивания по Приказу Роскомнадзора № 140) для защиты от деанонимизации по позиции в реестре. Данные внутри строк расшифровываются корректно, но порядок строк остаётся перемешанным.
+                </div>
+              </div>
+            </label>
+          </div>
+        {/if}
 
         <!-- Key Generation Option -->
         <div class="space-y-3 border border-[#E8E7E3] p-4 bg-white">

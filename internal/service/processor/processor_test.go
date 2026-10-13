@@ -904,6 +904,45 @@ func TestProcessor_ModeDelete(t *testing.T) {
 	}
 }
 
+func TestProcessor_ShuffleRows_IgnoredForTextFormats(t *testing.T) {
+	km := keymanager.New()
+	insp := inspector.New()
+	proc := processor.New(km, insp)
 
+	tmpDir := t.TempDir()
+	inPath := filepath.Join(tmpDir, "sample.txt")
+	outPath := filepath.Join(tmpDir, "sample_out.txt")
 
+	content := "Договор с Ивановым Иваном Ивановичем.\nПаспорт 4510 123456.\nДата: 12.05.2024."
+	if err := os.WriteFile(inPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write input file: %v", err)
+	}
 
+	opts := domain.ProcessOptions{
+		InputPath:   inPath,
+		OutputPath:  outPath,
+		Salt:        "test-salt",
+		ShuffleRows: true, // Should be safely ignored for text files
+		Mode:        domain.ModeReplace,
+		Strategy:    domain.StrategySemanticTokens,
+	}
+
+	res, err := proc.Process(context.Background(), opts, func(p, total, pct int) {})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected success, got false: %s", res.Error)
+	}
+
+	outBytes, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("failed to read out file: %v", err)
+	}
+	outText := string(outBytes)
+
+	// Verify tokens replaced and structure maintained
+	if !strings.Contains(outText, "[ФИО_") {
+		t.Errorf("expected [ФИО_ token in output, got: %s", outText)
+	}
+}
