@@ -3,6 +3,7 @@ import type {
   AuditRecord,
   FileInfo,
   KeyFileInfo,
+  PasswordValidationResult,
   PreviewRow,
   ProcessResult,
   RestoreResult
@@ -13,6 +14,7 @@ type AnyFunction = (...args: any[]) => void;
 interface WailsAppBinding {
   GetAppInfo?: () => Promise<AppInfo>;
   InspectFile?: (path: string) => Promise<FileInfo>;
+  ValidateKeyPassword?: (password: string) => Promise<PasswordValidationResult>;
   GetTableRows?: (path: string, offset: number, limit: number, salt: string, disabledCols: number[], mode?: string) => Promise<PreviewRow[]>;
   GetSheetRows?: (path: string, sheetName: string, offset: number, limit: number, salt: string, disabledCols: number[], mode?: string) => Promise<PreviewRow[]>;
   ProcessFile?: (path: string, salt: string, mode?: string) => Promise<ProcessResult>;
@@ -532,6 +534,71 @@ export async function SaveAuditFileDialog(defaultName: string = ''): Promise<str
     return await app.SaveAuditFileDialog(defaultName);
   }
   return `/dev/mock/${defaultName || 'audit.jsonl'}`;
+}
+
+export async function ValidateKeyPassword(password: string): Promise<PasswordValidationResult> {
+  const app = getApp();
+  if (app?.ValidateKeyPassword) {
+    return await app.ValidateKeyPassword(password);
+  }
+  // Client-side fallback if Wails is not available (e.g. dev mode)
+  const trimmed = password.trim();
+  if (!trimmed) {
+    return {
+      valid: true,
+      score: 0,
+      errors: [],
+      minLength: false,
+      hasUppercase: false,
+      hasLowercase: false,
+      hasDigit: false,
+      hasSpecial: false,
+      onlyLatin: false,
+    };
+  }
+  const minLength = Array.from(password).length >= 12;
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasLowercase = /[a-z]/.test(password);
+  const hasDigit = /[0-9]/.test(password);
+  const hasSpecial = /[!@#$%^&*()_+\-=[\]{}|;:,.<>?/\\~`'"]/.test(password);
+  const onlyLatin = !/[^A-Za-z0-9!@#$%^&*()_+\-=[\]{}|;:,.<>?/\\~`'"]/.test(password);
+
+  const errors: string[] = [];
+  if (!onlyLatin) errors.push('пароль должен содержать только латинские буквы (A-Z, a-z), цифры и спецсимволы');
+  if (!minLength) errors.push('пароль должен содержать не менее 12 символов');
+  if (!hasUppercase) errors.push('пароль должен содержать хотя бы одну заглавную латинскую букву (A-Z)');
+  if (!hasLowercase) errors.push('пароль должен содержать хотя бы одну строчную латинскую букву (a-z)');
+  if (!hasDigit) errors.push('пароль должен содержать хотя бы одну цифру (0-9)');
+  if (!hasSpecial) errors.push('пароль должен содержать хотя бы один специальный символ');
+
+  let criteriaCount = 0;
+  if (hasUppercase) criteriaCount++;
+  if (hasLowercase) criteriaCount++;
+  if (hasDigit) criteriaCount++;
+  if (hasSpecial) criteriaCount++;
+
+  let score = 1;
+  if (!onlyLatin) {
+    score = 1;
+  } else if (minLength && criteriaCount === 4) {
+    score = 4;
+  } else if (minLength && criteriaCount >= 3) {
+    score = 3;
+  } else if (criteriaCount >= 3 || (minLength && criteriaCount >= 2)) {
+    score = 2;
+  }
+
+  return {
+    valid: errors.length === 0,
+    score,
+    errors,
+    minLength,
+    hasUppercase,
+    hasLowercase,
+    hasDigit,
+    hasSpecial,
+    onlyLatin,
+  };
 }
 
 export function EventsOn(eventName: string, callback: AnyFunction): () => void {

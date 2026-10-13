@@ -173,13 +173,17 @@ func (dm *DepMap) PutOrdinal(original string) {
 // using an auto-generated random password if password is empty (or the provided password),
 // and returns the effective password used.
 func (dm *DepMap) SaveFileWithAutoPassword(path string, password string) (string, error) {
-	effectivePassword := password
-	if strings.TrimSpace(effectivePassword) == "" {
+	effectivePassword := strings.TrimSpace(password)
+	if effectivePassword == "" {
 		generated, err := GenerateRandomPassword(16)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate random password: %w", err)
 		}
 		effectivePassword = generated
+	} else {
+		if err := ValidatePassword(effectivePassword); err != nil {
+			return "", err
+		}
 	}
 
 	if err := dm.SaveFile(path, effectivePassword); err != nil {

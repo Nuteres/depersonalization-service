@@ -232,7 +232,7 @@ func TestProcessor_Process_KeyGeneration(t *testing.T) {
 		OutputPath:  outPath,
 		Salt:        "test-salt-key",
 		CreateKey:   true,
-		KeyPassword: "supersecretpass",
+		KeyPassword: "SuperSecretPass123!",
 		KeyPath:     keyPath,
 	}
 
@@ -250,7 +250,7 @@ func TestProcessor_Process_KeyGeneration(t *testing.T) {
 		t.Fatalf("expected key file to exist: %v", err)
 	}
 
-	keyInfo, err := km.InspectKey(keyPath, "supersecretpass")
+	keyInfo, err := km.InspectKey(keyPath, "SuperSecretPass123!")
 	if err != nil {
 		t.Fatalf("InspectKey failed: %v", err)
 	}
@@ -851,7 +851,7 @@ func TestProcessor_ModeDelete(t *testing.T) {
 		OutputPath:  outPath,
 		Mode:        domain.ModeDelete,
 		CreateKey:   true,
-		KeyPassword: "password123",
+		KeyPassword: "Password123Secret!",
 		KeyPath:     keyPath,
 	}
 
@@ -889,7 +889,7 @@ func TestProcessor_ModeDelete(t *testing.T) {
 	}
 
 	// 3. Verify key file has ModeDelete and CellMappings
-	dm, err := depmap.LoadFile(keyPath, "password123")
+	dm, err := depmap.LoadFile(keyPath, "Password123Secret!")
 	if err != nil {
 		t.Fatalf("failed to load key file: %v", err)
 	}

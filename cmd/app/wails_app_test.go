@@ -484,7 +484,7 @@ func TestApp_ProcessWithKeyGeneration(t *testing.T) {
 	app := NewApp()
 
 	// 1. Process with custom keyPath and password
-	res, err := app.ProcessFileTo(csvPath, outPath, "test-salt", nil, true, "secret123", keyPath, false)
+	res, err := app.ProcessFileTo(csvPath, outPath, "test-salt", nil, true, "Secret123Pass!", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo with key gen failed: %v", err)
 	}
@@ -501,7 +501,7 @@ func TestApp_ProcessWithKeyGeneration(t *testing.T) {
 	}
 
 	// Verify key can be loaded and decrypted
-	dm, err := depmap.LoadFile(keyPath, "secret123")
+	dm, err := depmap.LoadFile(keyPath, "Secret123Pass!")
 	if err != nil {
 		t.Fatalf("failed to load generated key file: %v", err)
 	}
@@ -564,7 +564,7 @@ func TestApp_RestoreWorkflow(t *testing.T) {
 		}
 
 		// Process with key generation
-		procRes, err := app.ProcessFileTo(csvPath, anonPath, "salt-workflow", nil, true, "pass123", keyPath, false)
+		procRes, err := app.ProcessFileTo(csvPath, anonPath, "salt-workflow", nil, true, "Pass123Secret!", keyPath, false)
 		if err != nil {
 			t.Fatalf("ProcessFileTo failed: %v", err)
 		}
@@ -593,7 +593,7 @@ func TestApp_RestoreWorkflow(t *testing.T) {
 		}
 
 		// Restore file
-		restoreRes, err := app.RestoreFileTo(scoredPath, keyPath, "pass123", restoredPath)
+		restoreRes, err := app.RestoreFileTo(scoredPath, keyPath, "Pass123Secret!", restoredPath)
 		if err != nil {
 			t.Fatalf("RestoreFileTo failed: %v", err)
 		}
@@ -900,7 +900,7 @@ func TestApp_MultiSheetExcel(t *testing.T) {
 		sheet1: {2}, // column 2: СНИЛС
 	}
 
-	procRes, err := app.ProcessFileWithSheets(xlsxPath, anonPath, "multi-salt", nil, disabledBySheet, true, "pass-multi", keyPath, false, "")
+	procRes, err := app.ProcessFileWithSheets(xlsxPath, anonPath, "multi-salt", nil, disabledBySheet, true, "PassMulti123!", keyPath, false, "")
 	if err != nil {
 		t.Fatalf("ProcessFileWithSheets failed: %v", err)
 	}
@@ -943,7 +943,7 @@ func TestApp_MultiSheetExcel(t *testing.T) {
 	}
 
 	// 4. RestoreFileTo across multi-sheet workbook
-	restoreRes, err := app.RestoreFileTo(anonPath, keyPath, "pass-multi", restoredPath)
+	restoreRes, err := app.RestoreFileTo(anonPath, keyPath, "PassMulti123!", restoredPath)
 	if err != nil {
 		t.Fatalf("RestoreFileTo on multisheet workbook failed: %v", err)
 	}
@@ -1142,7 +1142,7 @@ func TestApp_ExpandedFormats_ODS(t *testing.T) {
 	}
 
 	// 2. ProcessFileTo (ODS -> ODS) with key generation
-	procRes, err := app.ProcessFileTo(odsPath, anonODSPath, "test-salt", nil, true, "pass123", keyPath, false)
+	procRes, err := app.ProcessFileTo(odsPath, anonODSPath, "test-salt", nil, true, "Pass123Secret!", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo on ods failed: %v", err)
 	}
@@ -1156,7 +1156,7 @@ func TestApp_ExpandedFormats_ODS(t *testing.T) {
 	}
 
 	// 3. RestoreFileTo (ODS -> ODS)
-	restRes, err := app.RestoreFileTo(anonODSPath, keyPath, "pass123", restoredODSPath)
+	restRes, err := app.RestoreFileTo(anonODSPath, keyPath, "Pass123Secret!", restoredODSPath)
 	if err != nil {
 		t.Fatalf("RestoreFileTo on ods failed: %v", err)
 	}
@@ -1224,7 +1224,7 @@ func TestApp_ExpandedFormats_DOCX(t *testing.T) {
 	}
 
 	// 2. ProcessFileTo with key generation
-	procRes, err := app.ProcessFileTo(docxPath, anonDocxPath, "docx-salt", nil, true, "secret", keyPath, false)
+	procRes, err := app.ProcessFileTo(docxPath, anonDocxPath, "docx-salt", nil, true, "SecretPass123!", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo on docx failed: %v", err)
 	}
@@ -1241,7 +1241,7 @@ func TestApp_ExpandedFormats_DOCX(t *testing.T) {
 	}
 
 	// 3. RestoreFileTo
-	restRes, err := app.RestoreFileTo(anonDocxPath, keyPath, "secret", restoredDocxPath)
+	restRes, err := app.RestoreFileTo(anonDocxPath, keyPath, "SecretPass123!", restoredDocxPath)
 	if err != nil {
 		t.Fatalf("RestoreFileTo on docx failed: %v", err)
 	}
@@ -1286,7 +1286,7 @@ func TestApp_ExpandedFormats_ODT(t *testing.T) {
 	}
 
 	// 2. ProcessFileTo with key generation
-	procRes, err := app.ProcessFileTo(odtPath, anonOdtPath, "odt-salt", nil, true, "pass", keyPath, false)
+	procRes, err := app.ProcessFileTo(odtPath, anonOdtPath, "odt-salt", nil, true, "PassSecret123!", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo on odt failed: %v", err)
 	}
@@ -1303,7 +1303,7 @@ func TestApp_ExpandedFormats_ODT(t *testing.T) {
 	}
 
 	// 3. RestoreFileTo
-	restRes, err := app.RestoreFileTo(anonOdtPath, keyPath, "pass", restoredOdtPath)
+	restRes, err := app.RestoreFileTo(anonOdtPath, keyPath, "PassSecret123!", restoredOdtPath)
 	if err != nil {
 		t.Fatalf("RestoreFileTo on odt failed: %v", err)
 	}

@@ -166,3 +166,16 @@ export interface ProgressEventData {
   total: number;
   percent: number;
 }
+
+export interface PasswordValidationResult {
+  valid: boolean;
+  score: number;
+  errors: string[];
+  minLength: boolean;
+  hasUppercase: boolean;
+  hasLowercase: boolean;
+  hasDigit: boolean;
+  hasSpecial: boolean;
+  onlyLatin: boolean;
+}
+

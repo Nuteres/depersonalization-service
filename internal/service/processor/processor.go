@@ -167,6 +167,12 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 		keyPath = outPath + ".depmap"
 	}
 
+	if opts.CreateKey && strings.TrimSpace(opts.KeyPassword) != "" {
+		if err := depmap.ValidatePassword(opts.KeyPassword); err != nil {
+			return nil, err
+		}
+	}
+
 	if ctx == nil {
 		ctx = context.Background()
 	}

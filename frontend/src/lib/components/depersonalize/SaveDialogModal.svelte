@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { appState } from '../../stores/appState.svelte';
   import { tableState } from '../../stores/tableState.svelte';
-  import { SaveFileDialog, SaveKeyFileDialog, ProcessFileWithSheets } from '../../api/wails';
+  import { SaveFileDialog, SaveKeyFileDialog, ProcessFileWithSheets, ValidateKeyPassword } from '../../api/wails';
+  import type { PasswordValidationResult } from '../../types/domain';
 
   interface Props {
     isOpen: boolean;
@@ -15,9 +16,45 @@
   let shuffleRows = $state(false);
   let createKey = $state(true);
   let keyPassword = $state('');
+  let showPassword = $state(false);
+  let passwordValidation = $state<PasswordValidationResult>({
+    valid: true,
+    score: 0,
+    errors: [],
+    minLength: false,
+    hasUppercase: false,
+    hasLowercase: false,
+    hasDigit: false,
+    hasSpecial: false,
+    onlyLatin: false,
+  });
   let outputPath = $state('');
   let keyPath = $state('');
   let selectedExportFormat = $state('xlsx');
+
+  // Real-time password validation
+  $effect(() => {
+    const trimmed = keyPassword.trim();
+    if (!trimmed) {
+      passwordValidation = {
+        valid: true,
+        score: 0,
+        errors: [],
+        minLength: false,
+        hasUppercase: false,
+        hasLowercase: false,
+        hasDigit: false,
+        hasSpecial: false,
+        onlyLatin: false,
+      };
+    } else {
+      ValidateKeyPassword(keyPassword).then((res) => {
+        passwordValidation = res;
+      });
+    }
+  });
+
+  const isPasswordValid = $derived(!createKey || !keyPassword.trim() || passwordValidation.valid);
 
   // Generate random salt on open if not already set
   $effect(() => {
@@ -103,6 +140,7 @@
 
   async function handleStart() {
     if (!appState.currentFileInfo || !appState.currentFilePath) return;
+    if (!isPasswordValid) return;
 
     let destPath = outputPath;
     if (!destPath) {
@@ -361,19 +399,109 @@
 
               <!-- Password for Key -->
               <div class="space-y-1.5">
-                <label
-                  for="key-password-input"
-                  class="block text-[11px] font-mono text-[#57534E]"
-                >
-                  Пароль ключа:
-                </label>
-                <input
-                  id="key-password-input"
-                  type="password"
-                  bind:value={keyPassword}
-                  placeholder="Автогенерация при пустом поле"
-                  class="w-full px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5]"
-                />
+                <div class="flex items-center justify-between">
+                  <label
+                    for="key-password-input"
+                    class="block text-[11px] font-mono text-[#57534E]"
+                  >
+                    Пароль ключа:
+                  </label>
+                  {#if keyPassword.trim()}
+                    <span class="text-[10px] font-mono font-medium">
+                      {#if passwordValidation.score <= 1}
+                        <span class="text-[#DC2626]">Слабый</span>
+                      {:else if passwordValidation.score === 2}
+                        <span class="text-[#D97706]">Средний</span>
+                      {:else if passwordValidation.score === 3}
+                        <span class="text-[#2563EB]">Хороший</span>
+                      {:else}
+                        <span class="text-[#16A34A]">Надежный</span>
+                      {/if}
+                    </span>
+                  {/if}
+                </div>
+
+                <div class="relative flex items-center">
+                  <input
+                    id="key-password-input"
+                    type={showPassword ? 'text' : 'password'}
+                    bind:value={keyPassword}
+                    placeholder="Оставьте пустым для автогенерации"
+                    class="w-full pr-8 px-3 py-2 border {keyPassword.trim() && !passwordValidation.valid ? 'border-[#DC2626] focus:border-[#DC2626]' : 'border-[#E8E7E3] focus:border-[#1C1917]'} focus:outline-none text-xs font-mono bg-[#FAF9F5]"
+                  />
+                  {#if keyPassword}
+                    <button
+                      type="button"
+                      onclick={() => showPassword = !showPassword}
+                      class="absolute right-2 text-[#78716C] hover:text-[#1C1917] p-1 text-xs select-none cursor-pointer"
+                      title={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                      aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                    >
+                      {#if showPassword}
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                        </svg>
+                      {:else}
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      {/if}
+                    </button>
+                  {/if}
+                </div>
+
+                <!-- Password strength indicator bars -->
+                {#if keyPassword.trim()}
+                  <div class="grid grid-cols-4 gap-1 pt-0.5">
+                    <div class="h-1 rounded-xs transition-colors {passwordValidation.score >= 1 ? (passwordValidation.score === 1 ? 'bg-[#DC2626]' : passwordValidation.score === 2 ? 'bg-[#D97706]' : passwordValidation.score === 3 ? 'bg-[#2563EB]' : 'bg-[#16A34A]') : 'bg-[#E7E5E4]'}"></div>
+                    <div class="h-1 rounded-xs transition-colors {passwordValidation.score >= 2 ? (passwordValidation.score === 2 ? 'bg-[#D97706]' : passwordValidation.score === 3 ? 'bg-[#2563EB]' : 'bg-[#16A34A]') : 'bg-[#E7E5E4]'}"></div>
+                    <div class="h-1 rounded-xs transition-colors {passwordValidation.score >= 3 ? (passwordValidation.score === 3 ? 'bg-[#2563EB]' : 'bg-[#16A34A]') : 'bg-[#E7E5E4]'}"></div>
+                    <div class="h-1 rounded-xs transition-colors {passwordValidation.score >= 4 ? 'bg-[#16A34A]' : 'bg-[#E7E5E4]'}"></div>
+                  </div>
+
+                  <!-- Requirements checklist -->
+                  <div class="mt-2 bg-[#FAF9F5] p-2.5 border border-[#E8E7E3] text-[11px] font-sans">
+                    <div class="font-medium text-[#44403C] mb-1.5 text-[10.5px]">Требования к паролю:</div>
+                    <div class="grid grid-cols-2 gap-x-2 gap-y-1">
+                      <div class="flex items-center space-x-1.5 {passwordValidation.minLength ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                        <span>{passwordValidation.minLength ? '✓' : '•'}</span>
+                        <span>12+ символов</span>
+                      </div>
+                      <div class="flex items-center space-x-1.5 {passwordValidation.onlyLatin ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                        <span>{passwordValidation.onlyLatin ? '✓' : '•'}</span>
+                        <span>Только латиница</span>
+                      </div>
+                      <div class="flex items-center space-x-1.5 {passwordValidation.hasUppercase ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                        <span>{passwordValidation.hasUppercase ? '✓' : '•'}</span>
+                        <span>Заглавные (A-Z)</span>
+                      </div>
+                      <div class="flex items-center space-x-1.5 {passwordValidation.hasLowercase ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                        <span>{passwordValidation.hasLowercase ? '✓' : '•'}</span>
+                        <span>Строчные (a-z)</span>
+                      </div>
+                      <div class="flex items-center space-x-1.5 {passwordValidation.hasDigit ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                        <span>{passwordValidation.hasDigit ? '✓' : '•'}</span>
+                        <span>Цифры (0-9)</span>
+                      </div>
+                      <div class="flex items-center space-x-1.5 {passwordValidation.hasSpecial ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                        <span>{passwordValidation.hasSpecial ? '✓' : '•'}</span>
+                        <span>Спецсимволы (!@#$%...)</span>
+                      </div>
+                    </div>
+
+                    {#if keyPassword.trim() && !passwordValidation.onlyLatin}
+                      <div class="mt-2 pt-1.5 border-t border-[#E8E7E3] text-[10.5px] text-[#DC2626] font-medium flex items-center space-x-1">
+                        <span>⚠</span>
+                        <span>Кириллица и пробелы запрещены — используйте только латиницу</span>
+                      </div>
+                    {/if}
+                  </div>
+                {:else}
+                  <p class="text-[11px] text-[#78716C] leading-relaxed">
+                    Минимум 12 символов: только латиница (A-Z, a-z), цифры и спецсимволы. Если оставить пустым — пароль будет сгенерирован автоматически.
+                  </p>
+                {/if}
               </div>
             </div>
           {/if}
@@ -392,7 +520,8 @@
         <button
           type="button"
           onclick={handleStart}
-          class="px-5 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-[0.99]"
+          disabled={!isPasswordValid}
+          class="px-5 py-2 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm {isPasswordValid ? 'bg-[#1C1917] hover:bg-[#292524] text-white cursor-pointer active:scale-[0.99]' : 'bg-[#E7E5E4] text-[#A8A29E] cursor-not-allowed border border-[#D6D3D1]'}"
         >
           <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">💾</span>
           <span>{appState.processingMode === 'delete' ? 'Начать удаление' : 'Начать обезличивание'}</span>

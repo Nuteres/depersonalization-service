@@ -111,7 +111,7 @@ func TestDesktopApp_ProcessAndRestore(t *testing.T) {
 	app := newTestApp()
 
 	// Process with key creation
-	procRes, err := app.ProcessFileTo(csvPath, outPath, "test-salt", nil, true, "secret123", keyPath, false)
+	procRes, err := app.ProcessFileTo(csvPath, outPath, "test-salt", nil, true, "Secret123Pass!", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo failed: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestDesktopApp_ProcessAndRestore(t *testing.T) {
 	}
 
 	// Inspect key file with valid password
-	keyInfo, err := app.InspectKeyFile(keyPath, "secret123")
+	keyInfo, err := app.InspectKeyFile(keyPath, "Secret123Pass!")
 	if err != nil {
 		t.Fatalf("InspectKeyFile failed: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestDesktopApp_ProcessAndRestore(t *testing.T) {
 	}
 
 	// Inspect key file with invalid password
-	keyInfoWrong, err := app.InspectKeyFile(keyPath, "wrongpass")
+	keyInfoWrong, err := app.InspectKeyFile(keyPath, "WrongPassword#123")
 	if err != nil {
 		t.Fatalf("InspectKeyFile with wrong password returned error instead of invalid info: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestDesktopApp_ProcessAndRestore(t *testing.T) {
 	}
 
 	// Restore file
-	restRes, err := app.RestoreFileTo(outPath, keyPath, "secret123", restPath)
+	restRes, err := app.RestoreFileTo(outPath, keyPath, "Secret123Pass!", restPath)
 	if err != nil {
 		t.Fatalf("RestoreFileTo failed: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestDesktopApp_AuditIntegration(t *testing.T) {
 	}
 
 	// 1. Process
-	procRes, err := app.ProcessFileTo(csvPath, outPath, "audit-salt", nil, true, "secret", keyPath, false)
+	procRes, err := app.ProcessFileTo(csvPath, outPath, "audit-salt", nil, true, "Secret123Pass!", keyPath, false)
 	if err != nil {
 		t.Fatalf("ProcessFileTo failed: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestDesktopApp_AuditIntegration(t *testing.T) {
 	}
 
 	// 2. Restore
-	restRes, err := app.RestoreFileTo(outPath, keyPath, "secret", restPath)
+	restRes, err := app.RestoreFileTo(outPath, keyPath, "Secret123Pass!", restPath)
 	if err != nil {
 		t.Fatalf("RestoreFileTo failed: %v", err)
 	}
@@ -517,5 +517,77 @@ func TestDesktopApp_ModeDelete(t *testing.T) {
 		t.Errorf("expected out file to contain '[УДАЛЕНО]', got %s", string(outBytes))
 	}
 }
+
+func TestDesktopApp_ValidateKeyPassword(t *testing.T) {
+	app := newTestApp()
+
+	// Empty password is valid (auto-generation)
+	emptyRes := app.ValidateKeyPassword("")
+	if !emptyRes.Valid {
+		t.Errorf("expected empty password to be valid (auto-generation)")
+	}
+
+	// Short password
+	shortRes := app.ValidateKeyPassword("Short1!")
+	if shortRes.Valid {
+		t.Errorf("expected short password to be invalid")
+	}
+	if shortRes.MinLength {
+		t.Errorf("expected MinLength=false")
+	}
+
+	// Strong password
+	strongRes := app.ValidateKeyPassword("StrongPass#2026!")
+	if !strongRes.Valid {
+		t.Errorf("expected strong password to be valid, got errors: %v", strongRes.Errors)
+	}
+	if strongRes.Score != 4 {
+		t.Errorf("expected score 4, got %d", strongRes.Score)
+	}
+	if !strongRes.OnlyLatin {
+		t.Errorf("expected OnlyLatin=true for strong latin password")
+	}
+
+	// Cyrillic password should be invalid
+	cyrillicRes := app.ValidateKeyPassword("СекретныйПароль2026!")
+	if cyrillicRes.Valid {
+		t.Errorf("expected cyrillic password to be invalid")
+	}
+	if cyrillicRes.OnlyLatin {
+		t.Errorf("expected OnlyLatin=false for cyrillic password")
+	}
+}
+
+func TestDesktopApp_ProcessWithInvalidPassword(t *testing.T) {
+	app := newTestApp()
+	tmpDir := t.TempDir()
+	csvPath := filepath.Join(tmpDir, "test.csv")
+	outPath := filepath.Join(tmpDir, "out.csv")
+	keyPath := filepath.Join(tmpDir, "key.depmap")
+	_ = os.WriteFile(csvPath, []byte("ФИО,СНИЛС\nИванов Иван Иванович,112-233-445 95\n"), 0644)
+
+	// Custom weak password should fail
+	_, err := app.ProcessFileWithSheets(csvPath, outPath, "salt", nil, nil, true, "weak", keyPath, false, "tokens")
+	if err == nil {
+		t.Fatalf("expected error processing with weak password, got nil")
+	}
+
+	// Empty password should succeed with auto-generation
+	res, err := app.ProcessFileWithSheets(csvPath, outPath, "salt", nil, nil, true, "", keyPath, false, "tokens")
+	if err != nil {
+		t.Fatalf("expected empty password to succeed via auto-generation, got: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected Success=true")
+	}
+	if !res.KeyPasswordGenerated || res.EffectivePassword == "" {
+		t.Fatalf("expected generated effective password")
+	}
+	// Verify effective password complies with policy
+	if valRes := app.ValidateKeyPassword(res.EffectivePassword); !valRes.Valid {
+		t.Fatalf("generated effective password %q does not comply with policy: %v", res.EffectivePassword, valRes.Errors)
+	}
+}
+
 
 

@@ -120,22 +120,65 @@ func (p *AES256GCMProvider) Decrypt(salt, nonce, ciphertext []byte, password str
 // DefaultCipherProvider is the standard provider used for .depmap containers.
 var DefaultCipherProvider CipherProvider = NewAES256GCMProvider()
 
-const passwordCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+const (
+	passwordLowerCharset   = "abcdefghijklmnopqrstuvwxyz"
+	passwordUpperCharset   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	passwordDigitCharset   = "0123456789"
+	passwordSpecialCharset = "!@#$%^&*()_+-=[]{}|;:,.<>?"
+	passwordAllCharset     = passwordLowerCharset + passwordUpperCharset + passwordDigitCharset + passwordSpecialCharset
+)
 
-// GenerateRandomPassword creates a cryptographically strong random alphanumeric password of given length.
+// GenerateRandomPassword creates a cryptographically strong random password of given length.
+// For length >= 4, it guarantees at least one character from each character class
+// (lowercase, uppercase, digit, special character).
 func GenerateRandomPassword(length int) (string, error) {
 	if length <= 0 {
 		return "", errors.New("password length must be greater than zero")
 	}
 
-	maxVal := big.NewInt(int64(len(passwordCharset)))
 	buf := make([]byte, length)
-	for i := 0; i < length; i++ {
-		n, err := rand.Int(rand.Reader, maxVal)
-		if err != nil {
-			return "", fmt.Errorf("failed to generate random character: %w", err)
+
+	if length >= 4 {
+		// Pick one character from each class
+		charsets := []string{passwordLowerCharset, passwordUpperCharset, passwordDigitCharset, passwordSpecialCharset}
+		for i := 0; i < 4; i++ {
+			max := big.NewInt(int64(len(charsets[i])))
+			n, err := rand.Int(rand.Reader, max)
+			if err != nil {
+				return "", fmt.Errorf("failed to generate random character: %w", err)
+			}
+			buf[i] = charsets[i][n.Int64()]
 		}
-		buf[i] = passwordCharset[n.Int64()]
+
+		// Fill the rest from passwordAllCharset
+		maxAll := big.NewInt(int64(len(passwordAllCharset)))
+		for i := 4; i < length; i++ {
+			n, err := rand.Int(rand.Reader, maxAll)
+			if err != nil {
+				return "", fmt.Errorf("failed to generate random character: %w", err)
+			}
+			buf[i] = passwordAllCharset[n.Int64()]
+		}
+
+		// Cryptographic Fisher-Yates shuffle
+		for i := length - 1; i > 0; i-- {
+			jBig, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+			if err != nil {
+				return "", fmt.Errorf("failed to shuffle password: %w", err)
+			}
+			j := int(jBig.Int64())
+			buf[i], buf[j] = buf[j], buf[i]
+		}
+	} else {
+		maxAll := big.NewInt(int64(len(passwordAllCharset)))
+		for i := 0; i < length; i++ {
+			n, err := rand.Int(rand.Reader, maxAll)
+			if err != nil {
+				return "", fmt.Errorf("failed to generate random character: %w", err)
+			}
+			buf[i] = passwordAllCharset[n.Int64()]
+		}
 	}
+
 	return string(buf), nil
 }

@@ -16,6 +16,7 @@ import (
 	"dep_service/internal/service/restorer"
 	"dep_service/internal/version"
 	"dep_service/pkg/audit"
+	"dep_service/pkg/depmap"
 )
 
 // DesktopApp is the presentation adapter struct bound to the Wails runtime.
@@ -319,4 +320,50 @@ func (a *DesktopApp) ExportAuditLog(destPath string) error {
 	}
 	return a.audit.ExportTo(destPath)
 }
+
+// ValidateKeyPassword checks password against key security policy requirements.
+func (a *DesktopApp) ValidateKeyPassword(password string) domain.PasswordValidationResult {
+	trimmed := strings.TrimSpace(password)
+	if trimmed == "" {
+		// Empty password is valid because it triggers secure auto-generation
+		return domain.PasswordValidationResult{
+			Valid: true,
+			Score: 0,
+		}
+	}
+
+	score, details := depmap.EvaluatePasswordStrength(password)
+	var errs []string
+	if !details.OnlyLatin {
+		errs = append(errs, depmap.ErrPasswordOnlyLatin.Error())
+	}
+	if !details.MinLength {
+		errs = append(errs, depmap.ErrPasswordTooShort.Error())
+	}
+	if !details.HasUppercase {
+		errs = append(errs, depmap.ErrPasswordNoUppercase.Error())
+	}
+	if !details.HasLowercase {
+		errs = append(errs, depmap.ErrPasswordNoLowercase.Error())
+	}
+	if !details.HasDigit {
+		errs = append(errs, depmap.ErrPasswordNoDigit.Error())
+	}
+	if !details.HasSpecial {
+		errs = append(errs, depmap.ErrPasswordNoSpecial.Error())
+	}
+
+	return domain.PasswordValidationResult{
+		Valid:        len(errs) == 0,
+		Score:        score,
+		Errors:       errs,
+		MinLength:    details.MinLength,
+		HasUppercase: details.HasUppercase,
+		HasLowercase: details.HasLowercase,
+		HasDigit:     details.HasDigit,
+		HasSpecial:   details.HasSpecial,
+		OnlyLatin:    details.OnlyLatin,
+	}
+}
+
 

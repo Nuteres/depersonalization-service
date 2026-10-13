@@ -206,14 +206,14 @@ func TestDepMap_SaveFileWithAutoPassword(t *testing.T) {
 
 	// Providing explicit password to SaveFileWithAutoPassword preserves it
 	filePath2 := filepath.Join(tmpDir, "explicit.depmap")
-	explicitPwd, err := dm.SaveFileWithAutoPassword(filePath2, "CustomSecret123")
+	explicitPwd, err := dm.SaveFileWithAutoPassword(filePath2, "CustomSecret123!")
 	if err != nil {
 		t.Fatalf("SaveFileWithAutoPassword with explicit password failed: %v", err)
 	}
-	if explicitPwd != "CustomSecret123" {
-		t.Fatalf("expected 'CustomSecret123', got '%s'", explicitPwd)
+	if explicitPwd != "CustomSecret123!" {
+		t.Fatalf("expected 'CustomSecret123!', got '%s'", explicitPwd)
 	}
-	loaded2, err := depmap.LoadFile(filePath2, "CustomSecret123")
+	loaded2, err := depmap.LoadFile(filePath2, "CustomSecret123!")
 	if err != nil {
 		t.Fatalf("failed to load explicit password file: %v", err)
 	}

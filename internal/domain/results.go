@@ -35,3 +35,16 @@ type RestoreResult struct {
 	DurationMs    int64  `json:"durationMs"`
 	Error         string `json:"error,omitempty"`
 }
+
+// PasswordValidationResult represents the evaluation of key password against the security policy.
+type PasswordValidationResult struct {
+	Valid        bool     `json:"valid"`
+	Score        int      `json:"score"`
+	Errors       []string `json:"errors"`
+	MinLength    bool     `json:"minLength"`
+	HasUppercase bool     `json:"hasUppercase"`
+	HasLowercase bool     `json:"hasLowercase"`
+	HasDigit     bool     `json:"hasDigit"`
+	HasSpecial   bool     `json:"hasSpecial"`
+	OnlyLatin    bool     `json:"onlyLatin"`
+}
