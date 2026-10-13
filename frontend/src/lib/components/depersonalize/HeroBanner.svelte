@@ -197,10 +197,10 @@
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
       <h2
         id="file-name-title"
-        class="text-xl sm:text-2xl font-bold tracking-tight text-[#1C1917] flex items-center gap-2 break-words min-w-0"
+        class="text-xl sm:text-2xl font-bold tracking-tight text-[#1C1917] flex items-start sm:items-center gap-2 min-w-0 flex-1"
       >
-        <span class="text-xl shrink-0 select-none">📄</span>
-        <span class="break-words" title={appState.currentFileInfo.name}>{appState.currentFileInfo.name}</span>
+        <span class="text-xl shrink-0 select-none mt-0.5 sm:mt-0">📄</span>
+        <span class="break-all [overflow-wrap:anywhere] leading-snug" title={appState.currentFileInfo.name}>{appState.currentFileInfo.name}</span>
       </h2>
 
       <!-- Action Toolbar in Hero -->

@@ -935,8 +935,16 @@ func TestInspect_UserDogovorExamplePDF(t *testing.T) {
 		t.Errorf("expected 'ДОГОВОР' in paragraph previews or text snippet for Dogovor_example.pdf")
 	}
 
-	if len(info.Entities) == 0 {
-		t.Errorf("expected detected entities in Dogovor_example.pdf, got 0")
+	if len(info.ParagraphPreviews) < 100 {
+		t.Errorf("expected at least 100 paragraph previews for Dogovor_example.pdf, got %d", len(info.ParagraphPreviews))
+	}
+
+	firstP := ""
+	for _, s := range info.ParagraphPreviews[0].Segments {
+		firstP += s.Text
+	}
+	if strings.TrimSpace(firstP) == "9" {
+		t.Errorf("first paragraph should not be isolated header page number '9', got %q", firstP)
 	}
 }
 

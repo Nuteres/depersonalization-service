@@ -1358,6 +1358,27 @@ func isSectionOrBulletStart(s string) bool {
 	return reSection.MatchString(s)
 }
 
+var (
+	reMultiSpace   = regexp.MustCompile(`[ \t\xA0]+`)
+	rePrePunct     = regexp.MustCompile(`\s+([.,:;!?%)\]»])`)
+	rePostPunct    = regexp.MustCompile(`([(\[«])\s+`)
+	reWordHyphen   = regexp.MustCompile(`(?U)(\p{L})\s*-\s*(\p{L})`)
+	reWordSlash    = regexp.MustCompile(`(?U)(\p{L}|\.)\s*/\s*(\p{L})`)
+	rePageNum      = regexp.MustCompile(`^\s*\d{1,3}\s*$`)
+	reSubtypeForm  = regexp.MustCompile(`/Subtype\s*/Form\b`)
+)
+
+func normalizePDFText(s string) string {
+	s = reMultiSpace.ReplaceAllString(s, " ")
+	s = rePrePunct.ReplaceAllString(s, "$1")
+	s = rePostPunct.ReplaceAllString(s, "$1")
+	s = reWordHyphen.ReplaceAllString(s, "$1-$2")
+	s = reWordHyphen.ReplaceAllString(s, "$1-$2")
+	s = reWordSlash.ReplaceAllString(s, "$1/$2")
+	s = reWordSlash.ReplaceAllString(s, "$1/$2")
+	return strings.TrimSpace(s)
+}
+
 type pdfLine struct {
 	text string
 	page int
@@ -1500,7 +1521,7 @@ func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
 					xID, _ := strconv.Atoi(xr[1])
 					if xObj, ok := objMap[xID]; ok {
 						xDict := string(xObj.DictHeader)
-						if strings.Contains(xDict, "/Subtype /Form") || strings.Contains(xDict, "/Subtype/Form") || bytes.Contains(xObj.StreamData, []byte("BT")) {
+						if reSubtypeForm.MatchString(xDict) || bytes.Contains(xObj.StreamData, []byte("BT")) {
 							cRefs = append(cRefs, xID)
 						}
 					}
@@ -1635,7 +1656,7 @@ func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
 						curY += ty
 					} else {
 						tx, _ := strconv.ParseFloat(tdm[1], 64)
-						if tx > 0.2 && curLine.Len() > 0 && !strings.HasSuffix(curLine.String(), " ") {
+						if tx > 2.0 && curLine.Len() > 0 && !strings.HasSuffix(curLine.String(), " ") {
 							curLine.WriteString(" ")
 						}
 					}
@@ -1690,7 +1711,7 @@ func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
 									j++
 								}
 								val, _ := strconv.ParseFloat(inner[i:j], 64)
-								if val < -150 {
+								if val < -200 {
 									if curLine.Len() > 0 && !strings.HasSuffix(curLine.String(), " ") {
 										curLine.WriteString(" ")
 									}
@@ -1734,6 +1755,9 @@ func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
 		if txt == "" {
 			continue
 		}
+		if (line.y > 750 || line.y < 45) && rePageNum.MatchString(txt) {
+			continue
+		}
 
 		shouldBreak := false
 		if prevPage != 0 && line.page != prevPage {
@@ -1752,19 +1776,28 @@ func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
 		}
 
 		if shouldBreak && curPara.Len() > 0 {
-			paragraphs = append(paragraphs, curPara.String())
+			pText := normalizePDFText(curPara.String())
+			if pText != "" {
+				paragraphs = append(paragraphs, pText)
+			}
 			curPara.Reset()
 		}
 
 		if curPara.Len() > 0 {
-			curPara.WriteString(" ")
+			firstRune, _ := utf8.DecodeRuneInString(txt)
+			if !strings.ContainsRune(".,:;!?%)»]", firstRune) {
+				curPara.WriteString(" ")
+			}
 		}
 		curPara.WriteString(txt)
 		prevPage = line.page
 	}
 
 	if curPara.Len() > 0 {
-		paragraphs = append(paragraphs, curPara.String())
+		pText := normalizePDFText(curPara.String())
+		if pText != "" {
+			paragraphs = append(paragraphs, pText)
+		}
 	}
 
 	return pageCount, paragraphs, nil
