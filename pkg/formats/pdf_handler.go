@@ -59,6 +59,15 @@ type BoundingBox struct {
 	H float64
 }
 
+// PDFParagraph holds text, page, and detected layout styling for a PDF paragraph.
+type PDFParagraph struct {
+	Text  string
+	Page  int
+	Align string // "center", "right", "justify", "left"
+	Style string // "heading", "note", "body", "table"
+	Table *domain.TextTablePreview
+}
+
 // pdfObject represents an indirect object in a PDF file.
 type pdfObject struct {
 	ID         int
@@ -120,6 +129,41 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		return fmt.Errorf("failed to parse PDF objects: %w", err)
 	}
 
+	objMap := make(map[int]*pdfObject, len(objects))
+	for i := range objects {
+		objMap[objects[i].ID] = &objects[i]
+	}
+	fontCMaps, defaultCMap := extractFontCMaps(objMap)
+	redactionBoxes := extractRedactionBoxes(options)
+
+	// Collect page-to-content stream mapping for coordinate redaction
+	pageTree := getPDFPageTree(pdfBytes, objMap, objects)
+	boxesByStream := make(map[int][]domain.PDFRedactionBox)
+	if len(redactionBoxes) > 0 {
+		boxesByPage := make(map[int][]domain.PDFRedactionBox)
+		for _, b := range redactionBoxes {
+			p := b.Page
+			if p <= 0 {
+				p = 1
+			}
+			boxesByPage[p] = append(boxesByPage[p], b)
+		}
+		for _, p := range pageTree {
+			if pBoxes, ok := boxesByPage[p.Num]; ok && len(pBoxes) > 0 && len(p.ContentRefs) > 0 {
+				targetID := p.ContentRefs[len(p.ContentRefs)-1]
+				boxesByStream[targetID] = append(boxesByStream[targetID], pBoxes...)
+			}
+		}
+		if len(boxesByStream) == 0 {
+			for i := range objects {
+				if isContentStream(objects[i].DictHeader) && objects[i].HasStream && len(objects[i].StreamData) > 0 {
+					boxesByStream[objects[i].ID] = redactionBoxes
+					break
+				}
+			}
+		}
+	}
+
 	// Process each stream object
 	for i := range objects {
 		select {
@@ -159,7 +203,19 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		}
 
 		// Redact content stream
-		redactedStream, modified := redactContentStream(decompressed, customTerms, disabledEntities, mode)
+		redactedStream, modified := redactContentStream(decompressed, customTerms, disabledEntities, mode, fontCMaps, defaultCMap)
+
+		// If there are redaction boxes assigned to this stream, append vector blackout rectangles
+		if boxes, ok := boxesByStream[obj.ID]; ok && len(boxes) > 0 {
+			var rectBuf bytes.Buffer
+			rectBuf.WriteString("\n")
+			for _, b := range boxes {
+				fmt.Fprintf(&rectBuf, "q 0 0 0 rg %.3f %.3f %.3f %.3f re f Q\n", b.X, b.Y, b.Width, b.Height)
+			}
+			redactedStream = append(redactedStream, rectBuf.Bytes()...)
+			modified = true
+		}
+
 		if modified {
 			if obj.Compressed {
 				var buf bytes.Buffer
@@ -178,6 +234,151 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 
 	// Rebuild and write output PDF
 	return writePDF(w, objects, rootRef)
+}
+
+type pdfPageTreeEntry struct {
+	Num         int
+	ContentRefs []int
+}
+
+func getPDFPageTree(pdfBytes []byte, objMap map[int]*pdfObject, objects []pdfObject) []pdfPageTreeEntry {
+	var pages []pdfPageTreeEntry
+
+	rePagesRef := regexp.MustCompile(`/Pages\s+(\d+)\s+0\s+R`)
+	reKids := regexp.MustCompile(`(?s)/Kids\s*\[(.*?)\]`)
+	reRef := regexp.MustCompile(`(\d+)\s+0\s+R`)
+	reContents := regexp.MustCompile(`/Contents\s+(\d+)\s+0\s+R`)
+	reContentsArr := regexp.MustCompile(`(?s)/Contents\s*\[(.*?)\]`)
+	reResRef := regexp.MustCompile(`/Resources\s+(\d+)\s+0\s+R`)
+	reXObjectDict := regexp.MustCompile(`(?s)/XObject\s*<<([^>]*)>>`)
+
+	rootID := 0
+	reRoot := regexp.MustCompile(`/Root\s+(\d+)\s+0\s+R`)
+	if rm := reRoot.FindSubmatch(pdfBytes); len(rm) > 1 {
+		rootID, _ = strconv.Atoi(string(rm[1]))
+	}
+
+	pagesRootID := 0
+	if rootObj, ok := objMap[rootID]; ok {
+		if pm := rePagesRef.FindStringSubmatch(string(rootObj.DictHeader)); len(pm) > 1 {
+			pagesRootID, _ = strconv.Atoi(pm[1])
+		}
+	}
+
+	visitedPages := make(map[int]bool)
+	var collectPages func(nodeID int)
+	collectPages = func(nodeID int) {
+		if visitedPages[nodeID] {
+			return
+		}
+		visitedPages[nodeID] = true
+		node, ok := objMap[nodeID]
+		if !ok {
+			return
+		}
+		dictStr := string(node.DictHeader)
+		isPage := strings.Contains(dictStr, "/Type /Page\b") || strings.Contains(dictStr, "/Type/Page\b") ||
+			(!strings.Contains(dictStr, "/Type /Pages") && !strings.Contains(dictStr, "/Type/Pages") && strings.Contains(dictStr, "/Contents"))
+
+		if isPage {
+			var cRefs []int
+			if cmArr := reContentsArr.FindStringSubmatch(dictStr); len(cmArr) > 1 {
+				for _, r := range reRef.FindAllStringSubmatch(cmArr[1], -1) {
+					cID, _ := strconv.Atoi(r[1])
+					cRefs = append(cRefs, cID)
+				}
+			} else if cm := reContents.FindStringSubmatch(dictStr); len(cm) > 1 {
+				cID, _ := strconv.Atoi(cm[1])
+				cRefs = append(cRefs, cID)
+			}
+
+			resDict := dictStr
+			if rrm := reResRef.FindStringSubmatch(dictStr); len(rrm) > 1 {
+				rID, _ := strconv.Atoi(rrm[1])
+				if rObj, ok := objMap[rID]; ok {
+					resDict += " " + string(rObj.DictHeader)
+				}
+			}
+			if xm := reXObjectDict.FindStringSubmatch(resDict); len(xm) > 1 {
+				for _, xr := range reRef.FindAllStringSubmatch(xm[1], -1) {
+					xID, _ := strconv.Atoi(xr[1])
+					if xObj, ok := objMap[xID]; ok {
+						xDict := string(xObj.DictHeader)
+						if reSubtypeForm.MatchString(xDict) || bytes.Contains(xObj.StreamData, []byte("BT")) {
+							cRefs = append(cRefs, xID)
+						}
+					}
+				}
+			}
+
+			pages = append(pages, pdfPageTreeEntry{Num: len(pages) + 1, ContentRefs: cRefs})
+			return
+		}
+
+		if km := reKids.FindStringSubmatch(dictStr); len(km) > 1 {
+			for _, r := range reRef.FindAllStringSubmatch(km[1], -1) {
+				kidID, _ := strconv.Atoi(r[1])
+				collectPages(kidID)
+			}
+		}
+	}
+
+	if pagesRootID > 0 {
+		collectPages(pagesRootID)
+	}
+
+	if len(pages) == 0 {
+		var fallbackRefs []int
+		for _, obj := range objects {
+			if isContentStream(obj.DictHeader) && obj.HasStream && len(obj.StreamData) > 0 {
+				fallbackRefs = append(fallbackRefs, obj.ID)
+			}
+		}
+		if len(fallbackRefs) > 0 {
+			pages = append(pages, pdfPageTreeEntry{Num: 1, ContentRefs: fallbackRefs})
+		}
+	}
+
+	return pages
+}
+
+func extractRedactionBoxes(options map[string]interface{}) []domain.PDFRedactionBox {
+	if options == nil {
+		return nil
+	}
+	if boxes, ok := options["redaction_boxes"].([]domain.PDFRedactionBox); ok {
+		return boxes
+	}
+	if rawList, ok := options["redaction_boxes"].([]interface{}); ok {
+		var boxes []domain.PDFRedactionBox
+		for _, item := range rawList {
+			if b, ok := item.(domain.PDFRedactionBox); ok {
+				boxes = append(boxes, b)
+			} else if m, ok := item.(map[string]interface{}); ok {
+				var box domain.PDFRedactionBox
+				if p, ok := m["page"].(float64); ok {
+					box.Page = int(p)
+				} else if p, ok := m["page"].(int); ok {
+					box.Page = p
+				}
+				if x, ok := m["x"].(float64); ok {
+					box.X = x
+				}
+				if y, ok := m["y"].(float64); ok {
+					box.Y = y
+				}
+				if w, ok := m["width"].(float64); ok {
+					box.Width = w
+				}
+				if h, ok := m["height"].(float64); ok {
+					box.Height = h
+				}
+				boxes = append(boxes, box)
+			}
+		}
+		return boxes
+	}
+	return nil
 }
 
 func extractDisabledEntities(options map[string]interface{}) map[string]bool {
@@ -218,9 +419,17 @@ func extractCustomTerms(options map[string]interface{}) []string {
 	return nil
 }
 
+type charPos struct {
+	elemIdx   int
+	byteStart int
+	byteEnd   int
+	x         float64
+	width     float64
+}
+
 // redactContentStream scans a PDF content stream, scrubs sensitive text,
 // replaces it with BlackoutMarker or DeletionMarker, and appends blackout rectangle operators.
-func redactContentStream(data []byte, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode) ([]byte, bool) {
+func redactContentStream(data []byte, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode, fontCMaps map[string]*pdfCMap, defaultCMap *pdfCMap) ([]byte, bool) {
 	// Skip streams that contain no text operators and no custom search terms
 	hasTextOps := bytes.Contains(data, []byte("BT")) || bytes.Contains(data, []byte("Tj")) || bytes.Contains(data, []byte("TJ"))
 	if !hasTextOps && len(customTerms) == 0 {
@@ -232,6 +441,7 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 
 	// Text state tracking
 	inText := false
+	curFont := ""
 	currentFontSize := 12.0
 	currentX := 0.0
 	currentY := 0.0
@@ -248,9 +458,7 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 			rawStr, decoded, nextPos := parseLiteralString(data, i)
 			i = nextPos
 
-			// Lookahead for operator (Tj, ', ", etc.)
 			op, _ := peekNextOperator(data, i)
-
 			if op == "Tj" || op == "'" || op == "\"" {
 				if op == "'" || op == "\"" {
 					lineStartY -= leading
@@ -258,7 +466,7 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 					currentY = lineStartY
 				}
 
-				newRaw, boxes, didRedact := processTextString(decoded, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode)
+				newRaw, boxes, endX, didRedact := processLiteralTextString(rawStr, decoded, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode)
 				if didRedact {
 					modified = true
 					out.Write(newRaw)
@@ -266,8 +474,7 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 				} else {
 					out.Write(rawStr)
 				}
-				advance := float64(len([]rune(string(decoded)))) * (currentFontSize * 0.52)
-				currentX += advance
+				currentX = endX
 			} else {
 				out.Write(rawStr)
 			}
@@ -276,21 +483,31 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 
 		// 2. Hex string: < ... >
 		if data[i] == '<' && (i+1 < len(data) && data[i+1] != '<') {
-			rawHex, decoded, nextPos := parseHexString(data, i)
+			rawHex, _, nextPos := parseHexString(data, i)
 			i = nextPos
 
 			op, _ := peekNextOperator(data, i)
 			if op == "Tj" || op == "'" || op == "\"" {
-				newRaw, boxes, didRedact := processTextString(decoded, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode)
+				if op == "'" || op == "\"" {
+					lineStartY -= leading
+					currentX = lineStartX
+					currentY = lineStartY
+				}
+
+				activeCMap := fontCMaps[curFont]
+				if activeCMap == nil {
+					activeCMap = defaultCMap
+				}
+
+				newHex, boxes, endX, didRedact := processHexTextStringWithCMap(rawHex, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode, activeCMap)
 				if didRedact {
 					modified = true
-					out.Write(newRaw)
+					out.Write(newHex)
 					pendingBoxes = append(pendingBoxes, boxes...)
 				} else {
 					out.Write(rawHex)
 				}
-				advance := float64(len([]rune(string(decoded)))) * (currentFontSize * 0.52)
-				currentX += advance
+				currentX = endX
 			} else {
 				out.Write(rawHex)
 			}
@@ -304,7 +521,12 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 
 			op, _ := peekNextOperator(data, i)
 			if op == "TJ" {
-				newArr, boxes, didRedact := processTJArray(rawArr, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode)
+				activeCMap := fontCMaps[curFont]
+				if activeCMap == nil {
+					activeCMap = defaultCMap
+				}
+
+				newArr, boxes, endX, didRedact := processTJArrayWithCMap(rawArr, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode, activeCMap)
 				if didRedact {
 					modified = true
 					out.Write(newArr)
@@ -312,6 +534,7 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 				} else {
 					out.Write(rawArr)
 				}
+				currentX = endX
 			} else {
 				out.Write(rawArr)
 			}
@@ -368,14 +591,16 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 				pendingBoxes = nil
 			}
 		case "Tf":
-			// Previous tokens set font size
 			fs := extractPreviousFontSize(out.Bytes())
 			if fs > 0 {
 				currentFontSize = fs
 			}
+			fn := extractPreviousFontName(out.Bytes())
+			if fn != "" {
+				curFont = fn
+			}
 			out.WriteString("Tf")
 		case "Tm":
-			// Set text matrix: a b c d e f Tm
 			x, y := extractPreviousTmCoords(out.Bytes())
 			currentX = x
 			currentY = y
@@ -435,24 +660,23 @@ type textMatch struct {
 	value string
 }
 
-// processTextString searches for sensitive personal data in a text string,
-// calculates bounding boxes, and replaces matched text with BlackoutMarker or DeletionMarker.
-func processTextString(decoded []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode) ([]byte, []BoundingBox, bool) {
+func processLiteralTextString(rawStr, decoded []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode) ([]byte, []BoundingBox, float64, bool) {
 	text := decodeText(decoded)
+	charWidth := fontSize * 0.52
+	runeCount := len([]rune(text))
+	endX := curX + float64(runeCount)*charWidth
+
 	matches := findSensitiveMatches(text, customTerms, disabledEntities)
 	if len(matches) == 0 {
-		return nil, nil, false
+		return rawStr, nil, endX, false
 	}
 
-	// Sort matches right-to-left so indices stay valid during replacements
 	sort.Slice(matches, func(i, j int) bool {
 		return matches[i].start > matches[j].start
 	})
 
 	var boxes []BoundingBox
 	redactedText := text
-	runes := []rune(text)
-	charWidth := fontSize * 0.52
 	marker := getPDFMarker(mode)
 
 	for _, m := range matches {
@@ -471,13 +695,9 @@ func processTextString(decoded []byte, fontSize, curX, curY float64, customTerms
 		bh := fontSize * 1.25
 
 		boxes = append(boxes, BoundingBox{X: bx, Y: by, W: bw, H: bh})
-
-		// Replace in string
 		redactedText = redactedText[:m.start] + marker + redactedText[m.end:]
 	}
-	_ = runes
 
-	// Format back as PDF literal string: ( ... )
 	var buf bytes.Buffer
 	buf.WriteByte('(')
 	for i := 0; i < len(redactedText); i++ {
@@ -489,12 +709,100 @@ func processTextString(decoded []byte, fontSize, curX, curY float64, customTerms
 	}
 	buf.WriteByte(')')
 
-	return buf.Bytes(), boxes, true
+	return buf.Bytes(), boxes, endX, true
 }
 
-// processTJArray processes an array operand of a TJ operator.
-func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode) ([]byte, []BoundingBox, bool) {
-	// Parse array elements: either strings or numbers
+func processHexTextStringWithCMap(rawHex []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode, cmap *pdfCMap) ([]byte, []BoundingBox, float64, bool) {
+	if len(rawHex) < 2 || rawHex[0] != '<' {
+		return rawHex, nil, curX, false
+	}
+	inner := string(rawHex[1 : len(rawHex)-1])
+	step := 4
+	if cmap != nil && cmap.codeBytes > 0 {
+		step = cmap.codeBytes * 2
+	}
+	spaceHex := "0003"
+	if cmap != nil {
+		spaceHex = cmap.getSpaceHex()
+	}
+
+	charWidth := fontSize * 0.52
+	arrX := curX
+	var decodedText strings.Builder
+	var charPositions []charPos
+
+	for k := 0; k+step <= len(inner); k += step {
+		hexChunk := inner[k : k+step]
+		decodedChar := ""
+		if cmap != nil {
+			decodedChar = cmap.decodeHex(hexChunk)
+		} else {
+			decodedChar = decodeHexUTF16(hexChunk)
+		}
+		if decodedChar == "" {
+			decodedChar = " "
+		}
+		for _, r := range decodedChar {
+			charPositions = append(charPositions, charPos{
+				elemIdx:   0,
+				byteStart: 1 + k,
+				byteEnd:   1 + k + step,
+				x:         arrX,
+				width:     charWidth,
+			})
+			decodedText.WriteRune(r)
+			arrX += charWidth
+		}
+	}
+
+	fullStr := decodedText.String()
+	matches := findSensitiveMatches(fullStr, customTerms, disabledEntities)
+	if len(matches) == 0 {
+		return rawHex, nil, arrX, false
+	}
+
+	type runeSpan struct {
+		rStart int
+		rEnd   int
+	}
+	var spans []runeSpan
+	for _, m := range matches {
+		rStart := len([]rune(fullStr[:m.start]))
+		rEnd := len([]rune(fullStr[:m.end]))
+		if rEnd > rStart && rEnd <= len(charPositions) {
+			spans = append(spans, runeSpan{rStart: rStart, rEnd: rEnd})
+		}
+	}
+
+	newHex := make([]byte, len(rawHex))
+	copy(newHex, rawHex)
+
+	var boxes []BoundingBox
+	for _, sp := range spans {
+		xStart := charPositions[sp.rStart].x
+		lastCP := charPositions[sp.rEnd-1]
+		xEnd := lastCP.x + lastCP.width
+		bw := xEnd - xStart
+		if bw < fontSize*1.2 {
+			bw = fontSize * 1.2
+		}
+		by := curY - (fontSize * 0.25)
+		bh := fontSize * 1.25
+
+		boxes = append(boxes, BoundingBox{X: xStart, Y: by, W: bw, H: bh})
+
+		for r := sp.rStart; r < sp.rEnd; r++ {
+			cp := charPositions[r]
+			if cp.byteEnd <= len(newHex)-1 {
+				copy(newHex[cp.byteStart:cp.byteEnd], []byte(spaceHex))
+			}
+		}
+	}
+
+	return newHex, boxes, arrX, true
+}
+
+func processTJArrayWithCMap(rawArr []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode, cmap *pdfCMap) ([]byte, []BoundingBox, float64, bool) {
 	var elements [][]byte
 	i := 1 // skip '['
 	for i < len(rawArr) && rawArr[i] != ']' {
@@ -522,52 +830,138 @@ func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []s
 		elements = append(elements, rawArr[start:i])
 	}
 
-	var totalBoxes []BoundingBox
-	modified := false
-	var newElements [][]byte
-
+	var decodedText strings.Builder
+	var charPositions []charPos
 	arrX := curX
 	charWidth := fontSize * 0.52
 
-	for _, elem := range elements {
-		if len(elem) > 0 && elem[0] == '(' {
-			_, decoded, _ := parseLiteralString(elem, 0)
-			newRaw, boxes, didRedact := processTextString(decoded, fontSize, arrX, curY, customTerms, disabledEntities, mode)
-			if didRedact {
-				modified = true
-				newElements = append(newElements, newRaw)
-				totalBoxes = append(totalBoxes, boxes...)
-			} else {
-				newElements = append(newElements, elem)
+	step := 4
+	if cmap != nil && cmap.codeBytes > 0 {
+		step = cmap.codeBytes * 2
+	}
+	spaceHex := "0003"
+	if cmap != nil {
+		spaceHex = cmap.getSpaceHex()
+	}
+
+	for elemIdx, elem := range elements {
+		if len(elem) == 0 {
+			continue
+		}
+		if elem[0] == '<' {
+			inner := string(elem[1 : len(elem)-1])
+			for k := 0; k+step <= len(inner); k += step {
+				hexChunk := inner[k : k+step]
+				decodedChar := ""
+				if cmap != nil {
+					decodedChar = cmap.decodeHex(hexChunk)
+				} else {
+					decodedChar = decodeHexUTF16(hexChunk)
+				}
+				if decodedChar == "" {
+					decodedChar = " "
+				}
+				for _, r := range decodedChar {
+					charPositions = append(charPositions, charPos{
+						elemIdx:   elemIdx,
+						byteStart: 1 + k,
+						byteEnd:   1 + k + step,
+						x:         arrX,
+						width:     charWidth,
+					})
+					decodedText.WriteRune(r)
+					arrX += charWidth
+				}
 			}
-			arrX += float64(len([]rune(string(decoded)))) * charWidth
-		} else if len(elem) > 0 && elem[0] == '<' {
-			_, decoded, _ := parseHexString(elem, 0)
-			newRaw, boxes, didRedact := processTextString(decoded, fontSize, arrX, curY, customTerms, disabledEntities, mode)
-			if didRedact {
-				modified = true
-				newElements = append(newElements, newRaw)
-				totalBoxes = append(totalBoxes, boxes...)
-			} else {
-				newElements = append(newElements, elem)
+		} else if elem[0] == '(' {
+			_, decBytes, _ := parseLiteralString(elem, 0)
+			litText := decodeText(decBytes)
+			for byteOff, r := range litText {
+				charPositions = append(charPositions, charPos{
+					elemIdx:   elemIdx,
+					byteStart: 1 + byteOff,
+					byteEnd:   1 + byteOff + utf8.RuneLen(r),
+					x:         arrX,
+					width:     charWidth,
+				})
+				decodedText.WriteRune(r)
+				arrX += charWidth
 			}
-			arrX += float64(len([]rune(string(decoded)))) * charWidth
 		} else {
-			// Spacing number
-			newElements = append(newElements, elem)
 			if n, err := strconv.ParseFloat(string(elem), 64); err == nil {
+				if n < -200 && decodedText.Len() > 0 && !strings.HasSuffix(decodedText.String(), " ") {
+					charPositions = append(charPositions, charPos{
+						elemIdx: -1,
+						x:       arrX,
+						width:   fontSize * 0.25,
+					})
+					decodedText.WriteString(" ")
+					arrX += fontSize * 0.25
+				}
 				arrX -= (n / 1000.0) * fontSize
 			}
 		}
 	}
 
-	if !modified {
-		return rawArr, nil, false
+	fullStr := decodedText.String()
+	matches := findSensitiveMatches(fullStr, customTerms, disabledEntities)
+	if len(matches) == 0 {
+		return rawArr, nil, arrX, false
+	}
+
+	type runeSpan struct {
+		rStart int
+		rEnd   int
+	}
+	var spans []runeSpan
+	for _, m := range matches {
+		rStart := len([]rune(fullStr[:m.start]))
+		rEnd := len([]rune(fullStr[:m.end]))
+		if rEnd > rStart && rEnd <= len(charPositions) {
+			spans = append(spans, runeSpan{rStart: rStart, rEnd: rEnd})
+		}
+	}
+
+	clonedElements := make([][]byte, len(elements))
+	for idx, e := range elements {
+		clonedElements[idx] = make([]byte, len(e))
+		copy(clonedElements[idx], e)
+	}
+
+	var boxes []BoundingBox
+	for _, sp := range spans {
+		xStart := charPositions[sp.rStart].x
+		lastCP := charPositions[sp.rEnd-1]
+		xEnd := lastCP.x + lastCP.width
+		bw := xEnd - xStart
+		if bw < fontSize*1.2 {
+			bw = fontSize * 1.2
+		}
+		by := curY - (fontSize * 0.25)
+		bh := fontSize * 1.25
+
+		boxes = append(boxes, BoundingBox{X: xStart, Y: by, W: bw, H: bh})
+
+		for r := sp.rStart; r < sp.rEnd; r++ {
+			cp := charPositions[r]
+			if cp.elemIdx >= 0 && cp.elemIdx < len(clonedElements) {
+				targetElem := clonedElements[cp.elemIdx]
+				if len(targetElem) > 0 && targetElem[0] == '<' {
+					if cp.byteEnd <= len(targetElem)-1 {
+						copy(targetElem[cp.byteStart:cp.byteEnd], []byte(spaceHex))
+					}
+				} else if len(targetElem) > 0 && targetElem[0] == '(' {
+					for b := cp.byteStart; b < cp.byteEnd && b < len(targetElem)-1; b++ {
+						targetElem[b] = ' '
+					}
+				}
+			}
+		}
 	}
 
 	var buf bytes.Buffer
 	buf.WriteByte('[')
-	for idx, e := range newElements {
+	for idx, e := range clonedElements {
 		if idx > 0 {
 			buf.WriteByte(' ')
 		}
@@ -575,7 +969,7 @@ func processTJArray(rawArr []byte, fontSize, curX, curY float64, customTerms []s
 	}
 	buf.WriteByte(']')
 
-	return buf.Bytes(), totalBoxes, true
+	return buf.Bytes(), boxes, arrX, true
 }
 
 func isBoundaryAfter(text string, end int) bool {
@@ -958,6 +1352,14 @@ func extractPreviousFontSize(buf []byte) float64 {
 	return 12.0
 }
 
+func extractPreviousFontName(buf []byte) string {
+	tokens := getLastTokens(buf, 2)
+	if len(tokens) >= 2 {
+		return strings.TrimPrefix(string(tokens[1]), "/")
+	}
+	return ""
+}
+
 func extractPreviousTmCoords(buf []byte) (float64, float64) {
 	tokens := getLastTokens(buf, 2)
 	if len(tokens) >= 2 {
@@ -1311,6 +1713,79 @@ func (cm *pdfCMap) decodeHex(hexStr string) string {
 	return sb.String()
 }
 
+func (cm *pdfCMap) getSpaceHex() string {
+	if cm != nil {
+		for code, s := range cm.mapping {
+			if s == " " {
+				step := cm.codeBytes * 2
+				if step <= 0 {
+					step = 4
+				}
+				return fmt.Sprintf("%0*X", step, code)
+			}
+		}
+		step := cm.codeBytes * 2
+		if step <= 0 {
+			step = 4
+		}
+		return fmt.Sprintf("%0*X", step, 3)
+	}
+	return "0003"
+}
+
+func extractFontCMaps(objMap map[int]*pdfObject) (map[string]*pdfCMap, *pdfCMap) {
+	cmaps := make(map[int]*pdfCMap)
+	for id, obj := range objMap {
+		if !obj.HasStream || len(obj.StreamData) == 0 {
+			continue
+		}
+		streamData := obj.StreamData
+		if obj.Compressed {
+			zr, err := zlib.NewReader(bytes.NewReader(streamData))
+			if err == nil {
+				decomp, readErr := io.ReadAll(zr)
+				_ = zr.Close()
+				if readErr == nil {
+					streamData = decomp
+				}
+			}
+		}
+		if bytes.Contains(streamData, []byte("begincmap")) {
+			cmaps[id] = parseCMapStream(streamData)
+		}
+	}
+
+	fontCMaps := make(map[string]*pdfCMap)
+	reFontInRes := regexp.MustCompile(`/([A-Za-z0-9_-]+)\s+(\d+)\s+0\s+R`)
+	reFontDict := regexp.MustCompile(`(?s)/Font\s*<<([^>]*)>>`)
+	reToUnicode := regexp.MustCompile(`/ToUnicode\s+(\d+)\s+0\s+R`)
+
+	for _, obj := range objMap {
+		if fm := reFontDict.FindStringSubmatch(string(obj.DictHeader)); len(fm) > 1 {
+			for _, item := range reFontInRes.FindAllStringSubmatch(fm[1], -1) {
+				fontName := item[1]
+				fontObjID, _ := strconv.Atoi(item[2])
+				if fObj, ok := objMap[fontObjID]; ok {
+					if tuMatch := reToUnicode.FindStringSubmatch(string(fObj.DictHeader)); len(tuMatch) > 1 {
+						tuID, _ := strconv.Atoi(tuMatch[1])
+						if cm, ok := cmaps[tuID]; ok {
+							fontCMaps[fontName] = cm
+						}
+					}
+				}
+			}
+		}
+	}
+
+	var defaultCMap *pdfCMap
+	for _, cm := range cmaps {
+		defaultCMap = cm
+		break
+	}
+
+	return fontCMaps, defaultCMap
+}
+
 func unescapePDFString(s string) string {
 	s = strings.ReplaceAll(s, `\n`, "\n")
 	s = strings.ReplaceAll(s, `\r`, "")
@@ -1379,16 +1854,166 @@ func normalizePDFText(s string) string {
 	return strings.TrimSpace(s)
 }
 
+func shouldBreakSection(curStr string, nextLine string) bool {
+	if !isSectionOrBulletStart(nextLine) {
+		return false
+	}
+	trimmed := strings.TrimSpace(curStr)
+	lower := strings.ToLower(trimmed)
+	if strings.HasSuffix(lower, " п.") || strings.HasSuffix(lower, " пп.") ||
+		strings.HasSuffix(lower, " ст.") || strings.HasSuffix(lower, " от") ||
+		strings.HasSuffix(lower, " пункта") || strings.HasSuffix(lower, " пунктом") ||
+		strings.HasSuffix(lower, " пункте") || strings.HasSuffix(lower, " статьи") ||
+		strings.HasSuffix(lower, " разделом") || strings.HasSuffix(lower, " раздела") ||
+		strings.HasSuffix(lower, ",") || strings.HasSuffix(lower, ";") {
+		return false
+	}
+	return true
+}
+
+func isHeadingText(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return false
+	}
+	reNumberedHeading := regexp.MustCompile(`^\d+(\.\d+)*\.?\s+[А-ЯЁ\s\(\),-]{3,}$`)
+	if reNumberedHeading.MatchString(trimmed) {
+		return true
+	}
+	reUpperTitle := regexp.MustCompile(`^[А-ЯЁ\s\(\),-]{4,}$`)
+	if reUpperTitle.MatchString(trimmed) && len([]rune(trimmed)) < 90 {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "АКТ ") || strings.HasPrefix(trimmed, "ПРИМЕРНАЯ ФОРМА") || strings.HasPrefix(trimmed, "Данный договор не является") {
+		return true
+	}
+	return false
+}
+
+func isRequisitesHeader(txt string) bool {
+	t := strings.TrimSpace(txt)
+	return strings.HasPrefix(t, "Заказчик:") || t == "Заказчик" ||
+		strings.HasPrefix(t, "Исполнитель:") || t == "Исполнитель" ||
+		strings.HasPrefix(t, "Покупатель:") || t == "Покупатель" ||
+		strings.HasPrefix(t, "Поставщик:") || t == "Поставщик" ||
+		strings.HasPrefix(t, "Арендатор:") || t == "Арендатор" ||
+		strings.HasPrefix(t, "Арендодатель:") || t == "Арендодатель" ||
+		strings.HasPrefix(t, "Клиент:") || t == "Клиент" ||
+		strings.HasPrefix(t, "Подрядчик:") || t == "Подрядчик" ||
+		strings.HasPrefix(t, "Сторона 1:") || t == "Сторона 1" ||
+		strings.HasPrefix(t, "Сторона 2:") || t == "Сторона 2"
+}
+
+func isNewFieldStart(txt string) bool {
+	t := strings.TrimSpace(txt)
+	return isRequisitesHeader(t) ||
+		strings.HasPrefix(t, "Паспорт:") ||
+		strings.HasPrefix(t, "Адрес:") ||
+		strings.HasPrefix(t, "Тел.") ||
+		strings.HasPrefix(t, "ИНН") ||
+		strings.HasPrefix(t, "Р/с") ||
+		strings.HasPrefix(t, "БИК") ||
+		strings.HasPrefix(t, "ОКПО") ||
+		strings.HasPrefix(t, "ОГРН") ||
+		strings.HasPrefix(t, "ОКТМО") ||
+		strings.HasPrefix(t, "ОКТ МО") ||
+		strings.HasPrefix(t, "М.П.") ||
+		strings.HasPrefix(t, "«__»") ||
+		strings.HasPrefix(t, "подпись") ||
+		strings.HasPrefix(t, "Ф.И.О.") ||
+		(len(t) >= 6 && t[0] >= '0' && t[0] <= '9' && strings.Contains(t, "г."))
+}
+
+func formatColumnLines(lines []pdfLine) string {
+	var sb strings.Builder
+	for i, l := range lines {
+		txt := strings.TrimSpace(l.text)
+		if txt == "" {
+			continue
+		}
+		if sb.Len() == 0 {
+			sb.WriteString(txt)
+			continue
+		}
+		prevTxt := strings.TrimSpace(lines[i-1].text)
+
+		shouldNewLine := false
+		if isNewFieldStart(txt) {
+			if prevTxt == "Ф.И.О." && strings.HasPrefix(txt, "_") {
+				shouldNewLine = false
+			} else {
+				shouldNewLine = true
+			}
+		} else if strings.HasSuffix(prevTxt, ":") {
+			if !strings.HasPrefix(txt, "_") {
+				shouldNewLine = true
+			}
+		} else if strings.HasSuffix(prevTxt, "__________") && strings.HasPrefix(txt, "_") {
+			shouldNewLine = true
+		} else if prevTxt == "М.П." || strings.HasPrefix(prevTxt, "«__»") || strings.HasPrefix(prevTxt, "_____/") {
+			shouldNewLine = true
+		} else if l.dy > 14.0 {
+			shouldNewLine = true
+		}
+
+		if shouldNewLine {
+			sb.WriteString("\n")
+		} else {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(txt)
+	}
+	return sb.String()
+}
+
+func detectParagraphFormatting(pText string, page int, startX, startY float64) (string, string) {
+	trimmed := strings.TrimSpace(pText)
+	if trimmed == "" {
+		return "left", "body"
+	}
+
+	// 1. Centered Headings
+	if isHeadingText(trimmed) {
+		return "center", "heading"
+	}
+
+	// 2. Numbered contract sections (e.g. 8.7., 8.6., 1.1.) are ALWAYS body paragraphs, NEVER notes!
+	if isSectionOrBulletStart(trimmed) {
+		return "justify", "body"
+	}
+
+	// 3. Right-aligned notes (e.g. "Приложение к Договору...", "УТВЕРЖДАЮ")
+	if (startX > 360 || strings.HasPrefix(trimmed, "Приложение") || strings.HasPrefix(trimmed, "Приложение к") || strings.HasPrefix(trimmed, "УТВЕРЖДАЮ")) && len([]rune(trimmed)) < 120 {
+		return "right", "note"
+	}
+
+	// 4. Default contract body paragraph: justified
+	return "justify", "body"
+}
+
 type pdfLine struct {
 	text string
 	page int
+	x    float64
 	y    float64
 	dy   float64
 }
 
-// ExtractPDFParagraphs extracts clean, ordered text paragraphs from a PDF document,
-// resolving ToUnicode CMaps, font resources, XObject forms, and spatial coordinates.
+// ExtractPDFParagraphs extracts clean, ordered text paragraphs from a PDF document.
 func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
+	pageCount, detailedParas, err := ExtractPDFParagraphsDetailed(pdfBytes)
+	if err != nil {
+		return pageCount, nil, err
+	}
+	res := make([]string, len(detailedParas))
+	for i, p := range detailedParas {
+		res[i] = p.Text
+	}
+	return pageCount, res, nil
+}
+
+// ExtractPDFParagraphsDetailed extracts clean, ordered text paragraphs with page and layout styling.
+func ExtractPDFParagraphsDetailed(pdfBytes []byte) (int, []PDFParagraph, error) {
 	if !bytes.HasPrefix(pdfBytes, []byte("%PDF-")) {
 		return 0, nil, errors.New("invalid PDF: missing %PDF- header")
 	}
@@ -1403,56 +2028,7 @@ func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
 		objMap[objects[i].ID] = &objects[i]
 	}
 
-	// 1. Parse all ToUnicode CMaps
-	cmaps := make(map[int]*pdfCMap)
-	for id, obj := range objMap {
-		if !obj.HasStream || len(obj.StreamData) == 0 {
-			continue
-		}
-		streamData := obj.StreamData
-		if obj.Compressed {
-			zr, err := zlib.NewReader(bytes.NewReader(streamData))
-			if err == nil {
-				decomp, readErr := io.ReadAll(zr)
-				_ = zr.Close()
-				if readErr == nil {
-					streamData = decomp
-				}
-			}
-		}
-		if bytes.Contains(streamData, []byte("begincmap")) {
-			cmaps[id] = parseCMapStream(streamData)
-		}
-	}
-
-	// 2. Map Font Names (/F1, /TT1, etc.) to CMaps
-	fontCMaps := make(map[string]*pdfCMap)
-	reFontInRes := regexp.MustCompile(`/([A-Za-z0-9_-]+)\s+(\d+)\s+0\s+R`)
-	reFontDict := regexp.MustCompile(`(?s)/Font\s*<<([^>]*)>>`)
-	reToUnicode := regexp.MustCompile(`/ToUnicode\s+(\d+)\s+0\s+R`)
-
-	for _, obj := range objMap {
-		if fm := reFontDict.FindStringSubmatch(string(obj.DictHeader)); len(fm) > 1 {
-			for _, item := range reFontInRes.FindAllStringSubmatch(fm[1], -1) {
-				fontName := item[1]
-				fontObjID, _ := strconv.Atoi(item[2])
-				if fObj, ok := objMap[fontObjID]; ok {
-					if tuMatch := reToUnicode.FindStringSubmatch(string(fObj.DictHeader)); len(tuMatch) > 1 {
-						tuID, _ := strconv.Atoi(tuMatch[1])
-						if cm, ok := cmaps[tuID]; ok {
-							fontCMaps[fontName] = cm
-						}
-					}
-				}
-			}
-		}
-	}
-
-	var defaultCMap *pdfCMap
-	for _, cm := range cmaps {
-		defaultCMap = cm
-		break
-	}
+	fontCMaps, defaultCMap := extractFontCMaps(objMap)
 
 	// 3. Traverse Page Tree: Catalog -> Pages -> Page
 	type pageEntry struct {
@@ -1601,7 +2177,8 @@ func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
 			lines := strings.Split(streamStr, "\n")
 			var curLine strings.Builder
 			var curFont string
-			var curY float64
+			var curX, curY float64
+			var lineStartX float64
 			var lastLineY float64
 			hasCurY := false
 			hasLastLineY := false
@@ -1616,6 +2193,7 @@ func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
 					extractedLines = append(extractedLines, pdfLine{
 						text: s,
 						page: page.num,
+						x:    lineStartX,
 						y:    curY,
 						dy:   dy,
 					})
@@ -1641,24 +2219,36 @@ func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
 				}
 
 				if tmm := reTm.FindStringSubmatch(l); len(tmm) > 6 {
+					x, _ := strconv.ParseFloat(tmm[5], 64)
 					y, _ := strconv.ParseFloat(tmm[6], 64)
 					if hasCurY && math.Abs(y-curY) > 2.5 {
 						flushLine()
+						lineStartX = x
+					} else if !hasCurY {
+						lineStartX = x
+					} else {
+						if x > curX+2.0 && curLine.Len() > 0 && !strings.HasSuffix(curLine.String(), " ") {
+							curLine.WriteString(" ")
+						}
 					}
+					curX = x
 					curY = y
 					hasCurY = true
 				}
 
 				if tdm := reTd.FindStringSubmatch(l); len(tdm) > 2 {
+					tx, _ := strconv.ParseFloat(tdm[1], 64)
 					ty, _ := strconv.ParseFloat(tdm[2], 64)
 					if math.Abs(ty) > 2.5 {
 						flushLine()
+						curX = lineStartX + tx
 						curY += ty
+						lineStartX = curX
 					} else {
-						tx, _ := strconv.ParseFloat(tdm[1], 64)
 						if tx > 2.0 && curLine.Len() > 0 && !strings.HasSuffix(curLine.String(), " ") {
 							curLine.WriteString(" ")
 						}
+						curX += tx
 					}
 				}
 
@@ -1745,61 +2335,168 @@ func ExtractPDFParagraphs(pdfBytes []byte) (int, []string, error) {
 		}
 	}
 
-	// 6. Group lines into clean paragraphs
-	var paragraphs []string
-	var curPara strings.Builder
-	prevPage := 0
 
-	for _, line := range extractedLines {
-		txt := strings.TrimSpace(line.text)
-		if txt == "" {
-			continue
+
+	// 6. Group lines by page and process paragraphs / requisites tables
+	var detailedParas []PDFParagraph
+
+	assembleLinesToParas := func(lines []pdfLine, pageNum int) []PDFParagraph {
+		var paras []PDFParagraph
+		var curPara strings.Builder
+		paraStartX := 0.0
+		paraStartY := 0.0
+
+		flush := func() {
+			if curPara.Len() == 0 {
+				return
+			}
+			pText := normalizePDFText(curPara.String())
+			if pText != "" {
+				align, style := detectParagraphFormatting(pText, pageNum, paraStartX, paraStartY)
+				paras = append(paras, PDFParagraph{
+					Text:  pText,
+					Page:  pageNum,
+					Align: align,
+					Style: style,
+				})
+			}
+			curPara.Reset()
 		}
+
+		for _, line := range lines {
+			txt := strings.TrimSpace(line.text)
+			if txt == "" {
+				continue
+			}
 		if (line.y > 750 || line.y < 45) && rePageNum.MatchString(txt) {
 			continue
 		}
 
 		shouldBreak := false
-		if prevPage != 0 && line.page != prevPage {
-			shouldBreak = true
-		} else if curPara.Len() > 0 {
-			if line.dy > 20.0 {
+		if curPara.Len() > 0 {
+			curStr := strings.TrimSpace(curPara.String())
+			if isHeadingText(curStr) || isHeadingText(txt) {
+				shouldBreak = true
+			} else if line.dy > 20.0 {
 				shouldBreak = true
 			} else {
-				curStr := curPara.String()
-				if strings.HasSuffix(curStr, ":") || strings.HasSuffix(curStr, "__________") {
+				if strings.HasSuffix(curStr, ":") {
 					shouldBreak = true
-				} else if isSectionOrBulletStart(txt) {
+				} else if strings.HasSuffix(curStr, "__________") {
+					firstRune, _ := utf8.DecodeRuneInString(txt)
+					if unicode.IsUpper(firstRune) || strings.HasPrefix(txt, "подпись") {
+						shouldBreak = true
+					}
+				} else if shouldBreakSection(curStr, txt) {
 					shouldBreak = true
 				}
 			}
 		}
 
 		if shouldBreak && curPara.Len() > 0 {
-			pText := normalizePDFText(curPara.String())
-			if pText != "" {
-				paragraphs = append(paragraphs, pText)
-			}
-			curPara.Reset()
+			flush()
 		}
 
-		if curPara.Len() > 0 {
+		if curPara.Len() == 0 {
+			paraStartX = line.x
+			paraStartY = line.y
+		} else {
 			firstRune, _ := utf8.DecodeRuneInString(txt)
 			if !strings.ContainsRune(".,:;!?%)»]", firstRune) {
 				curPara.WriteString(" ")
 			}
 		}
 		curPara.WriteString(txt)
-		prevPage = line.page
+	}
+	flush()
+	return paras
+}
+
+	linesByPage := make(map[int][]pdfLine)
+	var pageOrder []int
+	for _, l := range extractedLines {
+		if len(linesByPage[l.page]) == 0 {
+			pageOrder = append(pageOrder, l.page)
+		}
+		linesByPage[l.page] = append(linesByPage[l.page], l)
 	}
 
-	if curPara.Len() > 0 {
-		pText := normalizePDFText(curPara.String())
-		if pText != "" {
-			paragraphs = append(paragraphs, pText)
+	for _, pNum := range pageOrder {
+		pLines := linesByPage[pNum]
+
+		leftHdrIdx := -1
+		rightHdrIdx := -1
+		for idx, l := range pLines {
+			if isRequisitesHeader(l.text) {
+				if l.x < 230 && leftHdrIdx == -1 {
+					leftHdrIdx = idx
+				} else if l.x >= 230 && rightHdrIdx == -1 {
+					rightHdrIdx = idx
+				}
+			}
+		}
+
+		if leftHdrIdx != -1 && rightHdrIdx != -1 {
+			minTableIdx := leftHdrIdx
+			if rightHdrIdx < minTableIdx {
+				minTableIdx = rightHdrIdx
+			}
+			normalEndIdx := minTableIdx
+			if minTableIdx > 0 {
+				prevTxt := strings.TrimSpace(pLines[minTableIdx-1].text)
+				if strings.Contains(prevTxt, "Исполнитель") && strings.Contains(prevTxt, "Заказчик") {
+					normalEndIdx = minTableIdx - 1
+				}
+			}
+
+			// Preceding paragraphs
+			if normalEndIdx > 0 {
+				detailedParas = append(detailedParas, assembleLinesToParas(pLines[:normalEndIdx], pNum)...)
+			}
+
+			// 2-column table
+			var leftColLines, rightColLines []pdfLine
+			for _, l := range pLines[minTableIdx:] {
+				txt := strings.TrimSpace(l.text)
+				if txt == "" {
+					continue
+				}
+				if (l.y > 750 || l.y < 45) && rePageNum.MatchString(txt) {
+					continue
+				}
+				if l.x < 230 {
+					leftColLines = append(leftColLines, l)
+				} else {
+					rightColLines = append(rightColLines, l)
+				}
+			}
+
+			leftText := formatColumnLines(leftColLines)
+			rightText := formatColumnLines(rightColLines)
+
+			tbl := &domain.TextTablePreview{
+				Rows: []domain.TextTableRowPreview{
+					{
+						Cells: []domain.TextTableCellPreview{
+							{Segments: []domain.TextParagraphSegment{{Text: leftText, IsEntity: false}}},
+							{Segments: []domain.TextParagraphSegment{{Text: rightText, IsEntity: false}}},
+						},
+					},
+				},
+			}
+
+			detailedParas = append(detailedParas, PDFParagraph{
+				Text:  leftText + "\n\n" + rightText,
+				Page:  pNum,
+				Align: "left",
+				Style: "table",
+				Table: tbl,
+			})
+		} else {
+			detailedParas = append(detailedParas, assembleLinesToParas(pLines, pNum)...)
 		}
 	}
 
-	return pageCount, paragraphs, nil
+	return pageCount, detailedParas, nil
 }
 

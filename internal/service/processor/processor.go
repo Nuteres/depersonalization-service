@@ -243,8 +243,8 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	}
 
 	if ext == ".docx" || ext == ".odt" || ext == ".pdf" || ext == ".txt" {
+		var disabledEntityTypes []string
 		if len(opts.DisabledCols) > 0 && info != nil {
-			var disabledEntityTypes []string
 			for _, cIdx := range opts.DisabledCols {
 				if cIdx >= 1 && cIdx <= len(info.Entities) {
 					disabledEntityTypes = append(disabledEntityTypes, info.Entities[cIdx-1].Type)
@@ -252,6 +252,27 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 			}
 			options["disabled_entities"] = disabledEntityTypes
 		}
+
+		if info != nil && len(info.TextSnippets) > 0 {
+			disabledSet := make(map[string]bool)
+			for _, d := range disabledEntityTypes {
+				disabledSet[d] = true
+			}
+			var terms []string
+			if existing, ok := options["redact_terms"].([]string); ok {
+				terms = append(terms, existing...)
+			}
+			for _, snip := range info.TextSnippets {
+				if !disabledSet[snip.Type] && snip.Original != "" {
+					terms = append(terms, snip.Original)
+				}
+			}
+			options["redact_terms"] = terms
+		}
+	}
+
+	if len(opts.PDFRedactionBoxes) > 0 {
+		options["redaction_boxes"] = opts.PDFRedactionBoxes
 	}
 
 	if ext == ".pdf" {

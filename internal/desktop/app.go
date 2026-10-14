@@ -2,6 +2,9 @@ package desktop
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
+	"os"
 	goruntime "runtime"
 	"strings"
 	"sync"
@@ -109,6 +112,15 @@ func (a *DesktopApp) InspectFile(path string) (*domain.FileInfo, error) {
 		ctx = context.Background()
 	}
 	return a.insp.Inspect(ctx, path)
+}
+
+// GetFileBase64 reads the file at path and returns its contents encoded as a base64 string.
+func (a *DesktopApp) GetFileBase64(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(data), nil
 }
 
 // GetTableRows fetches a window of preview rows starting at offset with limit for the default sheet.
