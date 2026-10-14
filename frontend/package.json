@@ -1,7 +1,7 @@
 {
   "name": "dep-service-frontend",
   "private": true,
-  "version": "1.9.16",
+  "version": "1.9.18",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
+    "pdfjs-dist": "^4.10.38",
     "svelte": "^5.37.0"
   },
   "devDependencies": {
