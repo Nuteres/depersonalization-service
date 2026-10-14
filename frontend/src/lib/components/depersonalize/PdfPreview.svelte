@@ -120,33 +120,9 @@
     return bytes;
   }
 
-  // Synthetic mask generator for preview
-  function makeAnonymizedValue(type: string, orig: string): string {
-    if (appState.processingMode === 'delete') {
-      return '[УДАЛЕНО]';
-    }
-    switch (type) {
-      case 'FIO':
-        return 'Иванов Иван Иванович';
-      case 'PHONE':
-        return '+7 (999) 000-00-00';
-      case 'PASSPORT':
-        return '4500 000000';
-      case 'SNILS':
-        return '000-000-000 00';
-      case 'INN':
-        return '770000000000';
-      case 'CARD':
-        return '**** **** **** 0000';
-      case 'EMAIL':
-        return 'user***@domain.ru';
-      case 'ADDRESS':
-        return 'г. Москва, ул. Новая, д. 1';
-      case 'DATE':
-        return '01.01.2025';
-      default:
-        return '[ПДн СКРЫТО]';
-    }
+  // Redaction marker for PDF preview (100% unified Blackout Redaction)
+  function makeAnonymizedValue(): string {
+    return '[ ПДн СКРЫТО ]';
   }
 
   // Regex patterns for Russian personal data detection
@@ -308,7 +284,7 @@
                   pageNum: pNum,
                   type: snip.type || 'FIO',
                   original: snip.original,
-                  anonymized: snip.anonymized || makeAnonymizedValue(snip.type, snip.original),
+                  anonymized: '[ ПДн СКРЫТО ]',
                   cssRect: {
                     left: minCssLeft,
                     top: minCssTop,
@@ -367,7 +343,7 @@
                 pageNum: pNum,
                 type: pat.type,
                 original: matchedText,
-                anonymized: makeAnonymizedValue(pat.type, matchedText),
+                anonymized: '[ ПДн СКРЫТО ]',
                 cssRect: {
                   left: minCssLeft,
                   top: minCssTop,
@@ -536,7 +512,7 @@
                   {#if isDisabled}
                     <span class="line-through decoration-stone-500">{ent.original}</span>
                   {:else if !isBefore}
-                    {appState.processingMode === 'delete' ? '[УДАЛЕНО]' : ent.anonymized}
+                    {ent.anonymized}
                   {:else}
                     {ent.original}
                   {/if}
@@ -568,16 +544,14 @@
               </span>
               <span
                 class="px-1.5 py-0.5 {hoveredEntity.isDisabled
-                  ? 'bg-amber-950 border border-amber-600 text-amber-300'
-                  : appState.processingMode === 'delete'
-                    ? 'bg-rose-950 border border-rose-600 text-rose-300'
-                    : 'bg-emerald-950 border border-emerald-600 text-emerald-300'} text-[9px] font-bold"
+                  ? 'bg-stone-800 border border-stone-600 text-stone-400'
+                  : 'bg-emerald-950 border border-emerald-600 text-emerald-300'} text-[9px] font-bold"
               >
-                {hoveredEntity.isDisabled ? '▫ ОТКЛЮЧЕНО' : appState.processingMode === 'delete' ? '▪ ЧЕРНАЯ ПЛАШКА' : '▪ ЗАМЕНЯЕТСЯ'}
+                {hoveredEntity.isDisabled ? '▫ ОТКЛЮЧЕНО' : '▪ ПДн СКРЫТО'}
               </span>
             </div>
             <span class="text-stone-400 text-[10px]">
-              Деперсонализация
+              Вымарывание PDF
             </span>
           </div>
 
@@ -589,15 +563,15 @@
               </span>
             </div>
             <div class="flex items-start justify-between gap-2">
-              <span class="text-stone-400 font-mono text-[11px] shrink-0">{appState.processingMode === 'delete' ? 'После удаления:' : 'После:'}</span>
-              <span class="font-mono {hoveredEntity.isDisabled ? 'text-stone-400 line-through' : appState.processingMode === 'delete' ? 'text-rose-300' : 'text-emerald-300'} text-[11px] break-all text-right font-medium">
-                {hoveredEntity.isDisabled ? hoveredEntity.original : (appState.processingMode === 'delete' ? '[УДАЛЕНО]' : hoveredEntity.anonymized)}
+              <span class="text-stone-400 font-mono text-[11px] shrink-0">После сокрытия:</span>
+              <span class="font-mono {hoveredEntity.isDisabled ? 'text-stone-400 line-through' : 'text-emerald-300'} text-[11px] break-all text-right font-medium">
+                {hoveredEntity.isDisabled ? hoveredEntity.original : hoveredEntity.anonymized}
               </span>
             </div>
           </div>
 
           <div class="mt-2.5 pt-2 border-t border-stone-800 text-[10px] text-stone-400 font-mono flex items-center justify-between">
-            <span>💡 Кликните для {hoveredEntity.isDisabled ? 'включения' : 'отключения'} замены</span>
+            <span>💡 Кликните для {hoveredEntity.isDisabled ? 'включения' : 'отключения'} сокрытия</span>
           </div>
         </div>
       {/if}
