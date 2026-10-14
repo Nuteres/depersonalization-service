@@ -157,13 +157,28 @@
     },
     {
       type: 'FIO',
-      regex: /\b[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична)\b|\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s*[А-ЯЁ]\.|\b[А-ЯЁ]\.\s*[А-ЯЁ]\.\s+[А-ЯЁ][а-яё]+\b/g
+      regex: /(?:^|[^а-яёА-ЯЁ])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:(?:ович|евич|ич)(?:[ауе]|ем)?|(?:овн|евн|ичн|иничн)(?:[аыеу]|ой|ою)?)|[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s*[А-ЯЁ]\.|\b[А-ЯЁ]\.\s*[А-ЯЁ]\.\s+[А-ЯЁ][а-яё]+)(?=[^а-яёА-ЯЁ]|$)/gu
     },
     {
       type: 'ADDRESS',
       regex: /(?:г\.|город|ул\.|улица|пр-т|проспект|д\.|дом|кв\.|квартира)\s+[^,;\n]{2,30}(?:,\s*(?:ул\.|д\.|кв\.)\s*[^,;\n]{1,20})+/gi
     }
   ];
+
+  function cleanWord(w: string): string {
+    return w.trim().replace(/[.,:;()\[\]"'\-–—]/g, '').toLowerCase();
+  }
+
+  function hasRectOverlap(
+    r1: { left: number; top: number; width: number; height: number },
+    r2: { left: number; top: number; width: number; height: number }
+  ): boolean {
+    const xOverlap = Math.max(0, Math.min(r1.left + r1.width, r2.left + r2.width) - Math.max(r1.left, r2.left));
+    const yOverlap = Math.max(0, Math.min(r1.top + r1.height, r2.top + r2.height) - Math.max(r1.top, r2.top));
+    const overlapArea = xOverlap * yOverlap;
+    const minArea = Math.min(r1.width * r1.height, r2.width * r2.height);
+    return minArea > 0 && overlapArea / minArea > 0.4;
+  }
 
   let currentLoadingPath = '';
 
@@ -200,163 +215,188 @@
         const viewport = page.getViewport({ scale: targetScale });
         const textContent = await page.getTextContent();
 
-        // Build continuous page string and map character ranges to text items
-        interface TextItemRange {
-          itemIndex: number;
-          startChar: number;
-          endChar: number;
-          str: string;
+        // Decompose text content into individual word tokens with accurate sub-item coordinates
+        interface WordToken {
+          word: string;
+          clean: string;
           pdfBox: PDFRedactionBox;
-          cssRect: { left: number; top: number; width: number; height: number };
+          y: number;
         }
 
-        const itemRanges: TextItemRange[] = [];
-        let pageStr = '';
+        const tokens: WordToken[] = [];
 
         for (let i = 0; i < textContent.items.length; i++) {
           const item = textContent.items[i] as any;
-          if (!item.str) continue;
+          if (!item.str || !item.str.trim()) continue;
 
-          const str = item.str;
-          const start = pageStr.length;
-          pageStr += str + ' ';
-          const end = pageStr.length - 1;
+          const charW = item.str.length > 0 ? (item.width || 10) / item.str.length : 10;
+          const baseH = (item.height || 12) + 4;
+          const baseY = item.transform[5] - 2;
 
-          // Convert PDF coordinates to viewport coordinates
-          const tx = item.transform[4];
-          const ty = item.transform[5];
-          const tw = item.width || 10;
-          const th = item.height || 12;
+          const wordRegex = /\S+/g;
+          let match: RegExpExecArray | null;
+          while ((match = wordRegex.exec(item.str)) !== null) {
+            const rawWord = match[0];
+            const startIdx = match.index;
+            const endIdx = startIdx + rawWord.length;
 
-          // PDF bounding box in raw 72 DPI points
-          const pdfBox: PDFRedactionBox = {
-            page: pNum,
-            x: tx,
-            y: ty - 2, // Slight vertical padding
-            width: tw,
-            height: th + 4
-          };
+            const subX = item.transform[4] + startIdx * charW;
+            const subW = Math.max((endIdx - startIdx) * charW, 6);
 
-          const viewRect = viewport.convertToViewportRectangle([tx, ty - 2, tx + tw, ty + th + 2]);
-          const cssLeft = Math.min(viewRect[0], viewRect[2]);
-          const cssTop = Math.min(viewRect[1], viewRect[3]);
-          const cssWidth = Math.max(Math.abs(viewRect[2] - viewRect[0]), 8);
-          const cssHeight = Math.max(Math.abs(viewRect[3] - viewRect[1]), 12);
-
-          itemRanges.push({
-            itemIndex: i,
-            startChar: start,
-            endChar: end,
-            str,
-            pdfBox,
-            cssRect: { left: cssLeft, top: cssTop, width: cssWidth, height: cssHeight }
-          });
+            const cl = cleanWord(rawWord);
+            if (cl.length > 0) {
+              tokens.push({
+                word: rawWord,
+                clean: cl,
+                pdfBox: {
+                  page: pNum,
+                  x: subX,
+                  y: baseY,
+                  width: subW,
+                  height: baseH
+                },
+                y: item.transform[5]
+              });
+            }
+          }
         }
 
-        // Run detection on pageStr
+        // Helper to locate exact PDF & CSS bounding boxes for any phrase/token
+        function findBoxesForText(targetText: string): Array<{
+          pdfBox: PDFRedactionBox;
+          cssRect: { left: number; top: number; width: number; height: number };
+          matchedStr: string;
+        }> {
+          const targetCleanWords = targetText.trim().split(/\s+/).map(cleanWord).filter(Boolean);
+          if (targetCleanWords.length === 0) return [];
+
+          const results: Array<{
+            pdfBox: PDFRedactionBox;
+            cssRect: { left: number; top: number; width: number; height: number };
+            matchedStr: string;
+          }> = [];
+
+          for (let i = 0; i <= tokens.length - targetCleanWords.length; i++) {
+            let match = true;
+            for (let w = 0; w < targetCleanWords.length; w++) {
+              const currentToken = tokens[i + w];
+              const targetW = targetCleanWords[w];
+              if (!currentToken || !targetW) {
+                match = false;
+                break;
+              }
+              const tokClean = currentToken.clean;
+              if (targetCleanWords.length === 1) {
+                const isNum = /^\d+$/.test(targetW);
+                if (isNum ? !tokClean.includes(targetW) : tokClean !== targetW) {
+                  match = false;
+                  break;
+                }
+              } else {
+                if (tokClean !== targetW && !tokClean.startsWith(targetW) && !targetW.startsWith(tokClean)) {
+                  match = false;
+                  break;
+                }
+              }
+            }
+
+            if (match) {
+              const matched = tokens.slice(i, i + targetCleanWords.length);
+
+              // Group tokens by line Y coordinate (within 5pt tolerance)
+              const lines: WordToken[][] = [];
+              for (const tok of matched) {
+                const lastLine = lines[lines.length - 1];
+                if (lastLine && lastLine.length > 0 && Math.abs(lastLine[0]!.y - tok.y) < 5) {
+                  lastLine.push(tok);
+                } else {
+                  lines.push([tok]);
+                }
+              }
+
+              for (const lineTokens of lines) {
+                const minX = Math.min(...lineTokens.map((t) => t.pdfBox.x));
+                const minY = Math.min(...lineTokens.map((t) => t.pdfBox.y));
+                const maxX = Math.max(...lineTokens.map((t) => t.pdfBox.x + t.pdfBox.width));
+                const maxY = Math.max(...lineTokens.map((t) => t.pdfBox.y + t.pdfBox.height));
+
+                const viewRect = viewport.convertToViewportRectangle([minX, minY, maxX, maxY]);
+                const cssLeft = Math.min(viewRect[0], viewRect[2]);
+                const cssTop = Math.min(viewRect[1], viewRect[3]);
+                const cssWidth = Math.max(Math.abs(viewRect[2] - viewRect[0]), 8);
+                const cssHeight = Math.max(Math.abs(viewRect[3] - viewRect[1]), 12);
+
+                results.push({
+                  pdfBox: { page: pNum, x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+                  cssRect: { left: cssLeft, top: cssTop, width: cssWidth, height: cssHeight },
+                  matchedStr: lineTokens.map((t) => t.word).join(' ')
+                });
+              }
+
+              i += targetCleanWords.length - 1;
+            }
+          }
+
+          return results;
+        }
+
+        // Run detection on current page
         const pageEntities: PageOverlayEntity[] = [];
 
         // 1. Detect via known snippets from Go inspector if available
         if (fileInfo?.textSnippets && fileInfo.textSnippets.length > 0) {
           for (const snip of fileInfo.textSnippets) {
-            if (!snip.original || snip.original.length < 3) continue;
-            let idx = pageStr.indexOf(snip.original);
-            while (idx !== -1) {
-              const matchEnd = idx + snip.original.length;
-              const overlapping = itemRanges.filter(
-                (r) => r.startChar < matchEnd && r.endChar > idx
+            if (!snip.original || snip.original.trim().length < 2) continue;
+            const boxes = findBoxesForText(snip.original);
+            for (const b of boxes) {
+              const alreadyCovered = pageEntities.some((existing) =>
+                hasRectOverlap(existing.cssRect, b.cssRect)
               );
-
-              if (overlapping.length > 0) {
+              if (!alreadyCovered) {
                 globalCounter++;
-                const minCssLeft = Math.min(...overlapping.map((r) => r.cssRect.left));
-                const minCssTop = Math.min(...overlapping.map((r) => r.cssRect.top));
-                const maxCssRight = Math.max(...overlapping.map((r) => r.cssRect.left + r.cssRect.width));
-                const maxCssBottom = Math.max(...overlapping.map((r) => r.cssRect.top + r.cssRect.height));
-
-                const minPdfX = Math.min(...overlapping.map((r) => r.pdfBox.x));
-                const minPdfY = Math.min(...overlapping.map((r) => r.pdfBox.y));
-                const maxPdfRight = Math.max(...overlapping.map((r) => r.pdfBox.x + r.pdfBox.width));
-                const maxPdfTop = Math.max(...overlapping.map((r) => r.pdfBox.y + r.pdfBox.height));
-
                 pageEntities.push({
                   instanceId: `${pNum}_${globalCounter}`,
                   pageNum: pNum,
                   type: snip.type || 'FIO',
-                  original: snip.original,
+                  original: b.matchedStr.replace(/[.,:;()\[\]"'\-–—]+$/, '') || snip.original,
                   anonymized: '[ ПДн СКРЫТО ]',
-                  cssRect: {
-                    left: minCssLeft,
-                    top: minCssTop,
-                    width: maxCssRight - minCssLeft,
-                    height: maxCssBottom - minCssTop
-                  },
-                  pdfBox: {
-                    page: pNum,
-                    x: minPdfX,
-                    y: minPdfY,
-                    width: maxPdfRight - minPdfX,
-                    height: maxPdfTop - minPdfY
-                  }
+                  cssRect: b.cssRect,
+                  pdfBox: b.pdfBox
                 });
               }
-              idx = pageStr.indexOf(snip.original, matchEnd);
             }
           }
         }
 
-        // 2. Client-side PII pattern matching
+        // 2. Client-side PII pattern matching on clean single-spaced page text
+        const cleanPageStr = tokens.map((t) => t.word).join(' ');
+
         for (const pat of piiPatterns) {
           pat.regex.lastIndex = 0;
           let match: RegExpExecArray | null;
-          while ((match = pat.regex.exec(pageStr)) !== null) {
-            const matchedText = match[0].trim();
+          while ((match = pat.regex.exec(cleanPageStr)) !== null) {
+            const matchedText = (match[1] || match[0]).trim();
             if (matchedText.length < 3) continue;
 
-            const matchStart = match.index;
-            const matchEnd = match.index + match[0].length;
+            const boxes = findBoxesForText(matchedText);
+            for (const b of boxes) {
+              const alreadyCovered = pageEntities.some(
+                (e) =>
+                  e.original.includes(matchedText) ||
+                  matchedText.includes(e.original) ||
+                  hasRectOverlap(e.cssRect, b.cssRect)
+              );
+              if (alreadyCovered) continue;
 
-            // Avoid duplicate overlays if already covered by snippets
-            const alreadyMatched = pageEntities.some(
-              (e) => e.original.includes(matchedText) || matchedText.includes(e.original)
-            );
-            if (alreadyMatched) continue;
-
-            const overlapping = itemRanges.filter(
-              (r) => r.startChar < matchEnd && r.endChar > matchStart
-            );
-
-            if (overlapping.length > 0) {
               globalCounter++;
-              const minCssLeft = Math.min(...overlapping.map((r) => r.cssRect.left));
-              const minCssTop = Math.min(...overlapping.map((r) => r.cssRect.top));
-              const maxCssRight = Math.max(...overlapping.map((r) => r.cssRect.left + r.cssRect.width));
-              const maxCssBottom = Math.max(...overlapping.map((r) => r.cssRect.top + r.cssRect.height));
-
-              const minPdfX = Math.min(...overlapping.map((r) => r.pdfBox.x));
-              const minPdfY = Math.min(...overlapping.map((r) => r.pdfBox.y));
-              const maxPdfRight = Math.max(...overlapping.map((r) => r.pdfBox.x + r.pdfBox.width));
-              const maxPdfTop = Math.max(...overlapping.map((r) => r.pdfBox.y + r.pdfBox.height));
-
               pageEntities.push({
                 instanceId: `${pNum}_${globalCounter}`,
                 pageNum: pNum,
                 type: pat.type,
-                original: matchedText,
+                original: b.matchedStr.replace(/[.,:;()\[\]"'\-–—]+$/, '') || matchedText,
                 anonymized: '[ ПДн СКРЫТО ]',
-                cssRect: {
-                  left: minCssLeft,
-                  top: minCssTop,
-                  width: maxCssRight - minCssLeft,
-                  height: maxCssBottom - minCssTop
-                },
-                pdfBox: {
-                  page: pNum,
-                  x: minPdfX,
-                  y: minPdfY,
-                  width: maxPdfRight - minPdfX,
-                  height: maxPdfTop - minPdfY
-                }
+                cssRect: b.cssRect,
+                pdfBox: b.pdfBox
               });
             }
           }

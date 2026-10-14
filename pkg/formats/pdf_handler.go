@@ -195,17 +195,26 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		}
 
 		// Redact content stream
-		redactedStream, modified := redactContentStream(decompressed, customTerms, disabledEntities, mode, fontCMaps, defaultCMap)
+		var redactedStream []byte
+		var modified bool
 
-		// If there are redaction boxes assigned to this stream, append vector blackout rectangles
-		if boxes, ok := boxesByStream[obj.ID]; ok && len(boxes) > 0 {
-			var rectBuf bytes.Buffer
-			rectBuf.WriteString("\n")
-			for _, b := range boxes {
-				fmt.Fprintf(&rectBuf, "q 0 0 0 rg %.3f %.3f %.3f %.3f re f Q\n", b.X, b.Y, b.Width, b.Height)
+		if len(redactionBoxes) > 0 {
+			// Interactive mode: redactions are strictly governed by the approved redaction boxes from the UI preview.
+			// Blind regex-based stream alterations are skipped so that user-disabled entities are respected
+			// and preview matches the exported PDF exactly.
+			redactedStream = decompressed
+			if boxes, ok := boxesByStream[obj.ID]; ok && len(boxes) > 0 {
+				var rectBuf bytes.Buffer
+				rectBuf.WriteString("\n")
+				for _, b := range boxes {
+					fmt.Fprintf(&rectBuf, "q 0 0 0 rg %.3f %.3f %.3f %.3f re f Q\n", b.X, b.Y, b.Width, b.Height)
+				}
+				redactedStream = append(redactedStream, rectBuf.Bytes()...)
+				modified = true
 			}
-			redactedStream = append(redactedStream, rectBuf.Bytes()...)
-			modified = true
+		} else {
+			// Automated/headless mode: apply content stream text redaction and automatic blackout boxes
+			redactedStream, modified = redactContentStream(decompressed, customTerms, disabledEntities, mode, fontCMaps, defaultCMap)
 		}
 
 		if modified {

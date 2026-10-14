@@ -570,6 +570,50 @@ func TestPDFHandler_ExactRedactionBoxes(t *testing.T) {
 	}
 }
 
+func TestPDFHandler_ExactRedactionBoxes_DoesNotBlindlyRedactUncheckedText(t *testing.T) {
+	anon := anonymizer.New("test-salt")
+	h := NewPDFHandler(anon)
+
+	// Stream contains a phone number and an employee name
+	rawPDF := buildTestPDF("BT /F1 12 Tf 100 200 Td (+7 999 123-45-67) Tj 100 180 Td (Иванов Иван Иванович) Tj ET", false)
+
+	// User only approved redaction box for the phone number
+	boxes := []domain.PDFRedactionBox{
+		{Page: 1, X: 95.0, Y: 195.0, Width: 120.0, Height: 18.0},
+	}
+
+	var out bytes.Buffer
+	options := map[string]interface{}{
+		"redaction_boxes": boxes,
+	}
+
+	err := h.Process(context.Background(), bytes.NewReader(rawPDF), &out, options)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	outBytes := out.Bytes()
+	streams, err := extractAllStreamContents(outBytes)
+	if err != nil {
+		t.Fatalf("extractAllStreamContents failed: %v", err)
+	}
+
+	// 1. Approved box must be added
+	expectedCmd := "95.000 195.000 120.000 18.000 re f"
+	if !strings.Contains(streams, expectedCmd) {
+		t.Errorf("expected stream to contain approved box %q, got:\n%s", expectedCmd, streams)
+	}
+
+	// 2. Unchecked FIO must NOT have been blacked out or replaced with [ ПДн СКРЫТО ]
+	if strings.Contains(streams, "[ ПДн СКРЫТО ]") {
+		t.Errorf("expected stream NOT to contain automatic blackout marker, but got:\n%s", streams)
+	}
+	if !strings.Contains(streams, "Иванов Иван Иванович") {
+		t.Errorf("expected original text 'Иванов Иван Иванович' to remain in stream when unchecked, got:\n%s", streams)
+	}
+}
+
+
 
 
 
