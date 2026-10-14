@@ -212,7 +212,8 @@
           strategy: effectiveMode,
           salt,
           createKey: false,
-          pdfRedactionBoxes: appState.pdfRedactionBoxes
+          pdfRedactionBoxes: appState.pdfRedactionBoxes,
+          pdfRedactTerms: appState.pdfRedactTerms || []
         });
       } else {
         result = await ProcessFileWithSheets(

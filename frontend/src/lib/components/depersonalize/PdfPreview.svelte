@@ -68,12 +68,20 @@
   // Calculate active PDF redaction boxes and keep appState synchronized
   $effect(() => {
     const activeBoxes: PDFRedactionBox[] = [];
+    const activeTerms: string[] = [];
     for (const ent of allDetectedEntities) {
       if (!disabledInstanceIds.has(ent.instanceId)) {
-        activeBoxes.push(ent.pdfBox);
+        activeBoxes.push({
+          ...ent.pdfBox,
+          text: ent.original
+        });
+        if (ent.original && ent.original.trim().length > 1) {
+          activeTerms.push(ent.original.trim());
+        }
       }
     }
     appState.pdfRedactionBoxes = activeBoxes;
+    appState.pdfRedactTerms = activeTerms;
   });
 
   function toggleInstance(instanceId: string) {

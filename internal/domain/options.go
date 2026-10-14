@@ -24,6 +24,7 @@ type PDFRedactionBox struct {
 	Y      float64 `json:"y"`
 	Width  float64 `json:"width"`
 	Height float64 `json:"height"`
+	Text   string  `json:"text,omitempty"`
 }
 
 // ProcessOptions specifies options for processing and anonymizing a file.
@@ -40,6 +41,7 @@ type ProcessOptions struct {
 	KeyPath           string                `json:"keyPath"`
 	ShuffleRows       bool                  `json:"shuffleRows"`
 	PDFRedactionBoxes []PDFRedactionBox     `json:"pdfRedactionBoxes,omitempty"`
+	PDFRedactTerms    []string              `json:"pdfRedactTerms,omitempty"`
 }
 
 // RestoreOptions specifies options for restoring a previously anonymized file using a .depmap key.

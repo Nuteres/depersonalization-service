@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -131,6 +132,7 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 	// Collect page-to-content stream mapping for coordinate redaction
 	pageTree := getPDFPageTree(pdfBytes, objMap, objects)
 	boxesByStream := make(map[int][]domain.PDFRedactionBox)
+	drawBoxesByStream := make(map[int][]domain.PDFRedactionBox)
 	if len(redactionBoxes) > 0 {
 		boxesByPage := make(map[int][]domain.PDFRedactionBox)
 		for _, b := range redactionBoxes {
@@ -142,14 +144,18 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		}
 		for _, p := range pageTree {
 			if pBoxes, ok := boxesByPage[p.Num]; ok && len(pBoxes) > 0 && len(p.ContentRefs) > 0 {
+				for _, cID := range p.ContentRefs {
+					boxesByStream[cID] = append(boxesByStream[cID], pBoxes...)
+				}
 				targetID := p.ContentRefs[len(p.ContentRefs)-1]
-				boxesByStream[targetID] = append(boxesByStream[targetID], pBoxes...)
+				drawBoxesByStream[targetID] = append(drawBoxesByStream[targetID], pBoxes...)
 			}
 		}
 		if len(boxesByStream) == 0 {
 			for i := range objects {
 				if isContentStream(objects[i].DictHeader) && objects[i].HasStream && len(objects[i].StreamData) > 0 {
 					boxesByStream[objects[i].ID] = redactionBoxes
+					drawBoxesByStream[objects[i].ID] = redactionBoxes
 					break
 				}
 			}
@@ -198,23 +204,21 @@ func (h *PDFHandler) Process(ctx context.Context, r io.Reader, w io.Writer, opti
 		var redactedStream []byte
 		var modified bool
 
-		if len(redactionBoxes) > 0 {
-			// Interactive mode: redactions are strictly governed by the approved redaction boxes from the UI preview.
-			// Blind regex-based stream alterations are skipped so that user-disabled entities are respected
-			// and preview matches the exported PDF exactly.
-			redactedStream = decompressed
-			if boxes, ok := boxesByStream[obj.ID]; ok && len(boxes) > 0 {
+		streamBoxes := boxesByStream[obj.ID]
+		isInteractive := len(redactionBoxes) > 0
+
+		redactedStream, modified = redactContentStream(decompressed, customTerms, disabledEntities, mode, fontCMaps, defaultCMap, streamBoxes, isInteractive)
+
+		if isInteractive {
+			if toDraw, ok := drawBoxesByStream[obj.ID]; ok && len(toDraw) > 0 {
 				var rectBuf bytes.Buffer
 				rectBuf.WriteString("\n")
-				for _, b := range boxes {
+				for _, b := range toDraw {
 					fmt.Fprintf(&rectBuf, "q 0 0 0 rg %.3f %.3f %.3f %.3f re f Q\n", b.X, b.Y, b.Width, b.Height)
 				}
 				redactedStream = append(redactedStream, rectBuf.Bytes()...)
 				modified = true
 			}
-		} else {
-			// Automated/headless mode: apply content stream text redaction and automatic blackout boxes
-			redactedStream, modified = redactContentStream(decompressed, customTerms, disabledEntities, mode, fontCMaps, defaultCMap)
 		}
 
 		if modified {
@@ -405,19 +409,106 @@ func extractCustomTerms(options map[string]interface{}) []string {
 	if options == nil {
 		return nil
 	}
-	if terms, ok := options["redact_terms"].([]string); ok {
-		return terms
-	}
-	if rawList, ok := options["redact_terms"].([]interface{}); ok {
-		var terms []string
+	var terms []string
+	if raw, ok := options["redact_terms"].([]string); ok {
+		terms = append(terms, raw...)
+	} else if rawList, ok := options["redact_terms"].([]interface{}); ok {
 		for _, item := range rawList {
 			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
 				terms = append(terms, strings.TrimSpace(s))
 			}
 		}
-		return terms
 	}
-	return nil
+
+	// Also extract Text from redaction_boxes if present
+	if boxes, ok := options["redaction_boxes"].([]domain.PDFRedactionBox); ok {
+		for _, b := range boxes {
+			if strings.TrimSpace(b.Text) != "" {
+				terms = append(terms, strings.TrimSpace(b.Text))
+			}
+		}
+	} else if rawList, ok := options["redaction_boxes"].([]interface{}); ok {
+		for _, item := range rawList {
+			if bMap, ok := item.(map[string]interface{}); ok {
+				if txt, ok := bMap["text"].(string); ok && strings.TrimSpace(txt) != "" {
+					terms = append(terms, strings.TrimSpace(txt))
+				}
+			}
+		}
+	}
+
+	if len(terms) == 0 {
+		return nil
+	}
+
+	unique := make(map[string]bool)
+	var deduped []string
+	for _, t := range terms {
+		t = strings.TrimSpace(t)
+		if t != "" && !unique[t] {
+			unique[t] = true
+			deduped = append(deduped, t)
+		}
+	}
+	return deduped
+}
+
+func charOverlapsBoxes(charX, charW, curY, fontSize float64, boxes []domain.PDFRedactionBox) bool {
+	if len(boxes) == 0 {
+		return false
+	}
+	if charW <= 0 {
+		charW = fontSize * 0.52
+	}
+	charMidX := charX + charW*0.5
+	charLeft := charX
+	charRight := charX + charW
+
+	// Vertical span of text at baseline curY
+	charBottom := curY - fontSize*0.35
+	charTop := curY + fontSize*0.9
+
+	for _, b := range boxes {
+		bX := b.X
+		bW := b.Width
+		if bW < 0 {
+			bX += bW
+			bW = -bW
+		}
+		bY := b.Y
+		bH := b.Height
+		if bH < 0 {
+			bY += bH
+			bH = -bH
+		}
+
+		boxBottom := bY
+		boxTop := bY + bH
+
+		// Vertical overlap check
+		vOverlap := math.Min(charTop, boxTop) - math.Max(charBottom, boxBottom)
+		if vOverlap <= 0 {
+			// Also check if baseline curY is close to box (within 2 points)
+			if curY < (boxBottom-2.0) || curY > (boxTop+2.0) {
+				continue
+			}
+		}
+
+		// Horizontal overlap check: midpoint inside box OR significant width intersection
+		boxLeft := bX
+		boxRight := bX + bW
+
+		// Allow 1.5 pt tolerance for midpoint
+		if charMidX >= (boxLeft-1.5) && charMidX <= (boxRight+1.5) {
+			return true
+		}
+
+		hOverlap := math.Min(charRight, boxRight) - math.Max(charLeft, boxLeft)
+		if hOverlap > charW*0.35 {
+			return true
+		}
+	}
+	return false
 }
 
 type charPos struct {
@@ -430,10 +521,10 @@ type charPos struct {
 
 // redactContentStream scans a PDF content stream, scrubs sensitive text,
 // replaces it with BlackoutMarker or DeletionMarker, and appends blackout rectangle operators.
-func redactContentStream(data []byte, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode, fontCMaps map[string]*pdfCMap, defaultCMap *pdfCMap) ([]byte, bool) {
-	// Skip streams that contain no text operators and no custom search terms
+func redactContentStream(data []byte, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode, fontCMaps map[string]*pdfCMap, defaultCMap *pdfCMap, streamBoxes []domain.PDFRedactionBox, isInteractive bool) ([]byte, bool) {
+	// Skip streams that contain no text operators and no custom search terms or boxes
 	hasTextOps := bytes.Contains(data, []byte("BT")) || bytes.Contains(data, []byte("Tj")) || bytes.Contains(data, []byte("TJ"))
-	if !hasTextOps && len(customTerms) == 0 {
+	if !hasTextOps && len(customTerms) == 0 && len(streamBoxes) == 0 {
 		return data, false
 	}
 
@@ -467,11 +558,13 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 					currentY = lineStartY
 				}
 
-				newRaw, boxes, endX, didRedact := processLiteralTextString(rawStr, decoded, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode)
+				newRaw, boxes, endX, didRedact := processLiteralTextString(rawStr, decoded, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode, streamBoxes, isInteractive)
 				if didRedact {
 					modified = true
 					out.Write(newRaw)
-					pendingBoxes = append(pendingBoxes, boxes...)
+					if !isInteractive {
+						pendingBoxes = append(pendingBoxes, boxes...)
+					}
 				} else {
 					out.Write(rawStr)
 				}
@@ -500,11 +593,13 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 					activeCMap = defaultCMap
 				}
 
-				newHex, boxes, endX, didRedact := processHexTextStringWithCMap(rawHex, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode, activeCMap)
+				newHex, boxes, endX, didRedact := processHexTextStringWithCMap(rawHex, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode, activeCMap, streamBoxes, isInteractive)
 				if didRedact {
 					modified = true
 					out.Write(newHex)
-					pendingBoxes = append(pendingBoxes, boxes...)
+					if !isInteractive {
+						pendingBoxes = append(pendingBoxes, boxes...)
+					}
 				} else {
 					out.Write(rawHex)
 				}
@@ -527,11 +622,13 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 					activeCMap = defaultCMap
 				}
 
-				newArr, boxes, endX, didRedact := processTJArrayWithCMap(rawArr, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode, activeCMap)
+				newArr, boxes, endX, didRedact := processTJArrayWithCMap(rawArr, currentFontSize, currentX, currentY, customTerms, disabledEntities, mode, activeCMap, streamBoxes, isInteractive)
 				if didRedact {
 					modified = true
 					out.Write(newArr)
-					pendingBoxes = append(pendingBoxes, boxes...)
+					if !isInteractive {
+						pendingBoxes = append(pendingBoxes, boxes...)
+					}
 				} else {
 					out.Write(rawArr)
 				}
@@ -583,8 +680,8 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 		case "ET":
 			inText = false
 			out.WriteString("ET")
-			// Emit solid black rectangles outside BT ... ET
-			if len(pendingBoxes) > 0 {
+			// Emit solid black rectangles outside BT ... ET in automated mode
+			if !isInteractive && len(pendingBoxes) > 0 {
 				out.WriteString("\n")
 				for _, b := range pendingBoxes {
 					fmt.Fprintf(&out, "q 0 0 0 rg %.2f %.2f %.2f %.2f re f Q\n", b.X, b.Y, b.W, b.H)
@@ -635,8 +732,8 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 
 	_ = inText
 
-	// If there are any pending boxes, emit them
-	if len(pendingBoxes) > 0 {
+	// If there are any pending boxes, emit them in automated mode
+	if !isInteractive && len(pendingBoxes) > 0 {
 		out.WriteString("\n")
 		for _, b := range pendingBoxes {
 			fmt.Fprintf(&out, "q 0 0 0 rg %.2f %.2f %.2f %.2f re f Q\n", b.X, b.Y, b.W, b.H)
@@ -646,7 +743,7 @@ func redactContentStream(data []byte, customTerms []string, disabledEntities map
 	res := out.Bytes()
 
 	// Defense-in-depth: scrub any remaining raw occurrences of sensitive strings
-	scrubbedRes, extraModified := scrubRemainingSensitiveText(res, customTerms, disabledEntities, mode)
+	scrubbedRes, extraModified := scrubRemainingSensitiveText(res, customTerms, disabledEntities, mode, isInteractive)
 	if extraModified {
 		modified = true
 		res = scrubbedRes
@@ -661,13 +758,74 @@ type textMatch struct {
 	value string
 }
 
-func processLiteralTextString(rawStr, decoded []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode) ([]byte, []BoundingBox, float64, bool) {
+func processLiteralTextString(rawStr, decoded []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode, streamBoxes []domain.PDFRedactionBox, isInteractive bool) ([]byte, []BoundingBox, float64, bool) {
 	text := decodeText(decoded)
 	charWidth := fontSize * 0.52
 	runeCount := len([]rune(text))
 	endX := curX + float64(runeCount)*charWidth
 
-	matches := findSensitiveMatches(text, customTerms, disabledEntities)
+	matches := findSensitiveMatches(text, customTerms, disabledEntities, isInteractive)
+
+	if isInteractive {
+		runes := []rune(text)
+		toWipe := make([]bool, len(runes))
+
+		// Mark matches from customTerms
+		for _, m := range matches {
+			rStart := len([]rune(text[:m.start]))
+			rEnd := len([]rune(text[:m.end]))
+			for r := rStart; r < rEnd && r < len(toWipe); r++ {
+				toWipe[r] = true
+			}
+		}
+
+		// Mark chars overlapping boxes
+		if len(streamBoxes) > 0 {
+			for r := 0; r < len(runes); r++ {
+				cX := curX + float64(r)*charWidth
+				if charOverlapsBoxes(cX, charWidth, curY, fontSize, streamBoxes) {
+					toWipe[r] = true
+				}
+			}
+		}
+
+		hasWiped := false
+		for _, w := range toWipe {
+			if w {
+				hasWiped = true
+				break
+			}
+		}
+		if !hasWiped {
+			return rawStr, nil, endX, false
+		}
+
+		// Replace wiped runes with spaces to preserve layout
+		var redactedRunes []rune
+		for r, w := range toWipe {
+			if w {
+				redactedRunes = append(redactedRunes, ' ')
+			} else {
+				redactedRunes = append(redactedRunes, runes[r])
+			}
+		}
+		redactedText := string(redactedRunes)
+
+		var buf bytes.Buffer
+		buf.WriteByte('(')
+		for i := 0; i < len(redactedText); i++ {
+			b := redactedText[i]
+			if b == '(' || b == ')' || b == '\\' {
+				buf.WriteByte('\\')
+			}
+			buf.WriteByte(b)
+		}
+		buf.WriteByte(')')
+
+		return buf.Bytes(), nil, endX, true
+	}
+
+	// Automated mode
 	if len(matches) == 0 {
 		return rawStr, nil, endX, false
 	}
@@ -713,7 +871,7 @@ func processLiteralTextString(rawStr, decoded []byte, fontSize, curX, curY float
 	return buf.Bytes(), boxes, endX, true
 }
 
-func processHexTextStringWithCMap(rawHex []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode, cmap *pdfCMap) ([]byte, []BoundingBox, float64, bool) {
+func processHexTextStringWithCMap(rawHex []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode, cmap *pdfCMap, streamBoxes []domain.PDFRedactionBox, isInteractive bool) ([]byte, []BoundingBox, float64, bool) {
 	if len(rawHex) < 2 || rawHex[0] != '<' {
 		return rawHex, nil, curX, false
 	}
@@ -757,10 +915,7 @@ func processHexTextStringWithCMap(rawHex []byte, fontSize, curX, curY float64, c
 	}
 
 	fullStr := decodedText.String()
-	matches := findSensitiveMatches(fullStr, customTerms, disabledEntities)
-	if len(matches) == 0 {
-		return rawHex, nil, arrX, false
-	}
+	matches := findSensitiveMatches(fullStr, customTerms, disabledEntities, isInteractive)
 
 	type runeSpan struct {
 		rStart int
@@ -775,24 +930,54 @@ func processHexTextStringWithCMap(rawHex []byte, fontSize, curX, curY float64, c
 		}
 	}
 
+	toWipe := make([]bool, len(charPositions))
+	for _, sp := range spans {
+		for r := sp.rStart; r < sp.rEnd; r++ {
+			toWipe[r] = true
+		}
+	}
+
+	if len(streamBoxes) > 0 {
+		for r, cp := range charPositions {
+			if charOverlapsBoxes(cp.x, cp.width, curY, fontSize, streamBoxes) {
+				toWipe[r] = true
+			}
+		}
+	}
+
+	hasWiped := false
+	for _, w := range toWipe {
+		if w {
+			hasWiped = true
+			break
+		}
+	}
+	if !hasWiped {
+		return rawHex, nil, arrX, false
+	}
+
 	newHex := make([]byte, len(rawHex))
 	copy(newHex, rawHex)
 
 	var boxes []BoundingBox
-	for _, sp := range spans {
-		xStart := charPositions[sp.rStart].x
-		lastCP := charPositions[sp.rEnd-1]
-		xEnd := lastCP.x + lastCP.width
-		bw := xEnd - xStart
-		if bw < fontSize*1.2 {
-			bw = fontSize * 1.2
+	if !isInteractive {
+		for _, sp := range spans {
+			xStart := charPositions[sp.rStart].x
+			lastCP := charPositions[sp.rEnd-1]
+			xEnd := lastCP.x + lastCP.width
+			bw := xEnd - xStart
+			if bw < fontSize*1.2 {
+				bw = fontSize * 1.2
+			}
+			by := curY - (fontSize * 0.25)
+			bh := fontSize * 1.25
+
+			boxes = append(boxes, BoundingBox{X: xStart, Y: by, W: bw, H: bh})
 		}
-		by := curY - (fontSize * 0.25)
-		bh := fontSize * 1.25
+	}
 
-		boxes = append(boxes, BoundingBox{X: xStart, Y: by, W: bw, H: bh})
-
-		for r := sp.rStart; r < sp.rEnd; r++ {
+	for r, w := range toWipe {
+		if w {
 			cp := charPositions[r]
 			if cp.byteEnd <= len(newHex)-1 {
 				copy(newHex[cp.byteStart:cp.byteEnd], []byte(spaceHex))
@@ -803,7 +988,7 @@ func processHexTextStringWithCMap(rawHex []byte, fontSize, curX, curY float64, c
 	return newHex, boxes, arrX, true
 }
 
-func processTJArrayWithCMap(rawArr []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode, cmap *pdfCMap) ([]byte, []BoundingBox, float64, bool) {
+func processTJArrayWithCMap(rawArr []byte, fontSize, curX, curY float64, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode, cmap *pdfCMap, streamBoxes []domain.PDFRedactionBox, isInteractive bool) ([]byte, []BoundingBox, float64, bool) {
 	var elements [][]byte
 	i := 1 // skip '['
 	for i < len(rawArr) && rawArr[i] != ']' {
@@ -905,10 +1090,7 @@ func processTJArrayWithCMap(rawArr []byte, fontSize, curX, curY float64, customT
 	}
 
 	fullStr := decodedText.String()
-	matches := findSensitiveMatches(fullStr, customTerms, disabledEntities)
-	if len(matches) == 0 {
-		return rawArr, nil, arrX, false
-	}
+	matches := findSensitiveMatches(fullStr, customTerms, disabledEntities, isInteractive)
 
 	type runeSpan struct {
 		rStart int
@@ -923,6 +1105,32 @@ func processTJArrayWithCMap(rawArr []byte, fontSize, curX, curY float64, customT
 		}
 	}
 
+	toWipe := make([]bool, len(charPositions))
+	for _, sp := range spans {
+		for r := sp.rStart; r < sp.rEnd; r++ {
+			toWipe[r] = true
+		}
+	}
+
+	if len(streamBoxes) > 0 {
+		for r, cp := range charPositions {
+			if cp.elemIdx >= 0 && charOverlapsBoxes(cp.x, cp.width, curY, fontSize, streamBoxes) {
+				toWipe[r] = true
+			}
+		}
+	}
+
+	hasWiped := false
+	for _, w := range toWipe {
+		if w {
+			hasWiped = true
+			break
+		}
+	}
+	if !hasWiped {
+		return rawArr, nil, arrX, false
+	}
+
 	clonedElements := make([][]byte, len(elements))
 	for idx, e := range elements {
 		clonedElements[idx] = make([]byte, len(e))
@@ -930,20 +1138,24 @@ func processTJArrayWithCMap(rawArr []byte, fontSize, curX, curY float64, customT
 	}
 
 	var boxes []BoundingBox
-	for _, sp := range spans {
-		xStart := charPositions[sp.rStart].x
-		lastCP := charPositions[sp.rEnd-1]
-		xEnd := lastCP.x + lastCP.width
-		bw := xEnd - xStart
-		if bw < fontSize*1.2 {
-			bw = fontSize * 1.2
+	if !isInteractive {
+		for _, sp := range spans {
+			xStart := charPositions[sp.rStart].x
+			lastCP := charPositions[sp.rEnd-1]
+			xEnd := lastCP.x + lastCP.width
+			bw := xEnd - xStart
+			if bw < fontSize*1.2 {
+				bw = fontSize * 1.2
+			}
+			by := curY - (fontSize * 0.25)
+			bh := fontSize * 1.25
+
+			boxes = append(boxes, BoundingBox{X: xStart, Y: by, W: bw, H: bh})
 		}
-		by := curY - (fontSize * 0.25)
-		bh := fontSize * 1.25
+	}
 
-		boxes = append(boxes, BoundingBox{X: xStart, Y: by, W: bw, H: bh})
-
-		for r := sp.rStart; r < sp.rEnd; r++ {
+	for r, w := range toWipe {
+		if w {
 			cp := charPositions[r]
 			if cp.elemIdx >= 0 && cp.elemIdx < len(clonedElements) {
 				targetElem := clonedElements[cp.elemIdx]
@@ -982,70 +1194,72 @@ func isBoundaryAfter(text string, end int) bool {
 }
 
 // findSensitiveMatches locates all PII entities and custom terms in text.
-func findSensitiveMatches(text string, customTerms []string, disabledEntities map[string]bool) []textMatch {
+func findSensitiveMatches(text string, customTerms []string, disabledEntities map[string]bool, isInteractive bool) []textMatch {
 	var matches []textMatch
 
-	addRegexMatches := func(re *regexp.Regexp, submatchIdx int, validateFunc func(string) bool) {
-		indexes := re.FindAllStringSubmatchIndex(text, -1)
-		for _, loc := range indexes {
-			var start, end int
-			if submatchIdx*2+1 < len(loc) && loc[submatchIdx*2] >= 0 {
-				start = loc[submatchIdx*2]
-				end = loc[submatchIdx*2+1]
-			} else {
-				start = loc[0]
-				end = loc[1]
-			}
-			if !isBoundaryAfter(text, end) {
-				continue
-			}
-			val := text[start:end]
-			if validateFunc == nil || validateFunc(val) {
-				matches = append(matches, textMatch{start: start, end: end, value: val})
+	if !isInteractive {
+		addRegexMatches := func(re *regexp.Regexp, submatchIdx int, validateFunc func(string) bool) {
+			indexes := re.FindAllStringSubmatchIndex(text, -1)
+			for _, loc := range indexes {
+				var start, end int
+				if submatchIdx*2+1 < len(loc) && loc[submatchIdx*2] >= 0 {
+					start = loc[submatchIdx*2]
+					end = loc[submatchIdx*2+1]
+				} else {
+					start = loc[0]
+					end = loc[1]
+				}
+				if !isBoundaryAfter(text, end) {
+					continue
+				}
+				val := text[start:end]
+				if validateFunc == nil || validateFunc(val) {
+					matches = append(matches, textMatch{start: start, end: end, value: val})
+				}
 			}
 		}
-	}
 
-	// 1. SNILS
-	if !disabledEntities["SNILS"] {
-		addRegexMatches(reSNILSFormatted, 1, nil)
-		addRegexMatches(reSNILS11Digits, 1, func(s string) bool {
-			return detector.ValidateSNILS(s)
-		})
-	}
+		// 1. SNILS
+		if !disabledEntities["SNILS"] {
+			addRegexMatches(reSNILSFormatted, 1, nil)
+			addRegexMatches(reSNILS11Digits, 1, func(s string) bool {
+				return detector.ValidateSNILS(s)
+			})
+		}
 
-	// 2. Passport RF
-	if !disabledEntities["PASSPORT"] {
-		addRegexMatches(rePassport4_6, 1, nil)
-		addRegexMatches(rePassport2_2_6, 1, nil)
-		addRegexMatches(rePassportPrefixed, 1, nil)
-	}
+		// 2. Passport RF
+		if !disabledEntities["PASSPORT"] {
+			addRegexMatches(rePassport4_6, 1, nil)
+			addRegexMatches(rePassport2_2_6, 1, nil)
+			addRegexMatches(rePassportPrefixed, 1, nil)
+		}
 
-	// 3. INN
-	if !disabledEntities["INN"] {
-		addRegexMatches(reINN12, 1, func(s string) bool {
-			return detector.ValidateINN12(s)
-		})
-		addRegexMatches(reINNPrefixed, 1, nil)
-	}
+		// 3. INN
+		if !disabledEntities["INN"] {
+			addRegexMatches(reINN12, 1, func(s string) bool {
+				return detector.ValidateINN12(s)
+			})
+			addRegexMatches(reINNPrefixed, 1, nil)
+		}
 
-	// 4. Phone
-	if !disabledEntities["PHONE"] {
-		addRegexMatches(rePhone, 1, nil)
-		addRegexMatches(rePhonePrefixed, 1, nil)
-	}
+		// 4. Phone
+		if !disabledEntities["PHONE"] {
+			addRegexMatches(rePhone, 1, nil)
+			addRegexMatches(rePhonePrefixed, 1, nil)
+		}
 
-	// 5. Card MIR / Luhn
-	if !disabledEntities["BANK_CARD"] && !disabledEntities["CARD"] {
-		addRegexMatches(reCard16, 1, nil)
-	}
+		// 5. Card MIR / Luhn
+		if !disabledEntities["BANK_CARD"] && !disabledEntities["CARD"] {
+			addRegexMatches(reCard16, 1, nil)
+		}
 
-	// 6. FIO
-	if !disabledEntities["FIO"] {
-		addRegexMatches(reFIOPatronymic, 1, isFIOValid)
-		addRegexMatches(reFIOPrefixed, 1, isFIOValid)
-		addRegexMatches(reFIOInitials1, 1, nil)
-		addRegexMatches(reFIOInitials2, 1, nil)
+		// 6. FIO
+		if !disabledEntities["FIO"] {
+			addRegexMatches(reFIOPatronymic, 1, isFIOValid)
+			addRegexMatches(reFIOPrefixed, 1, isFIOValid)
+			addRegexMatches(reFIOInitials1, 1, nil)
+			addRegexMatches(reFIOInitials2, 1, nil)
+		}
 	}
 
 	// 7. Custom terms
@@ -1136,9 +1350,9 @@ func isFIOValid(s string) bool {
 
 // scrubRemainingSensitiveText performs defense-in-depth replacement of any
 // lingering sensitive strings across the decompressed stream.
-func scrubRemainingSensitiveText(stream []byte, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode) ([]byte, bool) {
+func scrubRemainingSensitiveText(stream []byte, customTerms []string, disabledEntities map[string]bool, mode domain.ProcessingMode, isInteractive bool) ([]byte, bool) {
 	text := string(stream)
-	matches := findSensitiveMatches(text, customTerms, disabledEntities)
+	matches := findSensitiveMatches(text, customTerms, disabledEntities, isInteractive)
 	if len(matches) == 0 {
 		return stream, false
 	}
@@ -1148,9 +1362,16 @@ func scrubRemainingSensitiveText(stream []byte, customTerms []string, disabledEn
 	})
 
 	res := text
-	marker := getPDFMarker(mode)
-	for _, m := range matches {
-		res = res[:m.start] + marker + res[m.end:]
+	if isInteractive {
+		for _, m := range matches {
+			spaces := strings.Repeat(" ", m.end-m.start)
+			res = res[:m.start] + spaces + res[m.end:]
+		}
+	} else {
+		marker := getPDFMarker(mode)
+		for _, m := range matches {
+			res = res[:m.start] + marker + res[m.end:]
+		}
 	}
 
 	return []byte(res), true

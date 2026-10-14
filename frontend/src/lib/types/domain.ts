@@ -93,6 +93,7 @@ export interface PDFRedactionBox {
   y: number;
   width: number;
   height: number;
+  text?: string;
 }
 
 export interface ProcessOptions {
@@ -108,6 +109,7 @@ export interface ProcessOptions {
   keyPath?: string;
   shuffleRows?: boolean;
   pdfRedactionBoxes?: PDFRedactionBox[];
+  pdfRedactTerms?: string[];
 }
 
 export interface ProcessResult {

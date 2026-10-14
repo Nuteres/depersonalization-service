@@ -613,6 +613,61 @@ func TestPDFHandler_ExactRedactionBoxes_DoesNotBlindlyRedactUncheckedText(t *tes
 	}
 }
 
+func TestPDFHandler_RedactionBoxes_ActuallyErasesTextUnderBox(t *testing.T) {
+	data, err := os.ReadFile("../../forma_tipovogo_dogovora_vyezdnoe_obsluzhivanie.pdf")
+	if err != nil {
+		t.Skip("sample pdf not present, skipping")
+	}
+
+	anon := anonymizer.New("salt")
+	h := NewPDFHandler(anon)
+
+	// User approved box for "Соляника Юрия Яковлевича" on Page 1
+	// Bounding box: x=199.957, y=663.86, w=175.958, h=16.96
+	boxes := []domain.PDFRedactionBox{
+		{
+			Page:   1,
+			X:      199.95696,
+			Y:      663.86,
+			Width:  175.95792,
+			Height: 16.96,
+		},
+	}
+	terms := []string{
+		"Соляника Юрия Яковлевича",
+	}
+
+	var out bytes.Buffer
+	options := map[string]interface{}{
+		"redaction_boxes": boxes,
+		"redact_terms":    terms,
+	}
+
+	err = h.Process(context.Background(), bytes.NewReader(data), &out, options)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	outBytes := out.Bytes()
+	streams, err := extractAllStreamContents(outBytes)
+	if err != nil {
+		t.Fatalf("extractAllStreamContents failed: %v", err)
+	}
+	if !strings.Contains(streams, "199.957 663.860 175.958 16.960 re f") {
+		t.Errorf("blackout rectangle not found in stream")
+	}
+
+	// The underlying text MUST NOT be extractable!
+	_, rawText, err := ExtractPDFRawTextAndPageCount(outBytes)
+	if err != nil {
+		t.Fatalf("ExtractPDFRawTextAndPageCount failed: %v", err)
+	}
+	if strings.Contains(rawText, "Соляник") || strings.Contains(rawText, "Яковлев") {
+		t.Errorf("CRITICAL SECURITY DEFECT: redacted text 'Соляника Юрия Яковлевича' is still extractable from PDF!")
+	}
+}
+
+
 
 
 

@@ -275,6 +275,28 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 		options["redaction_boxes"] = opts.PDFRedactionBoxes
 	}
 
+	if len(opts.PDFRedactTerms) > 0 {
+		options["redact_terms"] = opts.PDFRedactTerms
+	} else if len(opts.PDFRedactionBoxes) > 0 {
+		var activeTerms []string
+		termSet := make(map[string]bool)
+		if cur, ok := options["redact_terms"].([]string); ok {
+			for _, t := range cur {
+				termSet[t] = true
+				activeTerms = append(activeTerms, t)
+			}
+		}
+		for _, b := range opts.PDFRedactionBoxes {
+			if b.Text != "" && !termSet[b.Text] {
+				activeTerms = append(activeTerms, b.Text)
+				termSet[b.Text] = true
+			}
+		}
+		if len(activeTerms) > 0 {
+			options["redact_terms"] = activeTerms
+		}
+	}
+
 	if ext == ".pdf" {
 		opts.CreateKey = false
 	}
