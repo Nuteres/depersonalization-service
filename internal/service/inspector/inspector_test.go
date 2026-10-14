@@ -911,40 +911,12 @@ func TestInspect_UserDogovorExamplePDF(t *testing.T) {
 		t.Errorf("expected 13 pages, got %d", info.PageCount)
 	}
 
-	if len(info.ParagraphPreviews) == 0 {
-		t.Fatal("expected paragraph previews, got none")
+	if len(info.PDFTextSnippet) == 0 {
+		t.Fatal("expected PDFTextSnippet, got empty")
 	}
 
-	foundDogovor := false
-	for _, p := range info.ParagraphPreviews {
-		for _, seg := range p.Segments {
-			if strings.Contains(seg.Text, "ДОГОВОР") || strings.Contains(seg.Original, "ДОГОВОР") ||
-				strings.Contains(seg.Text, "договор") || strings.Contains(seg.Original, "договор") {
-				foundDogovor = true
-				break
-			}
-		}
-		if foundDogovor {
-			break
-		}
-	}
-	if !foundDogovor && strings.Contains(info.PDFTextSnippet, "ДОГОВОР") {
-		foundDogovor = true
-	}
-	if !foundDogovor {
-		t.Errorf("expected 'ДОГОВОР' in paragraph previews or text snippet for Dogovor_example.pdf")
-	}
-
-	if len(info.ParagraphPreviews) < 100 {
-		t.Errorf("expected at least 100 paragraph previews for Dogovor_example.pdf, got %d", len(info.ParagraphPreviews))
-	}
-
-	firstP := ""
-	for _, s := range info.ParagraphPreviews[0].Segments {
-		firstP += s.Text
-	}
-	if strings.TrimSpace(firstP) == "9" {
-		t.Errorf("first paragraph should not be isolated header page number '9', got %q", firstP)
+	if !strings.Contains(info.PDFTextSnippet, "ДОГОВОР") && !strings.Contains(info.PDFTextSnippet, "договор") {
+		t.Errorf("expected 'ДОГОВОР' in text snippet for Dogovor_example.pdf")
 	}
 }
 
@@ -964,8 +936,8 @@ func TestInspect_UserFormaTipovogoDogovoraPDF(t *testing.T) {
 		t.Errorf("expected 5 pages, got %d", info.PageCount)
 	}
 
-	if len(info.ParagraphPreviews) == 0 {
-		t.Fatal("expected paragraph previews, got none")
+	if len(info.TextSnippets) == 0 {
+		t.Fatal("expected text snippets, got none")
 	}
 
 	foundFIO := false
@@ -995,25 +967,9 @@ func TestInspect_ThreeNewPDFs(t *testing.T) {
 			t.Logf("  ERROR: %v", err)
 			continue
 		}
-		t.Logf("  Pages: %d, Paras: %d, Snippets: %d, Entities: %d", info.PageCount, len(info.ParagraphPreviews), len(info.TextSnippets), len(info.Entities))
-		for i, p := range info.ParagraphPreviews {
-			if i < 5 || i > len(info.ParagraphPreviews)-3 {
-				t.Logf("  Para [%d] (page %d, style=%s, align=%s, table=%v):", i, p.Page, p.Style, p.Align, p.Table != nil)
-				if p.Table != nil {
-					for rIdx, r := range p.Table.Rows {
-						for cIdx, c := range r.Cells {
-							t.Logf("    Cell [%d,%d]: len(segs)=%d", rIdx, cIdx, len(c.Segments))
-							for _, seg := range c.Segments {
-								t.Logf("      seg: %q", seg.Text)
-							}
-						}
-					}
-				} else {
-					for _, seg := range p.Segments {
-						t.Logf("    seg (entity=%v): %q", seg.IsEntity, seg.Text)
-					}
-				}
-			}
+		t.Logf("  Pages: %d, Snippets: %d, Entities: %d", info.PageCount, len(info.TextSnippets), len(info.Entities))
+		if info.PageCount <= 0 {
+			t.Errorf("expected PageCount > 0, got %d", info.PageCount)
 		}
 	}
 }
@@ -1030,39 +986,14 @@ func TestInspect_InspectSnippets_RealDogovor(t *testing.T) {
 		t.Logf("Snippet [%d] (%s): %q", i, s.Type, s.Original)
 	}
 
+	if info.PageCount != 5 {
+		t.Errorf("expected 5 pages, got %d", info.PageCount)
+	}
 	if len(info.TextSnippets) < 4 {
 		t.Errorf("expected at least 4 text snippets, got %d", len(info.TextSnippets))
 	}
-
-	foundTableP4 := false
-	foundTableP5 := false
-	for _, p := range info.ParagraphPreviews {
-		if p.Table != nil {
-			if len(p.Table.Rows) == 0 || len(p.Table.Rows[0].Cells) != 2 {
-				t.Errorf("expected 2-column table, got %v", p.Table)
-			}
-			if p.Page == 4 {
-				foundTableP4 = true
-				hasInn := false
-				for _, seg := range p.Table.Rows[0].Cells[1].Segments {
-					if seg.IsEntity && seg.Type == "INN" {
-						hasInn = true
-					}
-				}
-				if !hasInn {
-					t.Errorf("expected INN entity in page 4 requisites table right cell")
-				}
-			} else if p.Page == 5 {
-				foundTableP5 = true
-			}
-		}
-	}
-
-	if !foundTableP4 {
-		t.Errorf("expected requisites table on page 4")
-	}
-	if !foundTableP5 {
-		t.Errorf("expected requisites table on page 5")
+	if len(info.Entities) == 0 {
+		t.Errorf("expected detected entities in real dogovor")
 	}
 }
 

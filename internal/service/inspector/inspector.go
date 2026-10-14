@@ -964,9 +964,38 @@ func inspectPDF(ctx context.Context, path string) (*domain.FileInfo, error) {
 		return nil, ctx.Err()
 	}
 
-	paragraphPreviews, snippets, entities, fullBefore, fullAfter, pageCount := extractPDFParagraphs(ctx, pdfBytes)
-	if pageCount <= 0 {
-		pageCount = 1
+	snippets, entities, fullText, pageCount := extractPDFInfo(ctx, pdfBytes)
+
+	snippetPreview := fullText
+	if len([]rune(snippetPreview)) > 600 {
+		snippetPreview = string([]rune(snippetPreview)[:600]) + "..."
+	}
+
+	snippetRedacted := snippetPreview
+	for _, s := range snippets {
+		if strings.Contains(snippetRedacted, s.Original) {
+			snippetRedacted = strings.ReplaceAll(snippetRedacted, s.Original, formats.BlackoutMarker)
+		}
+	}
+	if !strings.Contains(snippetRedacted, formats.BlackoutMarker) && len(snippets) > 0 {
+		firstOrig := snippets[0].Original
+		if idx := strings.Index(fullText, firstOrig); idx != -1 {
+			start := idx - 100
+			if start < 0 {
+				start = 0
+			}
+			end := idx + len(firstOrig) + 200
+			if end > len(fullText) {
+				end = len(fullText)
+			}
+			focused := fullText[start:end]
+			for _, s := range snippets {
+				if strings.Contains(focused, s.Original) {
+					focused = strings.ReplaceAll(focused, s.Original, formats.BlackoutMarker)
+				}
+			}
+			snippetRedacted = focused
+		}
 	}
 
 	return &domain.FileInfo{
@@ -977,15 +1006,14 @@ func inspectPDF(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Format:                 "pdf",
 		SupportedExportFormats: []string{"pdf"},
 		Size:                   int64(len(pdfBytes)),
-		RowCount:               len(paragraphPreviews),
-		ParagraphCount:         len(paragraphPreviews),
+		RowCount:               0,
+		ParagraphCount:         0,
 		PageCount:              pageCount,
 		Entities:               entities,
 		Headers:                []string{"Тип сущности", "Количество", "Действие"},
 		TextSnippets:           snippets,
-		ParagraphPreviews:      paragraphPreviews,
-		PDFTextSnippet:         fullBefore,
-		PDFRedactedSnippet:     fullAfter,
+		PDFTextSnippet:         snippetPreview,
+		PDFRedactedSnippet:     snippetRedacted,
 	}, nil
 }
 
@@ -1130,158 +1158,26 @@ func isFIOValid(s string) bool {
 	return true
 }
 
-func buildPDFParagraphSegments(text string, matches []pdfEntityMatch) []formats.TextParagraphSegment {
-	if len(matches) == 0 {
-		return []formats.TextParagraphSegment{
-			{Text: text, IsEntity: false},
-		}
+func extractPDFInfo(ctx context.Context, pdfBytes []byte) ([]formats.DocxTextSnippet, []domain.EntityInfo, string, int) {
+	pageCount, rawText, err := formats.ExtractPDFRawTextAndPageCount(pdfBytes)
+	if err != nil || pageCount <= 0 {
+		pageCount = 1
 	}
 
-	var segments []formats.TextParagraphSegment
-	lastPos := 0
+	matches := findPDFSensitiveMatches(rawText)
+	entityTypeCounts := make(map[string]int)
+	var snippets []formats.DocxTextSnippet
 
 	for _, m := range matches {
-		if m.start > lastPos {
-			prefix := text[lastPos:m.start]
-			segments = append(segments, formats.TextParagraphSegment{
-				Text:     prefix,
-				IsEntity: false,
-			})
-		}
-
-		segments = append(segments, formats.TextParagraphSegment{
-			Text:       formats.BlackoutMarker,
-			IsEntity:   true,
-			Type:       m.entityType,
-			Original:   m.value,
-			Anonymized: formats.BlackoutMarker,
-		})
-
-		lastPos = m.end
-	}
-
-	if lastPos < len(text) {
-		segments = append(segments, formats.TextParagraphSegment{
-			Text:     text[lastPos:],
-			IsEntity: false,
-		})
-	}
-
-	return segments
-}
-
-func extractPDFParagraphs(ctx context.Context, pdfBytes []byte) ([]formats.TextParagraphPreview, []formats.DocxTextSnippet, []domain.EntityInfo, string, string, int) {
-	pageCount, detailedParas, err := formats.ExtractPDFParagraphsDetailed(pdfBytes)
-	if err != nil || len(detailedParas) == 0 {
-		return nil, nil, nil, "", "", pageCount
-	}
-
-	var paragraphPreviews []formats.TextParagraphPreview
-	var snippets []formats.DocxTextSnippet
-	entityTypeCounts := make(map[string]int)
-	var fullTextBefore strings.Builder
-	var fullTextAfter strings.Builder
-
-	for pIdx, dp := range detailedParas {
 		if ctx != nil && ctx.Err() != nil {
 			break
 		}
-		paraText := dp.Text
-
-		if dp.Table != nil {
-			tablePreview := &domain.TextTablePreview{
-				Rows: make([]domain.TextTableRowPreview, len(dp.Table.Rows)),
-			}
-			var redCells []string
-			for rIdx, row := range dp.Table.Rows {
-				newRow := domain.TextTableRowPreview{
-					IsHeader: row.IsHeader,
-					Cells:    make([]domain.TextTableCellPreview, len(row.Cells)),
-				}
-				for cIdx, cell := range row.Cells {
-					var cellTextBuilder strings.Builder
-					for _, s := range cell.Segments {
-						cellTextBuilder.WriteString(s.Text)
-					}
-					cellText := cellTextBuilder.String()
-					cellMatches := findPDFSensitiveMatches(cellText)
-					cellSegs := buildPDFParagraphSegments(cellText, cellMatches)
-					for _, m := range cellMatches {
-						entityTypeCounts[m.entityType]++
-						snippets = append(snippets, formats.DocxTextSnippet{
-							Original:   m.value,
-							Anonymized: formats.BlackoutMarker,
-							Type:       m.entityType,
-						})
-					}
-					newRow.Cells[cIdx] = domain.TextTableCellPreview{
-						Segments: cellSegs,
-					}
-
-					var redCell strings.Builder
-					for _, seg := range cellSegs {
-						if seg.IsEntity {
-							redCell.WriteString(formats.BlackoutMarker)
-						} else {
-							redCell.WriteString(seg.Text)
-						}
-					}
-					redCells = append(redCells, redCell.String())
-				}
-				tablePreview.Rows[rIdx] = newRow
-			}
-
-			paragraphPreviews = append(paragraphPreviews, formats.TextParagraphPreview{
-				Index:    pIdx + 1,
-				Page:     dp.Page,
-				Style:    dp.Style,
-				Align:    dp.Align,
-				Table:    tablePreview,
-			})
-
-			if pIdx > 0 {
-				fullTextBefore.WriteString("\n\n")
-				fullTextAfter.WriteString("\n\n")
-			}
-			fullTextBefore.WriteString(paraText)
-			fullTextAfter.WriteString(strings.Join(redCells, "\n\n"))
-		} else {
-			matches := findPDFSensitiveMatches(paraText)
-			segments := buildPDFParagraphSegments(paraText, matches)
-
-			for _, m := range matches {
-				entityTypeCounts[m.entityType]++
-				snippets = append(snippets, formats.DocxTextSnippet{
-					Original:   m.value,
-					Anonymized: formats.BlackoutMarker,
-					Type:       m.entityType,
-				})
-			}
-
-			paragraphPreviews = append(paragraphPreviews, formats.TextParagraphPreview{
-				Index:    pIdx + 1,
-				Page:     dp.Page,
-				Style:    dp.Style,
-				Align:    dp.Align,
-				Segments: segments,
-			})
-
-			if pIdx > 0 {
-				fullTextBefore.WriteString("\n\n")
-				fullTextAfter.WriteString("\n\n")
-			}
-			fullTextBefore.WriteString(paraText)
-
-			var redPara strings.Builder
-			for _, seg := range segments {
-				if seg.IsEntity {
-					redPara.WriteString(formats.BlackoutMarker)
-				} else {
-					redPara.WriteString(seg.Text)
-				}
-			}
-			fullTextAfter.WriteString(redPara.String())
-		}
+		entityTypeCounts[m.entityType]++
+		snippets = append(snippets, formats.DocxTextSnippet{
+			Original:   m.value,
+			Anonymized: formats.BlackoutMarker,
+			Type:       m.entityType,
+		})
 	}
 
 	entityOrder := []string{"FIO", "SNILS", "PASSPORT", "PHONE", "INN", "BANK_CARD", "CARD", "EMAIL", "ADDRESS", "DATE"}
@@ -1324,5 +1220,6 @@ func extractPDFParagraphs(ctx context.Context, pdfBytes []byte) ([]formats.TextP
 		}
 	}
 
-	return paragraphPreviews, snippets, entities, fullTextBefore.String(), fullTextAfter.String(), pageCount
+	return snippets, entities, rawText, pageCount
 }
+

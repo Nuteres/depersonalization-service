@@ -30,6 +30,12 @@
 - **Спецсимволы и разорванный кернинг в PDF со составными шрифтами Identity-H**:
   - За счет извлечения текста через нормализованный CMap в PDF.js решена проблема «кракозябр» и разряженного текста (например, в электронных авиабилетах).
 
+### Удалено
+- **Устаревший эвристический парсер абзацев PDF (`pdf_handler.go`, `inspector.go`)**:
+  - Полностью удален легаси-код эвристического разбиения PDF на абзацы и двухколоночные таблицы (`ExtractPDFParagraphs`, `ExtractPDFParagraphsDetailed`, `isRequisitesHeader`, `detectParagraphFormatting`, `formatColumnLines`, `shouldBreakSection`, `normalizePDFText`, `isHeadingText`, `isNewFieldStart`, `isSectionOrBulletStart`, `pdfLine`, `PDFParagraph`).
+  - Удалены устаревшие поля `Page`, `Style`, `Align` из модели `TextParagraphPreview` в пользу рендеринга аутентичного вида через Mozilla PDF.js.
+  - Устранено свыше 700 строк устаревшего кода, что в разы ускорило инспектирование PDF и исключило артефакты восстановления псевдо-верстки.
+
 ---
 
 ## [1.9.18] - 2026-10-14

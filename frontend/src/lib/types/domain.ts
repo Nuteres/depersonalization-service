@@ -37,9 +37,6 @@ export interface TextParagraphSegment {
 
 export interface TextParagraphPreview {
   index: number;
-  page?: number;
-  style?: string;
-  align?: string;
   segments: TextParagraphSegment[];
   table?: TextTablePreview;
 }

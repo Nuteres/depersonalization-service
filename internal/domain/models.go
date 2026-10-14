@@ -95,9 +95,6 @@ type TextDocumentBlock struct {
 // TextParagraphPreview holds the segmented text of a paragraph for inline Word-like document preview.
 type TextParagraphPreview struct {
 	Index    int                    `json:"index"`
-	Page     int                    `json:"page,omitempty"`
-	Style    string                 `json:"style,omitempty"`
-	Align    string                 `json:"align,omitempty"`
 	Segments []TextParagraphSegment `json:"segments"`
 	Table    *TextTablePreview      `json:"table,omitempty"`
 }

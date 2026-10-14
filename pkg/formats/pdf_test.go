@@ -493,87 +493,20 @@ func TestPDFHandler_RealFormaTipovogoDogovora(t *testing.T) {
 		t.Skipf("File not found: %v", err)
 	}
 
-	// 1. Detailed paragraph extraction test
-	pageCount, paras, err := ExtractPDFParagraphsDetailed(data)
+	// 1. Raw text and page count extraction test
+	pageCount, rawText, err := ExtractPDFRawTextAndPageCount(data)
 	if err != nil {
-		t.Fatalf("ExtractPDFParagraphsDetailed failed: %v", err)
+		t.Fatalf("ExtractPDFRawTextAndPageCount failed: %v", err)
 	}
 	if pageCount != 5 {
 		t.Errorf("expected 5 pages, got %d", pageCount)
 	}
-	if len(paras) == 0 {
-		t.Fatalf("expected non-empty paragraphs")
+	if len(rawText) == 0 {
+		t.Fatalf("expected non-empty text")
 	}
-
-	hasHeading := false
-	for _, p := range paras {
-		if p.Style == "heading" || p.Align == "center" {
-			hasHeading = true
-			break
-		}
-	}
-	if !hasHeading {
-		t.Errorf("expected at least one heading or centered paragraph")
-	}
-
-	found87 := false
-	foundHead9 := false
-	foundTablePage4 := false
-	foundTablePage5 := false
-
-	for _, p := range paras {
-		if strings.HasPrefix(p.Text, "8.7.") {
-			found87 = true
-			if p.Style != "body" || p.Align != "justify" {
-				t.Errorf("section 8.7 must be body/justify, got style=%s, align=%s", p.Style, p.Align)
-			}
-		}
-		if p.Text == "9. РЕКВИЗИТЫ СТОРОН" {
-			foundHead9 = true
-			if p.Style != "heading" || p.Align != "center" {
-				t.Errorf("section 9 heading must be heading/center, got style=%s, align=%s", p.Style, p.Align)
-			}
-		}
-		if p.Table != nil && p.Style == "table" {
-			if len(p.Table.Rows) == 0 || len(p.Table.Rows[0].Cells) != 2 {
-				t.Errorf("expected 2-column table, got %v", p.Table)
-			} else {
-				if p.Page == 4 {
-					foundTablePage4 = true
-					leftText := p.Table.Rows[0].Cells[0].Segments[0].Text
-					rightText := p.Table.Rows[0].Cells[1].Segments[0].Text
-					if !strings.Contains(leftText, "Заказчик:") || !strings.Contains(leftText, "Паспорт:") {
-						t.Errorf("expected Заказчик and Паспорт in page 4 left cell, got %q", leftText)
-					}
-					if !strings.Contains(rightText, "Исполнитель:") || !strings.Contains(rightText, "7705401340") {
-						t.Errorf("expected Исполнитель and INN in page 4 right cell, got %q", rightText)
-					}
-				} else if p.Page == 5 {
-					foundTablePage5 = true
-					leftText := p.Table.Rows[0].Cells[0].Segments[0].Text
-					rightText := p.Table.Rows[0].Cells[1].Segments[0].Text
-					if !strings.Contains(leftText, "Заказчик:") {
-						t.Errorf("expected Заказчик in page 5 left cell, got %q", leftText)
-					}
-					if !strings.Contains(rightText, "Исполнитель:") || !strings.Contains(rightText, "7705401340") {
-						t.Errorf("expected Исполнитель and INN in page 5 right cell, got %q", rightText)
-					}
-				}
-			}
-		}
-	}
-
-	if !found87 {
-		t.Errorf("section 8.7 paragraph not found")
-	}
-	if !foundHead9 {
-		t.Errorf("section 9 heading paragraph not found")
-	}
-	if !foundTablePage4 {
-		t.Errorf("page 4 requisites table not found")
-	}
-	if !foundTablePage5 {
-		t.Errorf("page 5 requisites table not found")
+	t.Logf("rawText len=%d, first 500 chars: %s", len(rawText), rawText[:min(len(rawText), 500)])
+	if !strings.Contains(rawText, "ДОГОВОР") && !strings.Contains(rawText, "договор") && !strings.Contains(rawText, "Заказчик") {
+		t.Errorf("expected contract text in rawText")
 	}
 
 	anon := anonymizer.New("test-salt-real")
