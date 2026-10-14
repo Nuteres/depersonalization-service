@@ -52,6 +52,8 @@ interface WailsAppBinding {
   InspectKeyFile?: (keyPath: string, password: string) => Promise<KeyFileInfo>;
   RestoreFileTo?: (inputPath: string, keyPath: string, password: string, destPath: string) => Promise<RestoreResult>;
   OpenContainingFolder?: (targetPath: string) => Promise<void>;
+  GetFileBase64?: (path: string) => Promise<string>;
+  ProcessFileWithOptions?: (options: any) => Promise<ProcessResult>;
 }
 
 interface WailsRuntimeBinding {
@@ -676,3 +678,20 @@ export function OnFileDrop(
   }
   return () => {};
 }
+
+export async function GetFileBase64(path: string): Promise<string> {
+  const app = getApp();
+  if (app?.GetFileBase64) {
+    return await app.GetFileBase64(path);
+  }
+  return '';
+}
+
+export async function ProcessFileWithOptions(options: any): Promise<ProcessResult> {
+  const app = getApp();
+  if (app?.ProcessFileWithOptions) {
+    return await app.ProcessFileWithOptions(options);
+  }
+  throw new Error('ProcessFileWithOptions not available in current environment');
+}
+

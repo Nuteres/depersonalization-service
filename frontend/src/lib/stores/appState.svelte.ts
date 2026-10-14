@@ -48,6 +48,7 @@ class AppState {
   showAuditModal = $state<boolean>(false);
   toast = $state<ToastMessage | null>(null);
   appInfo = $state<AppInfo | null>(null);
+  pdfRedactionBoxes = $state<import('../types/domain').PDFRedactionBox[]>([]);
 
   private _toastTimer: ReturnType<typeof setTimeout> | null = null;
   private _toastCounter = 0;

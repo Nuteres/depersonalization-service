@@ -37,7 +37,11 @@ export interface TextParagraphSegment {
 
 export interface TextParagraphPreview {
   index: number;
+  page?: number;
+  style?: string;
+  align?: string;
   segments: TextParagraphSegment[];
+  table?: TextTablePreview;
 }
 
 export interface TextTableCellPreview {
@@ -86,6 +90,14 @@ export interface FileInfo {
 export type ProcessingMode = 'replace' | 'delete';
 export type AnonymizationStrategy = 'tokens' | 'synthetic' | 'delete';
 
+export interface PDFRedactionBox {
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface ProcessOptions {
   inputPath: string;
   outputPath?: string;
@@ -98,6 +110,7 @@ export interface ProcessOptions {
   keyPassword?: string;
   keyPath?: string;
   shuffleRows?: boolean;
+  pdfRedactionBoxes?: PDFRedactionBox[];
 }
 
 export interface ProcessResult {
@@ -179,4 +192,6 @@ export interface PasswordValidationResult {
   hasSpecial: boolean;
   onlyLatin: boolean;
 }
+
+
 

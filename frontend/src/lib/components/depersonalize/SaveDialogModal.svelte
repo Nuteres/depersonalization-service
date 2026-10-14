@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { appState } from '../../stores/appState.svelte';
   import { tableState } from '../../stores/tableState.svelte';
-  import { SaveFileDialog, SaveKeyFileDialog, ProcessFileWithSheets, ValidateKeyPassword } from '../../api/wails';
+  import { SaveFileDialog, SaveKeyFileDialog, ProcessFileWithSheets, ProcessFileWithOptions, ValidateKeyPassword } from '../../api/wails';
   import type { PasswordValidationResult } from '../../types/domain';
 
   interface Props {
@@ -203,18 +203,31 @@
       const effectiveKeyPassword = effectiveCreateKey ? keyPassword : '';
       const effectiveKeyPath = effectiveCreateKey ? keyPath : '';
 
-      const result = await ProcessFileWithSheets(
-        appState.currentFilePath,
-        destPath,
-        salt,
-        globalDisabled,
-        disabledBySheet,
-        effectiveCreateKey,
-        effectiveKeyPassword,
-        effectiveKeyPath,
-        effectiveShuffle,
-        effectiveMode
-      );
+      let result;
+      if (isPdf && appState.pdfRedactionBoxes && appState.pdfRedactionBoxes.length > 0) {
+        result = await ProcessFileWithOptions({
+          inputPath: appState.currentFilePath,
+          outputPath: destPath,
+          mode: appState.processingMode,
+          strategy: effectiveMode,
+          salt,
+          createKey: false,
+          pdfRedactionBoxes: appState.pdfRedactionBoxes
+        });
+      } else {
+        result = await ProcessFileWithSheets(
+          appState.currentFilePath,
+          destPath,
+          salt,
+          globalDisabled,
+          disabledBySheet,
+          effectiveCreateKey,
+          effectiveKeyPassword,
+          effectiveKeyPath,
+          effectiveShuffle,
+          effectiveMode
+        );
+      }
 
       if (result && result.success) {
         appState.showSuccess(result);

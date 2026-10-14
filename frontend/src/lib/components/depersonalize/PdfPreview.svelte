@@ -1,10 +1,15 @@
 <script lang="ts">
   import { appState } from '../../stores/appState.svelte';
-  import { tableState } from '../../stores/tableState.svelte';
-  import type { DocxTextSnippet, TextParagraphPreview, TextParagraphSegment } from '../../types/domain';
+  import { loadPdf, type PDFDocumentProxy } from '../../utils/pdfWorker';
+  import { GetFileBase64 } from '../../api/wails';
+  import type { PDFRedactionBox } from '../../types/domain';
 
   // View state
-  let isBefore = $state(false); // false = Blackout Redacted, true = Original
+  let isBefore = $state(false); // false = Anonymized, true = Original
+  let isLoading = $state(false);
+  let loadError = $state<string | null>(null);
+  let disabledInstanceIds = $state<Set<string>>(new Set());
+
   let hoveredEntity = $state<{
     type: string;
     original: string;
@@ -14,17 +19,27 @@
     y: number;
   } | null>(null);
 
-  const fileInfo = $derived(appState.currentFileInfo);
-  const paragraphPreviews = $derived<TextParagraphPreview[]>(
-    fileInfo?.paragraphPreviews || []
-  );
-  const snippets = $derived<DocxTextSnippet[]>(
-    fileInfo?.textSnippets || []
-  );
+  interface PageOverlayEntity {
+    instanceId: string;
+    pageNum: number;
+    type: string;
+    original: string;
+    anonymized: string;
+    cssRect: { left: number; top: number; width: number; height: number };
+    pdfBox: PDFRedactionBox;
+  }
 
-  const disabledCols = $derived<number[]>(
-    tableState.disabledColumnsBySheet[''] || []
-  );
+  interface RenderedPageData {
+    pageNum: number;
+    width: number;
+    height: number;
+    entities: PageOverlayEntity[];
+  }
+
+  let pagesData = $state<RenderedPageData[]>([]);
+  let canvasRefs: Record<number, HTMLCanvasElement> = {};
+
+  const fileInfo = $derived(appState.currentFileInfo);
 
   const typeLabels: Record<string, string> = {
     FIO: 'ФИО',
@@ -41,111 +56,377 @@
     EMPLOYEE_ID: 'Табельный номер'
   };
 
-  const typeActionLabels: Record<string, string> = {
-    FIO: 'Черная векторная плашка',
-    SNILS: 'Черная векторная плашка',
-    PASSPORT: 'Черная векторная плашка',
-    PHONE: 'Черная векторная плашка',
-    INN: 'Черная векторная плашка',
-    BANK_CARD: 'Черная векторная плашка',
-    CARD: 'Черная векторная плашка',
-    DATE: 'Черная векторная плашка',
-    EMAIL: 'Черная векторная плашка',
-    ADDRESS: 'Черная векторная плашка',
-    GRADE: 'Черная векторная плашка',
-    EMPLOYEE_ID: 'Черная векторная плашка'
-  };
-
   function getEntityTypeName(type: string): string {
     return typeLabels[type] || type || 'ПДн';
   }
 
-  function getEntityAction(type: string): string {
-    return typeActionLabels[type] || 'Черная векторная плашка';
-  }
+  // Count total detected entities across all pages
+  const allDetectedEntities = $derived.by<PageOverlayEntity[]>(() => {
+    return pagesData.flatMap((p) => p.entities);
+  });
 
-  function getEntityInfoForType(type: string) {
-    return fileInfo?.entities?.find((e) => e.type === type);
-  }
-
-  function isEntityTypeDisabled(type: string): boolean {
-    const ent = getEntityInfoForType(type);
-    if (!ent) return false;
-    return disabledCols.includes(ent.columnIndex);
-  }
-
-  function toggleEntityType(type: string) {
-    const ent = getEntityInfoForType(type);
-    if (ent) {
-      tableState.toggleColumn('', ent.columnIndex);
-      if (hoveredEntity && hoveredEntity.type === type) {
-        hoveredEntity = {
-          ...hoveredEntity,
-          isDisabled: !hoveredEntity.isDisabled
-        };
+  // Calculate active PDF redaction boxes and keep appState synchronized
+  $effect(() => {
+    const activeBoxes: PDFRedactionBox[] = [];
+    for (const ent of allDetectedEntities) {
+      if (!disabledInstanceIds.has(ent.instanceId)) {
+        activeBoxes.push(ent.pdfBox);
       }
     }
-  }
-
-  // Linear entity marks for navigation
-  interface FlatEntityMark {
-    globalIndex: number;
-    paraIndex: number;
-    segIndex: number;
-    type: string;
-    original: string;
-    anonymized: string;
-    elementId: string;
-  }
-
-  const allEntityMarks = $derived.by<FlatEntityMark[]>(() => {
-    const list: FlatEntityMark[] = [];
-    let gIdx = 0;
-    paragraphPreviews.forEach((para, pIdx) => {
-      para.segments.forEach((seg, sIdx) => {
-        if (seg.isEntity) {
-          gIdx++;
-          list.push({
-            globalIndex: gIdx,
-            paraIndex: pIdx,
-            segIndex: sIdx,
-            type: seg.type || 'FIO',
-            original: seg.original || seg.text,
-            anonymized: seg.anonymized || seg.text,
-            elementId: `pdf-entity-mark-${gIdx}`
-          });
-        }
-      });
-    });
-    return list;
+    appState.pdfRedactionBoxes = activeBoxes;
   });
 
-  const entityIndexMap = $derived.by<Record<string, number>>(() => {
-    const map: Record<string, number> = {};
-    for (const m of allEntityMarks) {
-      map[`${m.paraIndex}_${m.segIndex}`] = m.globalIndex;
+  function toggleInstance(instanceId: string) {
+    const next = new Set(disabledInstanceIds);
+    if (next.has(instanceId)) {
+      next.delete(instanceId);
+    } else {
+      next.add(instanceId);
     }
-    return map;
-  });
+    disabledInstanceIds = next;
 
+    if (hoveredEntity) {
+      hoveredEntity = {
+        ...hoveredEntity,
+        isDisabled: next.has(instanceId)
+      };
+    }
+  }
 
-
-  function handleMarkHover(event: MouseEvent, seg: TextParagraphSegment) {
+  function handleChipHover(event: MouseEvent, ent: PageOverlayEntity) {
     const target = event.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
-    const type = seg.type || 'FIO';
     hoveredEntity = {
-      type,
-      original: seg.original || seg.text,
-      anonymized: seg.anonymized || seg.text,
-      isDisabled: isEntityTypeDisabled(type),
+      type: ent.type,
+      original: ent.original,
+      anonymized: ent.anonymized,
+      isDisabled: disabledInstanceIds.has(ent.instanceId),
       x: rect.left + rect.width / 2,
       y: rect.top - 8
     };
   }
 
-  function handleMarkLeave() {
+  function handleChipLeave() {
     hoveredEntity = null;
+  }
+
+  function base64ToUint8Array(base64: string): Uint8Array {
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  // Synthetic mask generator for preview
+  function makeAnonymizedValue(type: string, orig: string): string {
+    if (appState.processingMode === 'delete') {
+      return '[УДАЛЕНО]';
+    }
+    switch (type) {
+      case 'FIO':
+        return 'Иванов Иван Иванович';
+      case 'PHONE':
+        return '+7 (999) 000-00-00';
+      case 'PASSPORT':
+        return '4500 000000';
+      case 'SNILS':
+        return '000-000-000 00';
+      case 'INN':
+        return '770000000000';
+      case 'CARD':
+        return '**** **** **** 0000';
+      case 'EMAIL':
+        return 'user***@domain.ru';
+      case 'ADDRESS':
+        return 'г. Москва, ул. Новая, д. 1';
+      case 'DATE':
+        return '01.01.2025';
+      default:
+        return '[ПДн СКРЫТО]';
+    }
+  }
+
+  // Regex patterns for Russian personal data detection
+  const piiPatterns: Array<{ type: string; regex: RegExp }> = [
+    {
+      type: 'PHONE',
+      regex: /(?:(?:\+?\s*7|8)(?:[\s\-\(\).]*\d){10})/g
+    },
+    {
+      type: 'PASSPORT',
+      regex: /(?:(?:паспорт|серия|номер|№)[:\s]*)?\b\d{4}\s+\d{6}\b|\b\d{2}\s+\d{2}\s+\d{6}\b/gi
+    },
+    {
+      type: 'SNILS',
+      regex: /\b\d{3}[-\s]\d{3}[-\s]\d{3}[-\s]\d{2}\b/g
+    },
+    {
+      type: 'INN',
+      regex: /(?:ИНН[:\s]*)?\b\d{10}\b|\b\d{12}\b/gi
+    },
+    {
+      type: 'CARD',
+      regex: /\b(?:\d{4}[\s\-]?){4}\b/g
+    },
+    {
+      type: 'EMAIL',
+      regex: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
+    },
+    {
+      type: 'DATE',
+      regex: /\b\d{1,2}\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+\d{4}(?:\s*г\.?)?|\b\d{2}[./]\d{2}[./]\d{4}\b/gi
+    },
+    {
+      type: 'FIO',
+      regex: /\b[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична)\b|\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s*[А-ЯЁ]\.|\b[А-ЯЁ]\.\s*[А-ЯЁ]\.\s+[А-ЯЁ][а-яё]+\b/g
+    },
+    {
+      type: 'ADDRESS',
+      regex: /(?:г\.|город|ул\.|улица|пр-т|проспект|д\.|дом|кв\.|квартира)\s+[^,;\n]{2,30}(?:,\s*(?:ул\.|д\.|кв\.)\s*[^,;\n]{1,20})+/gi
+    }
+  ];
+
+  let currentLoadingPath = '';
+
+  $effect(() => {
+    const path = fileInfo?.path;
+    if (path && fileInfo.fileType === 'pdf' && path !== currentLoadingPath) {
+      currentLoadingPath = path;
+      loadPdfDocument(path);
+    }
+  });
+
+  async function loadPdfDocument(path: string) {
+    isLoading = true;
+    loadError = null;
+    pagesData = [];
+    disabledInstanceIds = new Set();
+
+    try {
+      const base64Data = await GetFileBase64(path);
+      if (!base64Data) {
+        throw new Error('Не удалось прочитать содержимое файла');
+      }
+
+      const bytes = base64ToUint8Array(base64Data);
+      const pdf = await loadPdf(bytes);
+      const numPages = pdf.numPages;
+      const targetScale = 1.35; // Standard desktop reading scale
+
+      const pagesList: RenderedPageData[] = [];
+      let globalCounter = 0;
+
+      for (let pNum = 1; pNum <= numPages; pNum++) {
+        const page = await pdf.getPage(pNum);
+        const viewport = page.getViewport({ scale: targetScale });
+        const textContent = await page.getTextContent();
+
+        // Build continuous page string and map character ranges to text items
+        interface TextItemRange {
+          itemIndex: number;
+          startChar: number;
+          endChar: number;
+          str: string;
+          pdfBox: PDFRedactionBox;
+          cssRect: { left: number; top: number; width: number; height: number };
+        }
+
+        const itemRanges: TextItemRange[] = [];
+        let pageStr = '';
+
+        for (let i = 0; i < textContent.items.length; i++) {
+          const item = textContent.items[i] as any;
+          if (!item.str) continue;
+
+          const str = item.str;
+          const start = pageStr.length;
+          pageStr += str + ' ';
+          const end = pageStr.length - 1;
+
+          // Convert PDF coordinates to viewport coordinates
+          const tx = item.transform[4];
+          const ty = item.transform[5];
+          const tw = item.width || 10;
+          const th = item.height || 12;
+
+          // PDF bounding box in raw 72 DPI points
+          const pdfBox: PDFRedactionBox = {
+            page: pNum,
+            x: tx,
+            y: ty - 2, // Slight vertical padding
+            width: tw,
+            height: th + 4
+          };
+
+          const viewRect = viewport.convertToViewportRectangle([tx, ty - 2, tx + tw, ty + th + 2]);
+          const cssLeft = Math.min(viewRect[0], viewRect[2]);
+          const cssTop = Math.min(viewRect[1], viewRect[3]);
+          const cssWidth = Math.max(Math.abs(viewRect[2] - viewRect[0]), 8);
+          const cssHeight = Math.max(Math.abs(viewRect[3] - viewRect[1]), 12);
+
+          itemRanges.push({
+            itemIndex: i,
+            startChar: start,
+            endChar: end,
+            str,
+            pdfBox,
+            cssRect: { left: cssLeft, top: cssTop, width: cssWidth, height: cssHeight }
+          });
+        }
+
+        // Run detection on pageStr
+        const pageEntities: PageOverlayEntity[] = [];
+
+        // 1. Detect via known snippets from Go inspector if available
+        if (fileInfo?.textSnippets && fileInfo.textSnippets.length > 0) {
+          for (const snip of fileInfo.textSnippets) {
+            if (!snip.original || snip.original.length < 3) continue;
+            let idx = pageStr.indexOf(snip.original);
+            while (idx !== -1) {
+              const matchEnd = idx + snip.original.length;
+              const overlapping = itemRanges.filter(
+                (r) => r.startChar < matchEnd && r.endChar > idx
+              );
+
+              if (overlapping.length > 0) {
+                globalCounter++;
+                const minCssLeft = Math.min(...overlapping.map((r) => r.cssRect.left));
+                const minCssTop = Math.min(...overlapping.map((r) => r.cssRect.top));
+                const maxCssRight = Math.max(...overlapping.map((r) => r.cssRect.left + r.cssRect.width));
+                const maxCssBottom = Math.max(...overlapping.map((r) => r.cssRect.top + r.cssRect.height));
+
+                const minPdfX = Math.min(...overlapping.map((r) => r.pdfBox.x));
+                const minPdfY = Math.min(...overlapping.map((r) => r.pdfBox.y));
+                const maxPdfRight = Math.max(...overlapping.map((r) => r.pdfBox.x + r.pdfBox.width));
+                const maxPdfTop = Math.max(...overlapping.map((r) => r.pdfBox.y + r.pdfBox.height));
+
+                pageEntities.push({
+                  instanceId: `${pNum}_${globalCounter}`,
+                  pageNum: pNum,
+                  type: snip.type || 'FIO',
+                  original: snip.original,
+                  anonymized: snip.anonymized || makeAnonymizedValue(snip.type, snip.original),
+                  cssRect: {
+                    left: minCssLeft,
+                    top: minCssTop,
+                    width: maxCssRight - minCssLeft,
+                    height: maxCssBottom - minCssTop
+                  },
+                  pdfBox: {
+                    page: pNum,
+                    x: minPdfX,
+                    y: minPdfY,
+                    width: maxPdfRight - minPdfX,
+                    height: maxPdfTop - minPdfY
+                  }
+                });
+              }
+              idx = pageStr.indexOf(snip.original, matchEnd);
+            }
+          }
+        }
+
+        // 2. Client-side PII pattern matching
+        for (const pat of piiPatterns) {
+          pat.regex.lastIndex = 0;
+          let match: RegExpExecArray | null;
+          while ((match = pat.regex.exec(pageStr)) !== null) {
+            const matchedText = match[0].trim();
+            if (matchedText.length < 3) continue;
+
+            const matchStart = match.index;
+            const matchEnd = match.index + match[0].length;
+
+            // Avoid duplicate overlays if already covered by snippets
+            const alreadyMatched = pageEntities.some(
+              (e) => e.original.includes(matchedText) || matchedText.includes(e.original)
+            );
+            if (alreadyMatched) continue;
+
+            const overlapping = itemRanges.filter(
+              (r) => r.startChar < matchEnd && r.endChar > matchStart
+            );
+
+            if (overlapping.length > 0) {
+              globalCounter++;
+              const minCssLeft = Math.min(...overlapping.map((r) => r.cssRect.left));
+              const minCssTop = Math.min(...overlapping.map((r) => r.cssRect.top));
+              const maxCssRight = Math.max(...overlapping.map((r) => r.cssRect.left + r.cssRect.width));
+              const maxCssBottom = Math.max(...overlapping.map((r) => r.cssRect.top + r.cssRect.height));
+
+              const minPdfX = Math.min(...overlapping.map((r) => r.pdfBox.x));
+              const minPdfY = Math.min(...overlapping.map((r) => r.pdfBox.y));
+              const maxPdfRight = Math.max(...overlapping.map((r) => r.pdfBox.x + r.pdfBox.width));
+              const maxPdfTop = Math.max(...overlapping.map((r) => r.pdfBox.y + r.pdfBox.height));
+
+              pageEntities.push({
+                instanceId: `${pNum}_${globalCounter}`,
+                pageNum: pNum,
+                type: pat.type,
+                original: matchedText,
+                anonymized: makeAnonymizedValue(pat.type, matchedText),
+                cssRect: {
+                  left: minCssLeft,
+                  top: minCssTop,
+                  width: maxCssRight - minCssLeft,
+                  height: maxCssBottom - minCssTop
+                },
+                pdfBox: {
+                  page: pNum,
+                  x: minPdfX,
+                  y: minPdfY,
+                  width: maxPdfRight - minPdfX,
+                  height: maxPdfTop - minPdfY
+                }
+              });
+            }
+          }
+        }
+
+        pagesList.push({
+          pageNum: pNum,
+          width: Math.floor(viewport.width),
+          height: Math.floor(viewport.height),
+          entities: pageEntities
+        });
+      }
+
+      pagesData = pagesList;
+
+      // Render canvases on next animation frame once DOM elements mount
+      requestAnimationFrame(async () => {
+        const dpr = window.devicePixelRatio || 1;
+        for (let pNum = 1; pNum <= numPages; pNum++) {
+          const canvas = canvasRefs[pNum];
+          if (!canvas) continue;
+
+          const page = await pdf.getPage(pNum);
+          const viewport = page.getViewport({ scale: targetScale });
+
+          canvas.width = Math.floor(viewport.width * dpr);
+          canvas.height = Math.floor(viewport.height * dpr);
+          canvas.style.width = `${Math.floor(viewport.width)}px`;
+          canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.scale(dpr, dpr);
+            await page.render({
+              canvasContext: ctx,
+              viewport
+            }).promise;
+          }
+        }
+      });
+    } catch (err: any) {
+      console.error('Failed to render PDF with PDF.js:', err);
+      loadError = err?.message || 'Ошибка загрузки документа PDF';
+    } finally {
+      isLoading = false;
+    }
   }
 </script>
 
@@ -154,36 +435,35 @@
     id="pdf-inspection-box"
     class="bg-white border border-[#E8E7E3] shadow-sm flex flex-col select-text"
   >
-    <!-- Compact Header Toolbar (Single Row) -->
+    <!-- Compact Header Toolbar (Sticky) -->
     <div
-      class="px-5 py-3 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]"
+      class="px-5 py-3 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5] sticky top-0 z-40"
     >
       <!-- Title & Document Stats -->
       <div class="flex items-center space-x-2">
-        <span class="w-2 h-2 rounded-none bg-emerald-600 animate-pulse"></span>
+        <span class="w-2 h-2 rounded-none bg-emerald-500"></span>
         <span
           class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
         >
-          Предпросмотр PDF
+          Предпросмотр документа (PDF)
         </span>
         <span class="text-xs text-[#78716C] font-mono">
-          ▪ {allEntityMarks.length} плашек ПДн
+          ▪ {pagesData.length > 0 ? pagesData.length : (fileInfo.pageCount || 1)} стр. ▪ {allDetectedEntities.length} фрагментов ПДн
         </span>
       </div>
 
       <!-- Controls Right: Before/After Toggle -->
       <div class="flex items-center space-x-3">
-        <!-- Toggle: Cleaned vs Original -->
         <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium shadow-2xs">
           <button
             type="button"
             onclick={() => (isBefore = false)}
             class="flex items-center space-x-1.5 px-3 py-1 {!isBefore
-              ? 'bg-neutral-900 text-white font-semibold shadow-xs'
+              ? 'bg-emerald-700 text-white font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            <span class="w-1.5 h-1.5 rounded-none {!isBefore ? 'bg-emerald-400' : 'bg-neutral-400'}"></span>
-            <span>С плашками</span>
+            <span class="w-1.5 h-1.5 rounded-none {!isBefore ? 'bg-emerald-300' : 'bg-emerald-500'}"></span>
+            <span>Обезличенный вид</span>
           </button>
           <button
             type="button"
@@ -193,128 +473,134 @@
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
             <span class="w-1.5 h-1.5 rounded-none {isBefore ? 'bg-amber-300' : 'bg-amber-500'}"></span>
-            <span>Исходный текст</span>
+            <span>Исходный вид</span>
           </button>
         </div>
       </div>
     </div>
 
-      <!-- Main Clean Paper Document View (Scrollable Page Container) -->
-      <div
-        id="pdf-sheet-viewport"
-        class="p-4 sm:p-8 md:p-10 bg-[#EDEBE6] overflow-y-auto max-h-[720px] custom-scrollbar relative"
-      >
-        <!-- PDF Page Sheet (Full Height Block, grows with content) -->
-        <div
-          id="pdf-sheet-paper"
-          class="mx-auto w-full max-w-3xl bg-white shadow-lg border border-[#D5D3CC] p-6 sm:p-10 md:p-12 text-[#1C1917] font-sans text-[14px] sm:text-[15px] leading-[1.8] min-h-[300px] h-auto"
-        >
-          <!-- Paragraphs Render Area -->
-          {#if paragraphPreviews.length > 0}
-            <div class="space-y-3">
-              {#each paragraphPreviews as para, pIdx}
-                <p class="mb-3 whitespace-pre-wrap leading-relaxed text-left break-words">
-                  {#each para.segments as seg, sIdx}
-                    {#if seg.isEntity}
-                      {@const globalIdx = entityIndexMap[`${pIdx}_${sIdx}`]}
-                      {@const entType = seg.type || 'FIO'}
-                      {@const disabled = isEntityTypeDisabled(entType)}
+    <!-- Continuous Scroll Viewport Container -->
+    <div
+      id="pdf-sheet-viewport"
+      class="p-4 sm:p-8 md:p-10 bg-[#EDEBE6] overflow-y-auto max-h-[760px] custom-scrollbar relative flex flex-col items-center gap-6"
+    >
+      {#if isLoading}
+        <div class="flex flex-col items-center justify-center py-24 space-y-3">
+          <div class="w-8 h-8 border-3 border-stone-300 border-t-emerald-600 rounded-full animate-spin"></div>
+          <span class="text-xs font-mono text-[#78716C]">Рендеринг страниц через Mozilla PDF.js...</span>
+        </div>
+      {:else if loadError}
+        <div class="text-center py-20 px-6 max-w-md mx-auto bg-white border border-rose-200 p-6 shadow-sm">
+          <div class="text-rose-600 font-bold text-sm mb-2">Не удалось отобразить PDF</div>
+          <p class="text-xs text-[#78716C] font-mono leading-relaxed">{loadError}</p>
+        </div>
+      {:else if pagesData.length > 0}
+        <!-- Render each page sequentially in continuous scroll -->
+        {#each pagesData as page (page.pageNum)}
+          <div
+            class="pdf-page-sheet relative bg-white shadow-lg border border-[#D5D3CC] transition-shadow hover:shadow-xl"
+            style="width: {page.width}px; height: {page.height}px;"
+          >
+            <!-- Page Number Pill -->
+            <div class="absolute top-3 right-3 font-mono text-[10px] text-[#A8A29E] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 z-10 pointer-events-none select-none">
+              Стр. {page.pageNum} из {pagesData.length}
+            </div>
 
-                      {#if isBefore}
-                        <!-- Original text mode -->
-                        <span
-                          id={`pdf-entity-mark-${globalIdx}`}
-                          class="font-semibold bg-amber-50 text-amber-900 px-1 py-0.5 rounded-none border-b-2 border-amber-500 transition-colors"
-                        >
-                          {seg.original || seg.text}
-                        </span>
-                      {:else if disabled}
-                        <!-- Blackout Disabled (Revealed original text with dashed plate) -->
-                        <button
-                          type="button"
-                          id={`pdf-entity-mark-${globalIdx}`}
-                          onclick={() => toggleEntityType(entType)}
-                          onmouseenter={(e) => handleMarkHover(e, seg)}
-                          onmouseleave={handleMarkLeave}
-                          class="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 bg-stone-100 border border-dashed border-stone-400 text-stone-700 font-mono text-xs rounded-none transition-all cursor-pointer hover:bg-stone-200 hover:border-stone-600 align-baseline select-none"
-                        >
-                          <span class="font-sans font-medium text-stone-900">{seg.original || seg.text}</span>
-                          <span class="text-[9px] text-stone-500 font-mono bg-stone-200 px-1 rounded-none">
-                            ▫ Без плашки
-                          </span>
-                        </button>
-                      {:else}
-                        <!-- Vector Blackout Redaction Plate (Solid Black Bar) -->
-                        <button
-                          type="button"
-                          id={`pdf-entity-mark-${globalIdx}`}
-                          onclick={() => toggleEntityType(entType)}
-                          onmouseenter={(e) => handleMarkHover(e, seg)}
-                          onmouseleave={handleMarkLeave}
-                          class="inline-flex items-center gap-1.5 px-2 py-0.5 mx-0.5 bg-[#1C1917] hover:bg-neutral-800 text-white font-mono text-[11px] font-bold rounded-none shadow-xs transition-all cursor-pointer hover:ring-2 hover:ring-indigo-500 hover:ring-offset-1 align-baseline select-none"
-                        >
-                          <span class="tracking-wider">[ ПДн СКРЫТО ]</span>
-                          <span
-                            class="text-[9px] uppercase px-1 py-0.2 bg-neutral-700 text-neutral-200 font-mono font-normal rounded-none"
-                          >
-                            {getEntityTypeName(entType)}
-                          </span>
-                        </button>
-                      {/if}
-                    {:else}
-                      <!-- Regular Text Run -->
-                      <span>{seg.text}</span>
-                    {/if}
-                  {/each}
-                </p>
+            <!-- Authentic HTML5 Canvas Rendered Pixel-Perfect by PDF.js -->
+            <canvas
+              bind:this={canvasRefs[page.pageNum]}
+              class="block"
+            ></canvas>
+
+            <!-- Word-Style Interactive PII Overlay Chips -->
+            <div class="absolute inset-0 pointer-events-none">
+              {#each page.entities as ent (ent.instanceId)}
+                {@const isDisabled = disabledInstanceIds.has(ent.instanceId)}
+                {@const markClass = isDisabled
+                  ? 'bg-stone-100/90 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200'
+                  : !isBefore
+                  ? appState.processingMode === 'delete'
+                    ? 'bg-neutral-900 text-neutral-100 border-neutral-950 hover:bg-neutral-800'
+                    : 'bg-emerald-100/95 text-emerald-950 border-emerald-500 hover:bg-emerald-200 shadow-xs'
+                  : 'bg-amber-100/95 text-amber-950 border-amber-500 hover:bg-amber-200 shadow-xs'}
+
+                <button
+                  type="button"
+                  id="pdf-entity-{ent.instanceId}"
+                  onclick={() => toggleInstance(ent.instanceId)}
+                  onmouseenter={(e) => handleChipHover(e, ent)}
+                  onmouseleave={handleChipLeave}
+                  class="absolute pointer-events-auto px-1 py-0.5 rounded-[2px] border font-mono font-medium text-[11px] leading-tight cursor-pointer transition-all duration-150 text-left overflow-hidden text-ellipsis whitespace-nowrap {markClass} hover:scale-[1.02]"
+                  style="left: {ent.cssRect.left}px; top: {ent.cssRect.top}px; min-width: {ent.cssRect.width}px; height: {ent.cssRect.height}px;"
+                >
+                  {#if isDisabled}
+                    <span class="line-through decoration-stone-500">{ent.original}</span>
+                  {:else if !isBefore}
+                    {appState.processingMode === 'delete' ? '[УДАЛЕНО]' : ent.anonymized}
+                  {:else}
+                    {ent.original}
+                  {/if}
+                </button>
               {/each}
             </div>
-          {:else if fileInfo.pdfTextSnippet}
-            <!-- Fallback raw snippet view -->
-            <div class="whitespace-pre-wrap font-mono text-xs text-[#1C1917] leading-6">
-              {isBefore ? fileInfo.pdfTextSnippet : (fileInfo.pdfRedactedSnippet || fileInfo.pdfTextSnippet)}
-            </div>
-          {/if}
-        </div>
-      </div>
-
-
-    <!-- Hover Floating Tooltip on Entity Blackout Plate -->
-    {#if hoveredEntity}
-      <div
-        class="fixed z-50 transform -translate-x-1/2 -translate-y-full pointer-events-none bg-[#1C1917] text-white p-3 shadow-2xl border border-neutral-700 text-xs rounded-none min-w-[280px] max-w-sm transition-opacity duration-150"
-        style="left: {hoveredEntity.x}px; top: {hoveredEntity.y}px;"
-      >
-        <div class="flex items-center justify-between gap-3 mb-2 pb-1.5 border-b border-neutral-700">
-          <span class="font-bold text-[11px] uppercase tracking-wider text-emerald-400 font-mono">
-            {getEntityTypeName(hoveredEntity.type)}
-          </span>
-          <span
-            class="text-[10px] font-mono px-1.5 py-0.5 rounded-none {hoveredEntity.isDisabled
-              ? 'bg-stone-700 text-stone-300'
-              : 'bg-emerald-950 text-emerald-300 border border-emerald-700'}"
-          >
-            {hoveredEntity.isDisabled ? '▫ Плашка снята' : '▪ Закрыто плашкой'}
-          </span>
-        </div>
-
-        <div class="space-y-1.5 font-mono text-[11px] leading-snug">
-          <div class="text-neutral-400">
-            Исходное: <span class="text-neutral-100 font-semibold">{hoveredEntity.original}</span>
           </div>
-          <div class="text-neutral-400">
-            В PDF:
-            <span class="text-neutral-200">
-              {hoveredEntity.isDisabled ? hoveredEntity.original : '[ ПДн СКРЫТО ]'}
+        {/each}
+      {:else}
+        <div class="text-center py-20 text-xs text-[#78716C] font-mono">
+          Документ пуст или не содержит страниц для отображения
+        </div>
+      {/if}
+
+      <!-- Floating Popover / Tooltip on Hover (Word-Style 1-in-1 with TextPreview) -->
+      {#if hoveredEntity}
+        <div
+          class="fixed z-50 pointer-events-none transform -translate-x-1/2 -translate-y-full mb-2 bg-[#1C1917] text-white p-3.5 shadow-2xl border border-stone-700 rounded-none max-w-sm font-sans animate-fade-in"
+          style="left: {hoveredEntity.x}px; top: {hoveredEntity.y}px;"
+        >
+          <div class="flex items-center justify-between gap-2 border-b border-stone-700 pb-2 mb-2 font-mono text-[10px]">
+            <div class="flex items-center space-x-1.5">
+              <span
+                class="px-1.5 py-0.5 {hoveredEntity.isDisabled
+                  ? 'bg-stone-800 border border-stone-600 text-stone-400'
+                  : 'bg-emerald-950 border border-emerald-600 text-emerald-300'} font-bold uppercase"
+              >
+                {getEntityTypeName(hoveredEntity.type)}
+              </span>
+              <span
+                class="px-1.5 py-0.5 {hoveredEntity.isDisabled
+                  ? 'bg-amber-950 border border-amber-600 text-amber-300'
+                  : appState.processingMode === 'delete'
+                    ? 'bg-rose-950 border border-rose-600 text-rose-300'
+                    : 'bg-emerald-950 border border-emerald-600 text-emerald-300'} text-[9px] font-bold"
+              >
+                {hoveredEntity.isDisabled ? '▫ ОТКЛЮЧЕНО' : appState.processingMode === 'delete' ? '▪ ЧЕРНАЯ ПЛАШКА' : '▪ ЗАМЕНЯЕТСЯ'}
+              </span>
+            </div>
+            <span class="text-stone-400 text-[10px]">
+              Деперсонализация
             </span>
           </div>
-        </div>
 
-        <div class="mt-2.5 pt-1.5 border-t border-neutral-800 text-[10px] text-neutral-400 flex items-center gap-1.5">
-          <span class="text-emerald-400">💡</span>
-          <span>Нажмите на плашку для переключения</span>
+          <div class="space-y-1.5 text-xs">
+            <div class="flex items-start justify-between gap-2">
+              <span class="text-stone-400 font-mono text-[11px] shrink-0">До:</span>
+              <span class="font-mono text-rose-300 text-[11px] break-all text-right font-medium">
+                {hoveredEntity.original}
+              </span>
+            </div>
+            <div class="flex items-start justify-between gap-2">
+              <span class="text-stone-400 font-mono text-[11px] shrink-0">{appState.processingMode === 'delete' ? 'После удаления:' : 'После:'}</span>
+              <span class="font-mono {hoveredEntity.isDisabled ? 'text-stone-400 line-through' : appState.processingMode === 'delete' ? 'text-rose-300' : 'text-emerald-300'} text-[11px] break-all text-right font-medium">
+                {hoveredEntity.isDisabled ? hoveredEntity.original : (appState.processingMode === 'delete' ? '[УДАЛЕНО]' : hoveredEntity.anonymized)}
+              </span>
+            </div>
+          </div>
+
+          <div class="mt-2.5 pt-2 border-t border-stone-800 text-[10px] text-stone-400 font-mono flex items-center justify-between">
+            <span>💡 Кликните для {hoveredEntity.isDisabled ? 'включения' : 'отключения'} замены</span>
+          </div>
         </div>
-      </div>
-    {/if}
+      {/if}
+    </div>
   </div>
 {/if}
