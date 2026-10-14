@@ -1,10 +1,13 @@
 package desktop_test
 
 import (
+	"bytes"
+	"compress/zlib"
 	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,6 +17,7 @@ import (
 	"time"
 
 	"dep_service/internal/desktop"
+	"dep_service/internal/domain"
 	"dep_service/internal/service/inspector"
 	"dep_service/internal/service/keymanager"
 	"dep_service/internal/service/preview"
@@ -588,6 +592,136 @@ func TestDesktopApp_ProcessWithInvalidPassword(t *testing.T) {
 		t.Fatalf("generated effective password %q does not comply with policy: %v", res.EffectivePassword, valRes.Errors)
 	}
 }
+
+func TestDesktopApp_GetFileBase64_And_ProcessPDF_WithRedactionBoxes(t *testing.T) {
+	app := newTestApp()
+
+	pdfPath := filepath.Join("..", "..", "ETICKET_PLETNEV_I._31.05-04.06_GDZ-SVO-GDZ.PDF")
+	if _, err := os.Stat(pdfPath); err != nil {
+		t.Skip("ETICKET PDF not found in project root")
+	}
+
+	b64, err := app.GetFileBase64(pdfPath)
+	if err != nil {
+		t.Fatalf("GetFileBase64 failed: %v", err)
+	}
+	if len(b64) == 0 {
+		t.Fatalf("expected non-empty base64 string")
+	}
+
+	tmpDir := t.TempDir()
+	outPDF := filepath.Join(tmpDir, "redacted_ticket.pdf")
+
+	opts := domain.ProcessOptions{
+		InputPath:  pdfPath,
+		OutputPath: outPDF,
+		Mode:       domain.ModeDelete,
+		Strategy:   domain.StrategyDelete,
+		Salt:       "test-salt",
+		PDFRedactionBoxes: []domain.PDFRedactionBox{
+			{Page: 1, X: 150.0, Y: 400.0, Width: 200.0, Height: 25.0},
+			{Page: 2, X: 120.0, Y: 350.0, Width: 180.0, Height: 20.0},
+		},
+	}
+
+	res, err := app.ProcessFileWithOptions(opts)
+	if err != nil {
+		t.Fatalf("ProcessFileWithOptions failed: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected Success=true, got error: %s", res.Error)
+	}
+
+	outBytes, err := os.ReadFile(outPDF)
+	if err != nil {
+		t.Fatalf("failed to read outPDF: %v", err)
+	}
+	if !bytes.HasPrefix(outBytes, []byte("%PDF-")) {
+		t.Errorf("expected valid PDF header")
+	}
+
+	decompStreams, err := extractAllStreamContents(outBytes)
+	if err != nil {
+		t.Fatalf("extractAllStreamContents failed: %v", err)
+	}
+
+	if !strings.Contains(decompStreams, "re f") {
+		t.Errorf("expected vector blackout rectangles 're f' in redacted PDF output streams")
+	}
+
+	// 3. Test on Zayavlenie PDF (Identity-H fonts) if present
+	zayavleniePath := filepath.Join("..", "..", "Плетнёв_ЯА_Оригинал_заявления (переход на ЭТК).pdf")
+	if _, err := os.Stat(zayavleniePath); err == nil {
+		outZayavlenie := filepath.Join(tmpDir, "redacted_zayavlenie.pdf")
+		zOpts := domain.ProcessOptions{
+			InputPath:  zayavleniePath,
+			OutputPath: outZayavlenie,
+			Mode:       domain.ModeDelete,
+			Strategy:   domain.StrategyDelete,
+			Salt:       "test-salt",
+			PDFRedactionBoxes: []domain.PDFRedactionBox{
+				{Page: 1, X: 100.0, Y: 500.0, Width: 150.0, Height: 20.0},
+			},
+		}
+		zRes, err := app.ProcessFileWithOptions(zOpts)
+		if err != nil || !zRes.Success {
+			t.Fatalf("ProcessFileWithOptions failed for Zayavlenie: %v", err)
+		}
+		zBytes, err := os.ReadFile(outZayavlenie)
+		if err != nil {
+			t.Fatalf("failed to read outZayavlenie: %v", err)
+		}
+		zStreams, _ := extractAllStreamContents(zBytes)
+		if !strings.Contains(zStreams, "re f") {
+			t.Errorf("expected vector blackout rectangles 're f' in redacted Zayavlenie output streams")
+		}
+	}
+}
+
+func extractAllStreamContents(pdfData []byte) (string, error) {
+	var combined strings.Builder
+	idx := 0
+	for {
+		streamTag := []byte("stream")
+		sPos := bytes.Index(pdfData[idx:], streamTag)
+		if sPos == -1 {
+			break
+		}
+		streamStart := idx + sPos + len(streamTag)
+		if streamStart < len(pdfData) && pdfData[streamStart] == '\r' {
+			streamStart++
+		}
+		if streamStart < len(pdfData) && pdfData[streamStart] == '\n' {
+			streamStart++
+		}
+
+		endstreamTag := []byte("endstream")
+		ePos := bytes.Index(pdfData[streamStart:], endstreamTag)
+		if ePos == -1 {
+			break
+		}
+		streamEnd := streamStart + ePos
+		rawStream := bytes.TrimRight(pdfData[streamStart:streamEnd], "\r\n")
+
+		zr, err := zlib.NewReader(bytes.NewReader(rawStream))
+		if err == nil {
+			decompressed, err := io.ReadAll(zr)
+			_ = zr.Close()
+			if err == nil {
+				combined.Write(decompressed)
+				combined.WriteString("\n")
+				idx = streamEnd + len(endstreamTag)
+				continue
+			}
+		}
+
+		combined.Write(rawStream)
+		combined.WriteString("\n")
+		idx = streamEnd + len(endstreamTag)
+	}
+	return combined.String(), nil
+}
+
 
 
 

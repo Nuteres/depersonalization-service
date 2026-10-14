@@ -1171,8 +1171,8 @@ func buildPDFParagraphSegments(text string, matches []pdfEntityMatch) []formats.
 }
 
 func extractPDFParagraphs(ctx context.Context, pdfBytes []byte) ([]formats.TextParagraphPreview, []formats.DocxTextSnippet, []domain.EntityInfo, string, string, int) {
-	pageCount, rawParas, err := formats.ExtractPDFParagraphs(pdfBytes)
-	if err != nil || len(rawParas) == 0 {
+	pageCount, detailedParas, err := formats.ExtractPDFParagraphsDetailed(pdfBytes)
+	if err != nil || len(detailedParas) == 0 {
 		return nil, nil, nil, "", "", pageCount
 	}
 
@@ -1182,42 +1182,106 @@ func extractPDFParagraphs(ctx context.Context, pdfBytes []byte) ([]formats.TextP
 	var fullTextBefore strings.Builder
 	var fullTextAfter strings.Builder
 
-	for pIdx, paraText := range rawParas {
+	for pIdx, dp := range detailedParas {
 		if ctx != nil && ctx.Err() != nil {
 			break
 		}
-		matches := findPDFSensitiveMatches(paraText)
-		segments := buildPDFParagraphSegments(paraText, matches)
+		paraText := dp.Text
 
-		for _, m := range matches {
-			entityTypeCounts[m.entityType]++
-			snippets = append(snippets, formats.DocxTextSnippet{
-				Original:   m.value,
-				Anonymized: formats.BlackoutMarker,
-				Type:       m.entityType,
-			})
-		}
-
-		paragraphPreviews = append(paragraphPreviews, formats.TextParagraphPreview{
-			Index:    pIdx + 1,
-			Segments: segments,
-		})
-
-		if pIdx > 0 {
-			fullTextBefore.WriteString("\n\n")
-			fullTextAfter.WriteString("\n\n")
-		}
-		fullTextBefore.WriteString(paraText)
-
-		var redPara strings.Builder
-		for _, seg := range segments {
-			if seg.IsEntity {
-				redPara.WriteString(formats.BlackoutMarker)
-			} else {
-				redPara.WriteString(seg.Text)
+		if dp.Table != nil {
+			tablePreview := &domain.TextTablePreview{
+				Rows: make([]domain.TextTableRowPreview, len(dp.Table.Rows)),
 			}
+			var redCells []string
+			for rIdx, row := range dp.Table.Rows {
+				newRow := domain.TextTableRowPreview{
+					IsHeader: row.IsHeader,
+					Cells:    make([]domain.TextTableCellPreview, len(row.Cells)),
+				}
+				for cIdx, cell := range row.Cells {
+					var cellTextBuilder strings.Builder
+					for _, s := range cell.Segments {
+						cellTextBuilder.WriteString(s.Text)
+					}
+					cellText := cellTextBuilder.String()
+					cellMatches := findPDFSensitiveMatches(cellText)
+					cellSegs := buildPDFParagraphSegments(cellText, cellMatches)
+					for _, m := range cellMatches {
+						entityTypeCounts[m.entityType]++
+						snippets = append(snippets, formats.DocxTextSnippet{
+							Original:   m.value,
+							Anonymized: formats.BlackoutMarker,
+							Type:       m.entityType,
+						})
+					}
+					newRow.Cells[cIdx] = domain.TextTableCellPreview{
+						Segments: cellSegs,
+					}
+
+					var redCell strings.Builder
+					for _, seg := range cellSegs {
+						if seg.IsEntity {
+							redCell.WriteString(formats.BlackoutMarker)
+						} else {
+							redCell.WriteString(seg.Text)
+						}
+					}
+					redCells = append(redCells, redCell.String())
+				}
+				tablePreview.Rows[rIdx] = newRow
+			}
+
+			paragraphPreviews = append(paragraphPreviews, formats.TextParagraphPreview{
+				Index:    pIdx + 1,
+				Page:     dp.Page,
+				Style:    dp.Style,
+				Align:    dp.Align,
+				Table:    tablePreview,
+			})
+
+			if pIdx > 0 {
+				fullTextBefore.WriteString("\n\n")
+				fullTextAfter.WriteString("\n\n")
+			}
+			fullTextBefore.WriteString(paraText)
+			fullTextAfter.WriteString(strings.Join(redCells, "\n\n"))
+		} else {
+			matches := findPDFSensitiveMatches(paraText)
+			segments := buildPDFParagraphSegments(paraText, matches)
+
+			for _, m := range matches {
+				entityTypeCounts[m.entityType]++
+				snippets = append(snippets, formats.DocxTextSnippet{
+					Original:   m.value,
+					Anonymized: formats.BlackoutMarker,
+					Type:       m.entityType,
+				})
+			}
+
+			paragraphPreviews = append(paragraphPreviews, formats.TextParagraphPreview{
+				Index:    pIdx + 1,
+				Page:     dp.Page,
+				Style:    dp.Style,
+				Align:    dp.Align,
+				Segments: segments,
+			})
+
+			if pIdx > 0 {
+				fullTextBefore.WriteString("\n\n")
+				fullTextAfter.WriteString("\n\n")
+			}
+			fullTextBefore.WriteString(paraText)
+
+			var redPara strings.Builder
+			for _, seg := range segments {
+				if seg.IsEntity {
+					redPara.WriteString(formats.BlackoutMarker)
+				} else {
+					redPara.WriteString(seg.Text)
+				}
+			}
+			fullTextAfter.WriteString(redPara.String())
 		}
-		fullTextAfter.WriteString(redPara.String())
 	}
 
 	entityOrder := []string{"FIO", "SNILS", "PASSPORT", "PHONE", "INN", "BANK_CARD", "CARD", "EMAIL", "ADDRESS", "DATE"}
