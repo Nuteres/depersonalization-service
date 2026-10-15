@@ -11,6 +11,7 @@
   import { restoreState } from './lib/stores/restoreState.svelte';
   import { GetAppInfo, EventsOn, OnFileDrop } from './lib/api/wails';
   import { loadFile } from './lib/services/fileLoader';
+  import { zoomState } from './lib/stores/zoomState.svelte';
   import type { ProgressEventData } from './lib/types/domain';
 
   onMount(() => {
@@ -81,6 +82,43 @@
     window.addEventListener('dragover', preventDefaults);
     window.addEventListener('drop', preventDefaults);
 
+    // Initialize UI zoom from saved settings
+    zoomState.init();
+
+    // Mouse wheel zoom (Ctrl + Wheel / Cmd + Wheel)
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+          zoomState.zoomIn(zoomState.stepWheel);
+        } else if (e.deltaY > 0) {
+          zoomState.zoomOut(zoomState.stepWheel);
+        }
+        zoomState.triggerIndicator();
+      }
+    };
+    window.addEventListener('wheel', handleWheel, { passive: false });
+
+    // Keyboard shortcuts for zooming (Ctrl/Cmd + / - / 0)
+    const handleKeydown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === '=' || e.key === '+' || e.code === 'Equal' || e.code === 'NumpadAdd') {
+          e.preventDefault();
+          zoomState.zoomIn(zoomState.stepButtons);
+          zoomState.triggerIndicator();
+        } else if (e.key === '-' || e.key === '_' || e.code === 'Minus' || e.code === 'NumpadSubtract') {
+          e.preventDefault();
+          zoomState.zoomOut(zoomState.stepButtons);
+          zoomState.triggerIndicator();
+        } else if (e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0') {
+          e.preventDefault();
+          zoomState.resetZoom();
+          zoomState.triggerIndicator();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeydown);
+
     return () => {
       unsubProcess();
       unsubRestore();
@@ -88,6 +126,8 @@
       unsubNativeDrop();
       window.removeEventListener('dragover', preventDefaults);
       window.removeEventListener('drop', preventDefaults);
+      window.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('keydown', handleKeydown);
     };
   });
 </script>
@@ -107,4 +147,16 @@
   <SuccessModal />
   <AuditModal />
   <Toast />
+
+  {#if zoomState.showIndicator}
+    <div
+      id="zoom-indicator-overlay"
+      class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-200"
+    >
+      <div class="bg-[#1C1917]/90 text-white font-mono text-xs px-3.5 py-1.5 border border-stone-700 shadow-xl flex items-center space-x-2 backdrop-blur-xs">
+        <span class="text-stone-400">Масштаб:</span>
+        <span class="font-bold text-amber-300">{Math.round(zoomState.currentZoom * 100)}%</span>
+      </div>
+    </div>
+  {/if}
 </div>

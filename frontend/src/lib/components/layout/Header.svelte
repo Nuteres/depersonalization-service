@@ -1,5 +1,6 @@
 <script lang="ts">
   import { appState } from '../../stores/appState.svelte';
+  import { zoomState } from '../../stores/zoomState.svelte';
 
   const envBadge = $derived.by(() => {
     if (!appState.appInfo) return 'v1.0 ▪ Загрузка...';
@@ -60,5 +61,38 @@
       <span class="text-xs">📜</span>
       <span>Журнал</span>
     </button>
+
+    <!-- Zoom Controls -->
+    <div class="flex items-center bg-[#F0EFEB] text-xs font-medium border border-[#E8E7E3]" id="zoom-controls">
+      <button
+        id="btn-zoom-out"
+        type="button"
+        onclick={() => zoomState.zoomOut()}
+        disabled={zoomState.currentZoom <= zoomState.minZoom}
+        class="px-2.5 py-1.5 hover:bg-white text-[#78716C] hover:text-[#1C1917] transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+        title="Уменьшить масштаб (Ctrl + -)"
+      >
+        –
+      </button>
+      <button
+        id="btn-zoom-reset"
+        type="button"
+        onclick={() => zoomState.resetZoom()}
+        class="px-2 py-1.5 font-mono text-[11px] font-semibold text-[#1C1917] hover:bg-white transition cursor-pointer min-w-[48px] text-center"
+        title="Сбросить масштаб к 100% (Ctrl + 0)"
+      >
+        {Math.round(zoomState.currentZoom * 100)}%
+      </button>
+      <button
+        id="btn-zoom-in"
+        type="button"
+        onclick={() => zoomState.zoomIn()}
+        disabled={zoomState.currentZoom >= zoomState.maxZoom}
+        class="px-2.5 py-1.5 hover:bg-white text-[#78716C] hover:text-[#1C1917] transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+        title="Увеличить масштаб (Ctrl + +)"
+      >
+        +
+      </button>
+    </div>
   </div>
 </header>
