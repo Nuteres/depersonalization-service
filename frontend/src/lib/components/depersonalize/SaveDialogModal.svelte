@@ -372,13 +372,24 @@
         <!-- Shuffle Rows Toggle (Only for tabular files: Excel, CSV, ODS) -->
         {#if appState.currentFileInfo.fileType === 'table'}
           <div class="border border-[#E8E7E3] p-4 bg-white">
-            <label class="flex items-start space-x-2.5 cursor-pointer select-none">
-              <input
-                id="shuffle-rows-checkbox"
-                type="checkbox"
-                bind:checked={shuffleRows}
-                class="mt-0.5 accent-[#1C1917] h-4 w-4 rounded-none cursor-pointer"
-              />
+            <label class="flex items-start space-x-2.5 cursor-pointer select-none group">
+              <div class="relative flex items-center justify-center mt-0.5 shrink-0">
+                <input
+                  id="shuffle-rows-checkbox"
+                  type="checkbox"
+                  bind:checked={shuffleRows}
+                  class="sr-only"
+                />
+                <div
+                  class="w-4 h-4 border transition-colors flex items-center justify-center {shuffleRows ? 'bg-[#1C1917] border-[#1C1917]' : 'bg-white border-[#A8A29E] group-hover:border-[#1C1917]'}"
+                >
+                  {#if shuffleRows}
+                    <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  {/if}
+                </div>
+              </div>
               <div>
                 <div class="flex items-center gap-2">
                   <span class="font-bold text-[#1C1917] text-xs">
@@ -399,13 +410,24 @@
         <!-- Key Generation Option (Only for non-PDF files: tables and text) -->
         {#if appState.currentFileInfo.fileType !== 'pdf'}
           <div class="space-y-3 border border-[#E8E7E3] p-4 bg-white">
-          <label class="flex items-start space-x-2.5 cursor-pointer select-none">
-            <input
-              id="create-key-checkbox"
-              type="checkbox"
-              bind:checked={createKey}
-              class="mt-0.5 accent-[#1C1917] h-4 w-4 rounded-none cursor-pointer"
-            />
+          <label class="flex items-start space-x-2.5 cursor-pointer select-none group">
+            <div class="relative flex items-center justify-center mt-0.5 shrink-0">
+              <input
+                id="create-key-checkbox"
+                type="checkbox"
+                bind:checked={createKey}
+                class="sr-only"
+              />
+              <div
+                class="w-4 h-4 border transition-colors flex items-center justify-center {createKey ? 'bg-[#1C1917] border-[#1C1917]' : 'bg-white border-[#A8A29E] group-hover:border-[#1C1917]'}"
+              >
+                {#if createKey}
+                  <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                {/if}
+              </div>
+            </div>
             <div>
               <div class="font-bold text-[#1C1917] text-xs">
                 Создать ключ восстановления

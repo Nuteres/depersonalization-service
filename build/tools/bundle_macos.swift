@@ -99,7 +99,7 @@ if fm.fileExists(atPath: "bin/depersonalizer-darwin-universal") {
     try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destBinary)
 }
 
-var appVersion = "1.10.2"
+var appVersion = "1.10.3"
 if let verContent = try? String(contentsOfFile: "internal/version/version.go", encoding: .utf8) {
     let pattern = "Version = \"([^\"]+)\""
     if let regex = try? NSRegularExpression(pattern: pattern),

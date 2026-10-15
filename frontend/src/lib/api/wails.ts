@@ -54,6 +54,7 @@ interface WailsAppBinding {
   OpenContainingFolder?: (targetPath: string) => Promise<void>;
   GetFileBase64?: (path: string) => Promise<string>;
   ProcessFileWithOptions?: (options: any) => Promise<ProcessResult>;
+  SetClipboardText?: (text: string) => Promise<boolean>;
 }
 
 interface WailsRuntimeBinding {
@@ -62,6 +63,7 @@ interface WailsRuntimeBinding {
   EventsEmit?: (eventName: string, ...args: any[]) => void;
   OnFileDrop?: (callback: (x: number, y: number, paths: string[]) => void, printStack?: boolean) => void;
   OnFileDropOff?: () => void;
+  ClipboardSetText?: (text: string) => Promise<boolean>;
 }
 
 declare global {
@@ -694,4 +696,25 @@ export async function ProcessFileWithOptions(options: any): Promise<ProcessResul
   }
   throw new Error('ProcessFileWithOptions not available in current environment');
 }
+
+export async function SetClipboardText(text: string): Promise<boolean> {
+  const app = getApp();
+  if (app?.SetClipboardText) {
+    try {
+      return await app.SetClipboardText(text);
+    } catch (e) {
+      console.warn('Backend SetClipboardText error:', e);
+    }
+  }
+  const runtime = getRuntime();
+  if (runtime?.ClipboardSetText) {
+    try {
+      return await runtime.ClipboardSetText(text);
+    } catch (e) {
+      console.warn('Runtime ClipboardSetText error:', e);
+    }
+  }
+  return false;
+}
+
 

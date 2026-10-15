@@ -722,6 +722,14 @@ func extractAllStreamContents(pdfData []byte) (string, error) {
 	return combined.String(), nil
 }
 
+func TestDesktopApp_SetClipboardText_UninitializedContext(t *testing.T) {
+	app := newTestApp()
+	ok, err := app.SetClipboardText("test-text")
+	if ok || err == nil {
+		t.Errorf("expected error when setting clipboard without initialized context, got ok=%v, err=%v", ok, err)
+	}
+}
+
 
 
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	goruntime "runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -244,6 +245,8 @@ func (a *DesktopApp) ProcessFileWithOptions(opts domain.ProcessOptions) (*domain
 		a.cancel = nil
 		a.cancelMu.Unlock()
 		cancel()
+		goruntime.GC()
+		debug.FreeOSMemory()
 	}()
 
 	if opts.Strategy == "" {
@@ -270,6 +273,10 @@ func (a *DesktopApp) CancelCurrentOperation() {
 
 // InspectKeyFile inspects a .depmap key file, validates its header, and tests password if provided.
 func (a *DesktopApp) InspectKeyFile(keyPath, password string) (*domain.KeyFileInfo, error) {
+	defer func() {
+		goruntime.GC()
+		debug.FreeOSMemory()
+	}()
 	info, err := a.km.InspectKey(keyPath, password)
 	if err != nil {
 		if info != nil && !info.Valid {
@@ -296,6 +303,8 @@ func (a *DesktopApp) RestoreFileTo(inputPath, keyPath, password, destPath string
 		a.cancel = nil
 		a.cancelMu.Unlock()
 		cancel()
+		goruntime.GC()
+		debug.FreeOSMemory()
 	}()
 
 	reporter := newRestoreProgressReporter(a.ctx)
@@ -307,6 +316,18 @@ func (a *DesktopApp) RestoreFileTo(inputPath, keyPath, password, destPath string
 	}
 
 	return a.rest.Restore(opCtx, opts, reporter)
+}
+
+// SetClipboardText sets plain text to the OS clipboard using the Wails runtime.
+func (a *DesktopApp) SetClipboardText(text string) (bool, error) {
+	if a.ctx != nil {
+		err := runtime.ClipboardSetText(a.ctx, text)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, fmt.Errorf("context not initialized")
 }
 
 // GetAuditRecords returns the recent audit records up to limit (newest first).

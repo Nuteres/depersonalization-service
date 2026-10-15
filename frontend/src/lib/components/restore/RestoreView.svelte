@@ -164,7 +164,7 @@
   }
 </script>
 
-<div id="restoration-view" class="flex-1 flex flex-col gap-6 pb-12">
+<div id="restoration-view" class="flex flex-col gap-6 pb-12">
   <!-- Header Banner -->
   <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
     <div>
@@ -186,7 +186,7 @@
   <!-- 3-Step Selection Grid -->
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
     <!-- Step 1: Data File -->
-    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col h-full min-h-[250px]">
+    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col min-h-[250px]">
       <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 h-6 shrink-0">
         <span
           class="font-bold text-[#1C1917] font-sans"
@@ -293,7 +293,7 @@
     </div>
 
     <!-- Step 2: Key File -->
-    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col h-full min-h-[250px]">
+    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col min-h-[250px]">
       <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 h-6 shrink-0">
         <span class="font-bold text-[#1C1917] font-sans">ШАГ 2. ФАЙЛ-КЛЮЧ</span>
         <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C] font-mono">.DEPMAP</span>
@@ -347,7 +347,7 @@
     </div>
 
     <!-- Step 3: Password & Action -->
-    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col h-full min-h-[250px]">
+    <div class="bg-white border border-[#E8E7E3] p-5 shadow-xs flex flex-col min-h-[250px]">
       <div class="flex items-center justify-between text-xs text-[#78716C] mb-4 h-6 shrink-0">
         <span class="font-bold text-[#1C1917] font-sans">ШАГ 3. ПАРОЛЬ КЛЮЧА</span>
         <span class="text-[10px] bg-[#FAF9F5] border border-[#E8E7E3] px-2 py-0.5 whitespace-nowrap text-[#78716C] font-mono">AES-256</span>

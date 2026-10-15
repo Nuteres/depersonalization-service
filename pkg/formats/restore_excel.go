@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
+	"runtime/debug"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
@@ -14,7 +16,8 @@ import (
 )
 
 // RestoreExcel reads XLSX from inputPath, replaces cells matching dm.Mapping with original values across all sheets,
-// writes the restored workbook to outputPath, and invokes onProgress if non-nil.
+// streams the restored workbook to outputPath using StreamWriter for minimal memory footprint,
+// and invokes onProgress if non-nil.
 // Returns total number of restored cells.
 func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.DepMap, onProgress func(pct int, proc, total int)) (int, error) {
 	if ctx == nil {
@@ -48,7 +51,7 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 		return 0, nil
 	}
 
-	// Calculate total rows for progress tracking
+	// Calculate total rows across all sheets for progress tracking
 	totalRows := 0
 	for _, sheet := range sheetList {
 		counted := false
@@ -105,11 +108,6 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 	// Initial progress report (0%)
 	reportProgress(true)
 
-	type cellChange struct {
-		cell string
-		val  string
-	}
-
 	isDeleteMode := dm.Mode == "delete" || len(dm.CellMappings) > 0
 	targetHeadersMap := make(map[string]bool)
 	if len(dm.TargetHeaders) > 0 {
@@ -119,11 +117,36 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 	}
 	hasHeaderAwareness := isDeleteMode || len(dm.TargetHeaders) > 0
 
-	for _, sheetName := range sheetList {
+	outFile := excelize.NewFile()
+	defer outFile.Close()
+
+	defer func() {
+		goruntime.GC()
+		debug.FreeOSMemory()
+	}()
+
+	for sheetIdx, sheetName := range sheetList {
 		select {
 		case <-ctx.Done():
 			return restoredCount, ctx.Err()
 		default:
+		}
+
+		if sheetIdx == 0 {
+			if sheetName != "Sheet1" {
+				if err := outFile.SetSheetName("Sheet1", sheetName); err != nil {
+					_, _ = outFile.NewSheet(sheetName)
+				}
+			}
+		} else {
+			if _, err := outFile.NewSheet(sheetName); err != nil {
+				return restoredCount, fmt.Errorf("failed to create sheet %s: %w", sheetName, err)
+			}
+		}
+
+		sw, err := outFile.NewStreamWriter(sheetName)
+		if err != nil {
+			return restoredCount, fmt.Errorf("failed to create stream writer for sheet %s: %w", sheetName, err)
 		}
 
 		// Sample initial rows to detect headers
@@ -153,7 +176,6 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 			return restoredCount, fmt.Errorf("failed to read rows from sheet %s: %w", sheetName, err)
 		}
 
-		var changes []cellChange
 		rowNum := 0
 
 		for rows.Next() {
@@ -173,13 +195,29 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 				return restoredCount, fmt.Errorf("failed to read columns in sheet %s row %d: %w", sheetName, rowNum, err)
 			}
 
+			cellCoordinate, err := excelize.CoordinatesToCellName(1, rowNum)
+			if err != nil {
+				_ = rows.Close()
+				return restoredCount, fmt.Errorf("failed to get cell coordinate for row %d: %w", rowNum, err)
+			}
+
 			if hasHeaderAwareness && len(sample) > 1 && headerRowIndex >= 0 && rowNum <= headerRowIndex+1 {
+				headerCells := make([]interface{}, len(cols))
+				for i, v := range cols {
+					headerCells[i] = v
+				}
+				if err := sw.SetRow(cellCoordinate, headerCells); err != nil {
+					_ = rows.Close()
+					return restoredCount, fmt.Errorf("failed to write header row %d: %w", rowNum, err)
+				}
 				reportProgress(false)
 				continue
 			}
 
+			rowCells := make([]interface{}, len(cols))
 			for colIdx, val := range cols {
 				if len(val) == 0 {
+					rowCells[colIdx] = ""
 					continue
 				}
 
@@ -190,10 +228,8 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 
 				if restoredVal, ok := RestoreCellString(val, dm); ok {
 					if len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName] || strings.Contains(val, "[") {
-						coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
-						if err == nil {
-							changes = append(changes, cellChange{cell: coord, val: restoredVal})
-						}
+						rowCells[colIdx] = restoredVal
+						restoredCount++
 						continue
 					}
 				}
@@ -202,14 +238,19 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 					if orig, ok := dm.GetCell(sheetName, headerName, rowNum); ok {
 						trimmed := strings.TrimSpace(strings.TrimPrefix(val, "\ufeff"))
 						if trimmed == DeletionMarker {
-							coord, err := excelize.CoordinatesToCellName(colIdx+1, rowNum)
-							if err == nil {
-								changes = append(changes, cellChange{cell: coord, val: orig})
-							}
+							rowCells[colIdx] = orig
+							restoredCount++
 							continue
 						}
 					}
 				}
+
+				rowCells[colIdx] = val
+			}
+
+			if err := sw.SetRow(cellCoordinate, rowCells); err != nil {
+				_ = rows.Close()
+				return restoredCount, fmt.Errorf("failed to write row %d in sheet %s: %w", rowNum, sheetName, err)
 			}
 
 			reportProgress(false)
@@ -224,17 +265,8 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 			return restoredCount, fmt.Errorf("failed to close rows in sheet %s: %w", sheetName, err)
 		}
 
-		// Apply cell changes for this sheet
-		for _, ch := range changes {
-			select {
-			case <-ctx.Done():
-				return restoredCount, ctx.Err()
-			default:
-			}
-			if err := xl.SetCellValue(sheetName, ch.cell, ch.val); err != nil {
-				return restoredCount, fmt.Errorf("failed to set cell %s in sheet %s: %w", ch.cell, sheetName, err)
-			}
-			restoredCount++
+		if err := sw.Flush(); err != nil {
+			return restoredCount, fmt.Errorf("failed to flush stream writer for sheet %s: %w", sheetName, err)
 		}
 	}
 
@@ -253,6 +285,8 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 	default:
 	}
 
+	outFile.SetActiveSheet(0)
+
 	dir := filepath.Dir(outputPath)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -260,7 +294,7 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 		}
 	}
 
-	if err := xl.SaveAs(outputPath); err != nil {
+	if err := outFile.SaveAs(outputPath); err != nil {
 		return restoredCount, fmt.Errorf("failed to save restored excel file to %s: %w", outputPath, err)
 	}
 

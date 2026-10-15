@@ -1,6 +1,11 @@
 <script lang="ts">
   import { appState } from '../../stores/appState.svelte';
   import { OpenContainingFolder } from '../../api/wails';
+  import { copyToClipboard } from '../../services/clipboard';
+
+  let copiedPassword = $state(false);
+  let copiedOutputPath = $state(false);
+  let copiedKeyPath = $state(false);
 
   const isRestore = $derived.by(() => {
     return (
@@ -46,26 +51,26 @@
   async function copyOutputPath() {
     const path = appState.successResult?.outputPath;
     if (!path) return;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(path);
-        appState.showToast('Путь к файлу скопирован в буфер!', 'success');
-      }
-    } catch (err) {
-      console.error('Failed to copy to clipboard:', err);
+    const ok = await copyToClipboard(path);
+    if (ok) {
+      copiedOutputPath = true;
+      setTimeout(() => { copiedOutputPath = false; }, 2000);
+      appState.showToast('Путь к файлу скопирован в буфер!', 'success');
+    } else {
+      appState.showToast('Не удалось скопировать путь в буфер', 'error');
     }
   }
 
   async function copyKeyPath() {
     const kp = appState.successResult?.keyPath;
     if (!kp) return;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(kp);
-        appState.showToast('Путь к файлу-ключу скопирован в буфер!', 'success');
-      }
-    } catch (err) {
-      console.error('Failed to copy to clipboard:', err);
+    const ok = await copyToClipboard(kp);
+    if (ok) {
+      copiedKeyPath = true;
+      setTimeout(() => { copiedKeyPath = false; }, 2000);
+      appState.showToast('Путь к файлу-ключу скопирован в буфер!', 'success');
+    } else {
+      appState.showToast('Не удалось скопировать путь к ключу в буфер', 'error');
     }
   }
 
@@ -75,13 +80,13 @@
         ? appState.successResult.effectivePassword
         : undefined;
     if (!pwd) return;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(pwd);
-        appState.showToast('Пароль скопирован в буфер!', 'success');
-      }
-    } catch (err) {
-      console.error('Failed to copy to clipboard:', err);
+    const ok = await copyToClipboard(pwd);
+    if (ok) {
+      copiedPassword = true;
+      setTimeout(() => { copiedPassword = false; }, 2000);
+      appState.showToast('Пароль скопирован в буфер обмена!', 'success');
+    } else {
+      appState.showToast('Не удалось скопировать пароль в буфер обмена', 'error');
     }
   }
 </script>
@@ -135,7 +140,7 @@
               onclick={copyOutputPath}
               class="text-[11px] text-[#1C1917] hover:underline font-mono font-semibold cursor-pointer shrink-0"
             >
-              📋 Копировать путь
+              {copiedOutputPath ? '✔ Скопировано' : '📋 Копировать путь'}
             </button>
           </div>
           <div
@@ -160,7 +165,7 @@
               onclick={copyKeyPath}
               class="text-[11px] text-[#1C1917] hover:underline font-mono font-semibold cursor-pointer shrink-0"
             >
-              📋 Копировать путь
+              {copiedKeyPath ? '✔ Скопировано' : '📋 Копировать путь'}
             </button>
           </div>
           <div
@@ -189,7 +194,7 @@
               onclick={copyPassword}
               class="text-[11px] text-[#1C1917] hover:underline font-mono font-semibold cursor-pointer shrink-0"
             >
-              📋 Скопировать
+              {copiedPassword ? '✔ Скопировано' : '📋 Скопировать'}
             </button>
           </div>
           <div
