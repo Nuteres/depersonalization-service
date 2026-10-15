@@ -20,10 +20,3 @@ const (
 	EntityGrade      EntityType = "GRADE"
 	EntityEmployeeID EntityType = "EMPLOYEE_ID"
 )
-
-// MatchResult - результат распознавания ПДн
-type MatchResult struct {
-	Type       EntityType
-	Value      string
-	Confidence float64
-}

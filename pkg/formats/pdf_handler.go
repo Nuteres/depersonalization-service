@@ -2008,16 +2008,6 @@ func extractFontCMaps(objMap map[int]*pdfObject) (map[string]*pdfCMap, *pdfCMap)
 	return fontCMaps, defaultCMap
 }
 
-func unescapePDFString(s string) string {
-	s = strings.ReplaceAll(s, `\n`, "\n")
-	s = strings.ReplaceAll(s, `\r`, "")
-	s = strings.ReplaceAll(s, `\t`, " ")
-	s = strings.ReplaceAll(s, `\(`, "(")
-	s = strings.ReplaceAll(s, `\)`, ")")
-	s = strings.ReplaceAll(s, `\\`, "\\")
-	return s
-}
-
 func decodePDFString(raw []byte) string {
 	if len(raw) == 0 {
 		return ""

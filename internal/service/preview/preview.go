@@ -103,14 +103,6 @@ func (s *PreviewService) GetSheetRows(ctx context.Context, path, sheetName strin
 	}
 }
 
-func getXLSXRows(ctx context.Context, path string, offset, limit int, salt string, disabledCols []int, mode ...domain.ProcessingMode) ([]domain.PreviewRow, error) {
-	strat := domain.StrategySemanticTokens
-	if len(mode) > 0 && mode[0] == domain.ModeDelete {
-		strat = domain.StrategyDelete
-	}
-	return getXLSXRowsForSheet(ctx, path, "", offset, limit, salt, disabledCols, strat)
-}
-
 func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, offset, limit int, salt string, disabledCols []int, strategy domain.AnonymizationStrategy) ([]domain.PreviewRow, error) {
 	if ctx != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
