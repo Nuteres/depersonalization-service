@@ -2,6 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import { appState } from '../../stores/appState.svelte';
   import { tableState } from '../../stores/tableState.svelte';
+  import { zoomState } from '../../stores/zoomState.svelte';
   import { GetSheetRows } from '../../api/wails';
   import type { EntityInfo, ProcessingMode } from '../../types/domain';
 
@@ -475,7 +476,7 @@
   {#if tableState.isFullscreen}
     <div
       id="expanded-preview-modal"
-      class="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 z-50 overscroll-contain"
+      class="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-hidden overscroll-contain"
       onclick={(e) => {
         if (e.target === e.currentTarget) tableState.setIsFullscreen(false);
       }}
@@ -488,18 +489,18 @@
       aria-label="Полный предпросмотр таблицы"
     >
       <div
-        class="bg-white border border-[#E8E7E3] shadow-2xl w-full h-[92vh] max-h-[92vh] flex flex-col max-w-[96vw] overflow-hidden overscroll-contain"
+        class="bg-white border border-[#E8E7E3] shadow-2xl w-full h-full max-h-full max-w-full flex flex-col overflow-hidden overscroll-contain"
       >
         <!-- Modal Header -->
         <div
-          class="px-5 py-3.5 border-b border-[#E8E7E3] flex items-center justify-between bg-[#FAF9F5] shrink-0 gap-3"
+          class="px-4 py-2.5 sm:px-5 sm:py-3 border-b border-[#E8E7E3] flex flex-wrap items-center justify-between bg-[#FAF9F5] shrink-0 gap-2 sm:gap-3"
         >
-          <div class="flex items-center space-x-3 min-w-0 flex-1">
-            <span class="font-bold text-sm tracking-tight text-[#1C1917] whitespace-nowrap">
+          <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <span class="font-bold text-xs sm:text-sm tracking-tight text-[#1C1917] whitespace-nowrap">
               Полный предпросмотр таблицы
             </span>
             <span
-              class="text-xs font-mono font-semibold text-[#1C1917] bg-[#E8E7E3] px-2 py-0.5 max-w-xs md:max-w-md lg:max-w-xl truncate"
+              class="text-xs font-mono font-semibold text-[#1C1917] bg-[#E8E7E3] px-2 py-0.5 max-w-[160px] sm:max-w-xs md:max-w-md truncate"
               title={appState.currentFileInfo.name}
             >
               {appState.currentFileInfo.name}
@@ -509,24 +510,54 @@
             </span>
           </div>
 
-          <div class="flex items-center space-x-3 shrink-0">
+          <div class="flex items-center space-x-2 sm:space-x-3 shrink-0 ml-auto">
+            <!-- Modal Zoom Controls -->
+            <div class="flex items-center bg-white text-xs font-medium border border-[#E8E7E3]" id="modal-zoom-controls">
+              <button
+                type="button"
+                onclick={() => zoomState.zoomOut()}
+                disabled={zoomState.currentZoom <= zoomState.minZoom}
+                class="px-2 py-1 hover:bg-[#FAF9F5] text-[#78716C] hover:text-[#1C1917] transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+                title="Уменьшить масштаб (Ctrl + -)"
+              >
+                –
+              </button>
+              <button
+                type="button"
+                onclick={() => zoomState.resetZoom()}
+                class="px-2 py-1 font-mono text-[11px] font-semibold text-[#1C1917] hover:bg-[#FAF9F5] transition cursor-pointer min-w-[44px] text-center"
+                title="Сбросить масштаб к 100% (Ctrl + 0)"
+              >
+                {Math.round(zoomState.currentZoom * 100)}%
+              </button>
+              <button
+                type="button"
+                onclick={() => zoomState.zoomIn()}
+                disabled={zoomState.currentZoom >= zoomState.maxZoom}
+                class="px-2 py-1 hover:bg-[#FAF9F5] text-[#78716C] hover:text-[#1C1917] transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+                title="Увеличить масштаб (Ctrl + +)"
+              >
+                +
+              </button>
+            </div>
+
             <!-- Toggle Before vs After inside Modal -->
             <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
               <button
                 type="button"
                 onclick={() => tableState.setIsBefore(false)}
-                class="px-3 py-1 {!tableState.isBefore
+                class="px-2.5 sm:px-3 py-1 {!tableState.isBefore
                   ? 'bg-[#1C1917] text-white font-semibold'
-                  : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
+                  : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer text-xs"
               >
                 Очищенные данные
               </button>
               <button
                 type="button"
                 onclick={() => tableState.setIsBefore(true)}
-                class="px-3 py-1 {tableState.isBefore
+                class="px-2.5 sm:px-3 py-1 {tableState.isBefore
                   ? 'bg-[#1C1917] text-white font-semibold'
-                  : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
+                  : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer text-xs"
               >
                 Исходные с ПДн
               </button>
@@ -536,7 +567,7 @@
             <button
               type="button"
               onclick={() => tableState.setIsFullscreen(false)}
-              class="px-3.5 py-1.5 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold shadow-xs transition flex items-center space-x-1 cursor-pointer"
+              class="px-3 py-1.5 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold shadow-xs transition flex items-center space-x-1 cursor-pointer shrink-0"
             >
               <span>✕ Свернуть</span>
               <span class="text-[10px] text-[#A8A29E] font-mono ml-1">[Esc]</span>
@@ -555,11 +586,11 @@
             class="resizable-table w-full text-left text-xs border-collapse"
             style={totalTableWidth > 0 ? `width: ${totalTableWidth}px; min-width: 100%;` : 'width: 100%;'}
           >
-            <thead class="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#E8E7E3]">
+            <thead class="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_#E8E7E3]">
               <tr class="bg-white text-[#78716C] font-mono text-[11px] whitespace-nowrap">
                 <th
                   style="width: {tableState.columnWidths[0] || 50}px;"
-                  class="py-3 px-3 font-normal text-center text-[#A8A29E] bg-[#FAF9F5] border-r border-[#F0EFEB] select-none"
+                  class="py-3 px-3 font-normal text-center text-[#A8A29E] bg-[#FAF9F5] border-r border-[#F0EFEB] select-none sticky top-0"
                 >
                   #
                 </th>
@@ -571,7 +602,7 @@
                   {@const colW = tableState.columnWidths[col1Based] || 180}
                   <th
                     style="width: {colW}px;"
-                    class="py-3 px-3 font-semibold text-[#1C1917] select-none border-r border-[#F0EFEB]"
+                    class="py-3 px-3 font-semibold text-[#1C1917] select-none border-r border-[#F0EFEB] bg-white sticky top-0"
                   >
                     <div class="flex items-center justify-between gap-1.5 w-full min-w-0 overflow-hidden pr-2">
                       <span

@@ -284,7 +284,7 @@
     }}
   >
     <div
-      class="bg-white border border-[#E8E7E3] shadow-2xl max-w-lg w-full p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto custom-scrollbar"
+      class="bg-white border border-[#E8E7E3] shadow-2xl max-w-lg w-full p-6 flex flex-col gap-4 max-h-[calc(100%-2rem)] overflow-y-auto custom-scrollbar"
     >
       <!-- Modal Header -->
       <div class="flex items-center justify-between border-b border-[#F0EFEB] pb-3">

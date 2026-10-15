@@ -95,7 +95,7 @@
     }}
   >
     <div
-      class="bg-white border border-[#E8E7E3] shadow-2xl max-w-4xl w-full p-6 flex flex-col gap-4 max-h-[85vh]"
+      class="bg-white border border-[#E8E7E3] shadow-2xl max-w-4xl w-full p-6 flex flex-col gap-4 max-h-[calc(100%-2rem)]"
     >
       <!-- Modal Header -->
       <div class="flex items-center justify-between border-b border-[#F0EFEB] pb-3">
