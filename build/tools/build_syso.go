@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+
+	"dep_service/internal/version"
 )
 
 type IconDirEntry struct {
@@ -86,9 +88,9 @@ func main() {
 	}
 	grpData := grpBuf.Bytes()
 
-	manifestXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+	manifestXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="1.6.0.0" processorArchitecture="*" name="Depersonalizer" type="win32"/>
+  <assemblyIdentity version="%s.0" processorArchitecture="*" name="Depersonalizer" type="win32"/>
   <description>Деперсонализация ПД</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
@@ -105,7 +107,7 @@ func main() {
       <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
     </application>
   </compatibility>
-</assembly>`
+</assembly>`, version.Version)
 	manifestData := []byte(manifestXML)
 
 	type ResourceItem struct {

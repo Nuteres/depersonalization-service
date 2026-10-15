@@ -99,6 +99,16 @@ if fm.fileExists(atPath: "bin/depersonalizer-darwin-universal") {
     try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destBinary)
 }
 
+var appVersion = "1.10.1"
+if let verContent = try? String(contentsOfFile: "internal/version/version.go", encoding: .utf8) {
+    let pattern = "Version = \"([^\"]+)\""
+    if let regex = try? NSRegularExpression(pattern: pattern),
+       let match = regex.firstMatch(in: verContent, range: NSRange(verContent.startIndex..., in: verContent)),
+       let range = Range(match.range(at: 1), in: verContent) {
+        appVersion = String(verContent[range])
+    }
+}
+
 let infoPlist = """
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -117,9 +127,9 @@ let infoPlist = """
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.6.0</string>
+    <string>\(appVersion)</string>
     <key>CFBundleVersion</key>
-    <string>1.6.0</string>
+    <string>\(appVersion)</string>
     <key>LSMinimumSystemVersion</key>
     <string>11.0</string>
     <key>NSHighResolutionCapable</key>
