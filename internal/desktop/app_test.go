@@ -730,6 +730,42 @@ func TestDesktopApp_SetClipboardText_UninitializedContext(t *testing.T) {
 	}
 }
 
+func TestDesktopApp_ArchiveMethods(t *testing.T) {
+	app := newTestApp()
+
+	// 1. GenerateArchivePassword
+	pwd, err := app.GenerateArchivePassword()
+	if err != nil {
+		t.Fatalf("GenerateArchivePassword failed: %v", err)
+	}
+	if len(pwd) != 16 {
+		t.Errorf("expected 16 chars password, got %d", len(pwd))
+	}
+
+	// 2. ValidateArchivePassword
+	valid, errMsg := app.ValidateArchivePassword(pwd)
+	if !valid || errMsg != "" {
+		t.Errorf("expected generated password to be valid, got valid=%v, err=%s", valid, errMsg)
+	}
+
+	validShort, errMsgShort := app.ValidateArchivePassword("12")
+	if validShort || errMsgShort == "" {
+		t.Errorf("expected short password to be invalid")
+	}
+
+	validCyr, errMsgCyr := app.ValidateArchivePassword("Пароль123")
+	if validCyr || errMsgCyr == "" {
+		t.Errorf("expected cyrillic password to be invalid")
+	}
+
+	// 3. SaveArchiveFileDialog with uninitialized context
+	_, err = app.SaveArchiveFileDialog("test.zip")
+	if err == nil {
+		t.Errorf("expected error for SaveArchiveFileDialog with nil context")
+	}
+}
+
+
 
 
 

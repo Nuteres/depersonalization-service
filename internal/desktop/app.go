@@ -21,6 +21,7 @@ import (
 	"dep_service/internal/version"
 	"dep_service/pkg/audit"
 	"dep_service/pkg/depmap"
+	"dep_service/pkg/ziputil"
 )
 
 // DesktopApp is the presentation adapter struct bound to the Wails runtime.
@@ -117,6 +118,13 @@ func (a *DesktopApp) InspectFile(path string) (*domain.FileInfo, error) {
 
 // GetFileBase64 reads the file at path and returns its contents encoded as a base64 string.
 func (a *DesktopApp) GetFileBase64(path string) (string, error) {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat file: %w", err)
+	}
+	if stat.Size() > domain.MaxBase64PreviewFileSize {
+		return "", fmt.Errorf("%w: размер файла превышает лимит безопасности для предпросмотра (100 МБ)", domain.ErrFileTooLarge)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)
@@ -398,5 +406,20 @@ func (a *DesktopApp) ValidateKeyPassword(password string) domain.PasswordValidat
 		OnlyLatin:    details.OnlyLatin,
 	}
 }
+
+// GenerateArchivePassword generates a strong 16-character random password for archive encryption.
+func (a *DesktopApp) GenerateArchivePassword() (string, error) {
+	return depmap.GenerateRandomPassword(16)
+}
+
+// ValidateArchivePassword validates archive password against basic requirements (ASCII, >=4 chars, no spaces).
+func (a *DesktopApp) ValidateArchivePassword(password string) (bool, string) {
+	err := ziputil.ValidateArchivePassword(password)
+	if err != nil {
+		return false, err.Error()
+	}
+	return true, ""
+}
+
 
 

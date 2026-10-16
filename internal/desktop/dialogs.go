@@ -187,6 +187,31 @@ func (a *DesktopApp) SaveAuditFileDialog(defaultName string) (string, error) {
 	return selected, nil
 }
 
+// SaveArchiveFileDialog opens a native system file save dialog for .zip archives.
+func (a *DesktopApp) SaveArchiveFileDialog(defaultName string) (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("application context not initialized")
+	}
+
+	var filters []runtime.FileFilter
+	if goruntime.GOOS != "darwin" {
+		filters = []runtime.FileFilter{
+			{DisplayName: "ZIP-архив (*.zip)", Pattern: "*.zip"},
+			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
+		}
+	}
+
+	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Сохранить защищённый ZIP-архив",
+		DefaultFilename: defaultName,
+		Filters:         filters,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to open archive save dialog: %w", err)
+	}
+	return selected, nil
+}
+
 // OpenContainingFolder opens the folder containing targetPath in the OS file manager.
 func (a *DesktopApp) OpenContainingFolder(targetPath string) error {
 	if strings.TrimSpace(targetPath) == "" {
