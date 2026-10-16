@@ -100,3 +100,20 @@ body.modal-open {
   overflow: hidden !important;
   height: 100vh !important;
 }
+
+@keyframes loading-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(50%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.animate-loading-bar {
+  animation: loading-progress 1.5s ease-in-out infinite;
+}
+

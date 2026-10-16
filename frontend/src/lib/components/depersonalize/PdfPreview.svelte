@@ -4,7 +4,7 @@
   import { GetFileBase64 } from '../../api/wails';
   import type { PDFRedactionBox } from '../../types/domain';
 
-  // View state
+  const MAX_PREVIEW_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
   let isBefore = $state(false); // false = Anonymized, true = Original
   let isLoading = $state(false);
   let loadError = $state<string | null>(null);
@@ -204,6 +204,12 @@
     pagesData = [];
     disabledInstanceIds = new Set();
 
+    if (fileInfo?.size && fileInfo.size > MAX_PREVIEW_FILE_SIZE) {
+      loadError = `Размер файла (${(fileInfo.size / (1024 * 1024)).toFixed(1)} МБ) превышает лимит безопасности 100 МБ для интерактивного предпросмотра`;
+      isLoading = false;
+      return;
+    }
+
     try {
       const base64Data = await GetFileBase64(path);
       if (!base64Data) {
@@ -213,12 +219,13 @@
       const bytes = base64ToUint8Array(base64Data);
       const pdf = await loadPdf(bytes);
       const numPages = pdf.numPages;
+      const pagesToRender = numPages;
       const targetScale = 1.35; // Standard desktop reading scale
 
       const pagesList: RenderedPageData[] = [];
       let globalCounter = 0;
 
-      for (let pNum = 1; pNum <= numPages; pNum++) {
+      for (let pNum = 1; pNum <= pagesToRender; pNum++) {
         const page = await pdf.getPage(pNum);
         const viewport = page.getViewport({ scale: targetScale });
         const textContent = await page.getTextContent();
@@ -423,7 +430,7 @@
       // Render canvases on next animation frame once DOM elements mount
       requestAnimationFrame(async () => {
         const dpr = window.devicePixelRatio || 1;
-        for (let pNum = 1; pNum <= numPages; pNum++) {
+        for (let pNum = 1; pNum <= pagesToRender; pNum++) {
           const canvas = canvasRefs[pNum];
           if (!canvas) continue;
 
@@ -514,9 +521,12 @@
           <span class="text-xs font-mono text-[#78716C]">Рендеринг страниц через Mozilla PDF.js...</span>
         </div>
       {:else if loadError}
-        <div class="text-center py-20 px-6 max-w-md mx-auto bg-white border border-rose-200 p-6 shadow-sm">
-          <div class="text-rose-600 font-bold text-sm mb-2">Не удалось отобразить PDF</div>
-          <p class="text-xs text-[#78716C] font-mono leading-relaxed">{loadError}</p>
+        <div class="text-center py-16 px-6 max-w-lg mx-auto bg-white border border-rose-200 p-6 shadow-sm">
+          <div class="text-rose-600 font-bold text-sm mb-2">Не удалось отобразить PDF в интерактивном предпросмотре</div>
+          <p class="text-xs text-[#78716C] font-mono leading-relaxed mb-3">{loadError}</p>
+          <p class="text-[11px] text-[#A8A29E] leading-relaxed">
+            Файлы размером свыше 100 МБ не загружаются в браузерный предпросмотр для предотвращения переполнения оперативной памяти. Обезличивание документа по-прежнему доступно по кнопке внизу.
+          </p>
         </div>
       {:else if pagesData.length > 0}
         <!-- Render each page sequentially in continuous scroll -->

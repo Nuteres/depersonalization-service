@@ -6,6 +6,35 @@
   let copiedPassword = $state(false);
   let copiedOutputPath = $state(false);
   let copiedKeyPath = $state(false);
+  let copiedArchivePath = $state(false);
+  let copiedArchivePassword = $state(false);
+  let showArchivePassword = $state(true);
+
+  async function copyArchivePath() {
+    const path = appState.successResult?.archivePath;
+    if (!path) return;
+    const ok = await copyToClipboard(path);
+    if (ok) {
+      copiedArchivePath = true;
+      setTimeout(() => { copiedArchivePath = false; }, 2000);
+      appState.showToast('Путь к архиву скопирован в буфер!', 'success');
+    } else {
+      appState.showToast('Не удалось скопировать путь к архиву', 'error');
+    }
+  }
+
+  async function copyArchivePassword() {
+    const pwd = appState.successResult?.archivePassword;
+    if (!pwd) return;
+    const ok = await copyToClipboard(pwd);
+    if (ok) {
+      copiedArchivePassword = true;
+      setTimeout(() => { copiedArchivePassword = false; }, 2000);
+      appState.showToast('Пароль архива скопирован в буфер обмена!', 'success');
+    } else {
+      appState.showToast('Не удалось скопировать пароль архива', 'error');
+    }
+  }
 
   const isRestore = $derived.by(() => {
     return (
@@ -149,6 +178,62 @@
           >
             {appState.successResult.outputPath}
           </div>
+        </div>
+      {/if}
+
+      <!-- Password-Protected Archive Card -->
+      {#if !isRestore && appState.successResult.archivePath}
+        <div class="border border-[#1C1917] bg-[#FAF9F5] p-3 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[11px] font-mono font-bold text-[#1C1917] uppercase tracking-wider flex items-center space-x-1.5">
+              <span>📦</span>
+              <span>Защищённый архив (для отправки):</span>
+            </span>
+            <button
+              type="button"
+              onclick={copyArchivePath}
+              class="text-[11px] text-[#1C1917] hover:underline font-mono font-semibold cursor-pointer shrink-0"
+            >
+              {copiedArchivePath ? '✔ Скопировано' : '📋 Копировать путь'}
+            </button>
+          </div>
+          <div
+            class="text-xs font-mono text-[#1C1917] break-all select-all leading-relaxed bg-white p-2 border border-[#E8E7E3]"
+            title={appState.successResult.archivePath}
+          >
+            {appState.successResult.archivePath}
+          </div>
+
+          {#if appState.successResult.archivePassword}
+            <div class="pt-2 border-t border-[#E8E7E3] space-y-1.5">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[11px] font-mono font-bold text-[#1C1917] flex items-center space-x-1">
+                  <span>🔒</span>
+                  <span>Пароль архива (сообщите получателю):</span>
+                </span>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onclick={() => showArchivePassword = !showArchivePassword}
+                    class="text-[11px] text-[#78716C] hover:text-[#1C1917] font-mono cursor-pointer"
+                    title={showArchivePassword ? 'Скрыть пароль' : 'Показать пароль'}
+                  >
+                    {showArchivePassword ? 'Скрыть' : 'Показать'}
+                  </button>
+                  <button
+                    type="button"
+                    onclick={copyArchivePassword}
+                    class="text-[11px] text-[#1C1917] hover:underline font-mono font-semibold cursor-pointer shrink-0"
+                  >
+                    {copiedArchivePassword ? '✔ Скопировано' : '📋 Скопировать'}
+                  </button>
+                </div>
+              </div>
+              <div class="text-xs font-mono font-bold text-[#1C1917] select-all leading-relaxed bg-white p-2 border border-[#E8E7E3] tracking-wider">
+                <code>{showArchivePassword ? appState.successResult.archivePassword : '••••••••••••••••'}</code>
+              </div>
+            </div>
+          {/if}
         </div>
       {/if}
 

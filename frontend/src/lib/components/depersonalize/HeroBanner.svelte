@@ -99,8 +99,8 @@
       const filePath = (file as unknown as { path?: string })?.path;
       // Only load directly if filePath is an absolute path (e.g. on macOS / Electron)
       // Otherwise, Wails OnFileDrop will receive the full OS path from the native drop handler.
-      if (filePath && (filePath.includes('/') || filePath.includes('\\'))) {
-        await loadFile(filePath);
+      if (file && filePath && (filePath.includes('/') || filePath.includes('\\'))) {
+        await loadFile(filePath, file.size);
       }
     }
   }
@@ -119,7 +119,57 @@
   ];
 </script>
 
-{#if !appState.currentFileInfo}
+{#if appState.isFileLoading}
+  <!-- FILE LOADING & INSPECTING STATE -->
+  <div
+    id="file-loading-card"
+    class="border border-[#E8E7E3] bg-[#FAF9F5] p-6 sm:p-8 text-center flex flex-col items-center justify-center gap-4 shadow-sm select-none relative overflow-hidden"
+  >
+    <!-- Top Animated Shimmer Progress Bar -->
+    <div class="absolute top-0 left-0 right-0 h-1.5 bg-[#E8E7E3] overflow-hidden">
+      <div class="h-full bg-emerald-600 animate-loading-bar w-1/2"></div>
+    </div>
+
+    <!-- Spinner + Animated status -->
+    <div class="relative flex items-center justify-center w-14 h-14 mt-1">
+      <div class="w-14 h-14 border-3 border-stone-200 border-t-emerald-700 rounded-full animate-spin"></div>
+      <span class="absolute text-xl select-none">📊</span>
+    </div>
+
+    <div class="flex flex-col items-center gap-1.5 max-w-lg">
+      <div class="font-bold text-base text-[#1C1917] flex items-center justify-center gap-2 flex-wrap">
+        <span>Загрузка файла:</span>
+        <span class="font-mono text-emerald-800 bg-emerald-50 px-2 py-0.5 border border-emerald-200 truncate max-w-[320px]">
+          {appState.loadingFileName}
+        </span>
+        {#if appState.loadingFileSize}
+          <span class="font-mono text-xs text-[#78716C] bg-stone-100 px-1.5 py-0.5 border border-stone-200">
+            {appState.loadingFileSize}
+          </span>
+        {/if}
+      </div>
+      <div class="text-xs text-[#78716C] leading-relaxed">
+        {appState.loadingFileStatus || 'Выполняется распаковка структуры, определение колонок и поиск персональных данных (152-ФЗ)...'}
+      </div>
+    </div>
+
+    <!-- Active Stages / Progress Badges -->
+    <div class="flex flex-wrap items-center justify-center gap-2 mt-1">
+      <div class="text-[11px] font-mono px-2.5 py-1 bg-white border border-[#E8E7E3] text-[#44403C] flex items-center gap-2 shadow-2xs">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>Чтение структуры ячеек и листов</span>
+      </div>
+      <div class="text-[11px] font-mono px-2.5 py-1 bg-white border border-[#E8E7E3] text-[#44403C] flex items-center gap-2 shadow-2xs">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>Эвристика заголовков колонок</span>
+      </div>
+      <div class="text-[11px] font-mono px-2.5 py-1 bg-white border border-[#E8E7E3] text-[#44403C] flex items-center gap-2 shadow-2xs">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>Контрольные суммы СНИЛС, ИНН, Карт</span>
+      </div>
+    </div>
+  </div>
+{:else if !appState.currentFileInfo}
   <!-- NO FILE SELECTED: Large dashed drop zone -->
   <div
     id="empty-state-dropzone"

@@ -2,7 +2,17 @@
   import { onMount } from 'svelte';
   import { appState } from '../../stores/appState.svelte';
   import { tableState } from '../../stores/tableState.svelte';
-  import { SaveFileDialog, SaveKeyFileDialog, ProcessFileWithSheets, ProcessFileWithOptions, ValidateKeyPassword } from '../../api/wails';
+  import {
+    SaveFileDialog,
+    SaveKeyFileDialog,
+    SaveArchiveFileDialog,
+    GenerateArchivePassword,
+    ValidateArchivePassword,
+    ProcessFileWithSheets,
+    ProcessFileWithOptions,
+    ValidateKeyPassword
+  } from '../../api/wails';
+  import { copyToClipboard } from '../../services/clipboard';
   import type { PasswordValidationResult } from '../../types/domain';
 
   interface Props {
@@ -32,7 +42,14 @@
   let keyPath = $state('');
   let selectedExportFormat = $state('xlsx');
 
-  // Real-time password validation
+  // Archive state
+  let createArchive = $state(false);
+  let archivePassword = $state('');
+  let showArchivePassword = $state(false);
+  let archivePath = $state('');
+  let archivePasswordError = $state('');
+
+  // Real-time password validation for key
   $effect(() => {
     const trimmed = keyPassword.trim();
     if (!trimmed) {
@@ -54,11 +71,27 @@
     }
   });
 
+  // Real-time validation for archive password
+  $effect(() => {
+    if (!createArchive || !archivePassword.trim()) {
+      archivePasswordError = '';
+    } else {
+      ValidateArchivePassword(archivePassword).then((res) => {
+        archivePasswordError = res.valid ? '' : res.error;
+      });
+    }
+  });
+
   const isPasswordValid = $derived(
     appState.currentFileInfo?.fileType === 'pdf' ||
     !createKey ||
     !keyPassword.trim() ||
     passwordValidation.valid
+  );
+
+  const isFormValid = $derived(
+    isPasswordValid &&
+    (!createArchive || !archivePassword.trim() || !archivePasswordError)
   );
 
   // Generate random salt on open if not already set
@@ -149,9 +182,39 @@
     }
   }
 
+  async function handleSelectArchivePath() {
+    const ext = selectedExportFormat;
+    const baseName = appState.currentFileInfo?.name.replace(/\.[^/.]+$/, '') || 'data';
+    const defaultName = `${baseName}_anonymized.zip`;
+    const chosen = await SaveArchiveFileDialog(defaultName);
+    if (chosen) {
+      archivePath = chosen;
+    }
+  }
+
+  async function handleGenerateArchivePassword() {
+    try {
+      const pwd = await GenerateArchivePassword();
+      if (pwd) {
+        archivePassword = pwd;
+        archivePasswordError = '';
+      }
+    } catch (err) {
+      console.error('Failed to generate archive password:', err);
+    }
+  }
+
+  async function handleCopyArchivePassword() {
+    if (!archivePassword) return;
+    const ok = await copyToClipboard(archivePassword);
+    if (ok) {
+      appState.showToast('Пароль архива скопирован в буфер обмена!', 'success');
+    }
+  }
+
   async function handleStart() {
     if (!appState.currentFileInfo || !appState.currentFilePath) return;
-    if (!isPasswordValid) return;
+    if (!isFormValid) return;
 
     let destPath = outputPath;
     if (!destPath) {
@@ -204,7 +267,26 @@
       const effectiveKeyPath = effectiveCreateKey ? keyPath : '';
 
       let result;
-      if (isPdf && appState.pdfRedactionBoxes && appState.pdfRedactionBoxes.length > 0) {
+      if (createArchive) {
+        result = await ProcessFileWithOptions({
+          inputPath: appState.currentFilePath,
+          outputPath: destPath,
+          mode: appState.processingMode,
+          strategy: effectiveMode,
+          salt,
+          disabledCols: globalDisabled,
+          disabledBySheet,
+          createKey: effectiveCreateKey,
+          keyPassword: effectiveKeyPassword,
+          keyPath: effectiveKeyPath,
+          shuffleRows: effectiveShuffle,
+          createArchive: true,
+          archivePassword: archivePassword.trim(),
+          archivePath: archivePath.trim(),
+          pdfRedactionBoxes: isPdf ? (appState.pdfRedactionBoxes || []) : undefined,
+          pdfRedactTerms: isPdf ? (appState.pdfRedactTerms || []) : undefined,
+        });
+      } else if (isPdf && appState.pdfRedactionBoxes && appState.pdfRedactionBoxes.length > 0) {
         result = await ProcessFileWithOptions({
           inputPath: appState.currentFilePath,
           outputPath: destPath,
@@ -576,7 +658,152 @@
           {/if}
         </div>
       {/if}
-    </div>
+
+        <!-- Archive Generation Option (For all files) -->
+        <div class="space-y-3 border border-[#E8E7E3] p-4 bg-white">
+          <label class="flex items-start space-x-2.5 cursor-pointer select-none group">
+            <div class="relative flex items-center justify-center mt-0.5 shrink-0">
+              <input
+                id="create-archive-checkbox"
+                type="checkbox"
+                bind:checked={createArchive}
+                class="sr-only"
+              />
+              <div
+                class="w-4 h-4 border transition-colors flex items-center justify-center {createArchive ? 'bg-[#1C1917] border-[#1C1917]' : 'bg-white border-[#A8A29E] group-hover:border-[#1C1917]'}"
+              >
+                {#if createArchive}
+                  <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                {/if}
+              </div>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-[#1C1917] text-xs">
+                  Упаковать в ZIP-архив с паролем
+                </span>
+                <span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono font-medium bg-stone-100 text-stone-600 border border-stone-200">
+                  Для e-mail / СБ
+                </span>
+              </div>
+              <div class="text-[11px] text-[#78716C] mt-0.5 leading-relaxed font-sans">
+                Создаёт защищённый паролем универсальный ZIP-архив с деперсонализированным файлом для безопасной отправки по почте.
+              </div>
+            </div>
+          </label>
+
+          {#if createArchive}
+            <div class="pt-3 border-t border-[#F0EFEB] space-y-3">
+              <!-- Archive file path destination -->
+              <div class="space-y-1.5">
+                <label
+                  for="archive-path-input"
+                  class="block text-[11px] font-mono text-[#57534E]"
+                >
+                  Путь для сохранения архива:
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    id="archive-path-input"
+                    type="text"
+                    bind:value={archivePath}
+                    placeholder="По умолчанию рядом с файлом (*.zip)..."
+                    class="flex-1 px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5] truncate"
+                  />
+                  <button
+                    type="button"
+                    onclick={handleSelectArchivePath}
+                    class="px-3 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold whitespace-nowrap cursor-pointer shadow-2xs"
+                  >
+                    Обзор...
+                  </button>
+                </div>
+              </div>
+
+              <!-- Password for Archive -->
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <label
+                    for="archive-password-input"
+                    class="block text-[11px] font-mono text-[#57534E]"
+                  >
+                    Пароль архива (для получателя):
+                  </label>
+                  {#if archivePassword.trim()}
+                    <span class="text-[10px] font-mono {archivePasswordError ? 'text-[#DC2626]' : 'text-[#16A34A]'}">
+                      {archivePasswordError ? 'Некорректный пароль' : 'Пароль подходит'}
+                    </span>
+                  {/if}
+                </div>
+
+                <div class="relative flex items-center gap-1.5">
+                  <div class="relative flex-1 flex items-center">
+                    <input
+                      id="archive-password-input"
+                      type={showArchivePassword ? 'text' : 'password'}
+                      bind:value={archivePassword}
+                      placeholder="Оставьте пустым для автогенерации (16 симв.)"
+                      class="w-full pr-8 px-3 py-2 border {archivePassword.trim() && archivePasswordError ? 'border-[#DC2626] focus:border-[#DC2626]' : 'border-[#E8E7E3] focus:border-[#1C1917]'} focus:outline-none text-xs font-mono bg-[#FAF9F5]"
+                    />
+                    {#if archivePassword}
+                      <button
+                        type="button"
+                        onclick={() => showArchivePassword = !showArchivePassword}
+                        class="absolute right-2 text-[#78716C] hover:text-[#1C1917] p-1 text-xs select-none cursor-pointer"
+                        title={showArchivePassword ? 'Скрыть пароль' : 'Показать пароль'}
+                        aria-label={showArchivePassword ? 'Скрыть пароль' : 'Показать пароль'}
+                      >
+                        {#if showArchivePassword}
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                          </svg>
+                        {:else}
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        {/if}
+                      </button>
+                    {/if}
+                  </div>
+                  <button
+                    type="button"
+                    onclick={handleGenerateArchivePassword}
+                    class="px-2.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold whitespace-nowrap cursor-pointer shadow-2xs flex items-center gap-1"
+                    title="Сгенерировать случайный пароль"
+                  >
+                    <span>🎲</span>
+                    <span>Сгенерировать</span>
+                  </button>
+                  {#if archivePassword}
+                    <button
+                      type="button"
+                      onclick={handleCopyArchivePassword}
+                      class="px-2.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold whitespace-nowrap cursor-pointer shadow-2xs"
+                      title="Скопировать пароль архива"
+                    >
+                      📋
+                    </button>
+                  {/if}
+                </div>
+
+                {#if archivePasswordError}
+                  <div class="text-[10.5px] text-[#DC2626] font-medium flex items-center space-x-1 mt-1">
+                    <span>⚠</span>
+                    <span>{archivePasswordError}</span>
+                  </div>
+                {:else}
+                  <p class="text-[11px] text-[#78716C] leading-relaxed font-sans">
+                    Минимум 4 символа (только латиница, цифры и знаки). Если оставить пустым — при сохранении сгенерируется надёжный пароль на 16 символов.
+                  </p>
+                {/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+      </div>
 
       <!-- Footer Buttons -->
       <div class="flex items-center justify-end space-x-2 pt-3 border-t border-[#F0EFEB]">
@@ -590,8 +817,8 @@
         <button
           type="button"
           onclick={handleStart}
-          disabled={!isPasswordValid}
-          class="px-5 py-2 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm {isPasswordValid ? 'bg-[#1C1917] hover:bg-[#292524] text-white cursor-pointer active:scale-[0.99]' : 'bg-[#E7E5E4] text-[#A8A29E] cursor-not-allowed border border-[#D6D3D1]'}"
+          disabled={!isFormValid}
+          class="px-5 py-2 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm {isFormValid ? 'bg-[#1C1917] hover:bg-[#292524] text-white cursor-pointer active:scale-[0.99]' : 'bg-[#E7E5E4] text-[#A8A29E] cursor-not-allowed border border-[#D6D3D1]'}"
         >
           <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">💾</span>
           <span>{appState.processingMode === 'delete' ? 'Начать удаление' : 'Начать обезличивание'}</span>

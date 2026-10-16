@@ -33,6 +33,11 @@ export interface TextParagraphSegment {
   type?: string;
   original?: string;
   anonymized?: string;
+  isBold?: boolean;
+  isItalic?: boolean;
+  isUnderline?: boolean;
+  isStrike?: boolean;
+  isCode?: boolean;
 }
 
 export interface TextParagraphPreview {
@@ -43,6 +48,7 @@ export interface TextParagraphPreview {
 
 export interface TextTableCellPreview {
   segments: TextParagraphSegment[];
+  alignment?: 'left' | 'center' | 'right' | 'justify' | string;
 }
 
 export interface TextTableRowPreview {
@@ -59,6 +65,11 @@ export interface TextDocumentBlock {
   index: number;
   segments?: TextParagraphSegment[];
   table?: TextTablePreview;
+  alignment?: 'left' | 'center' | 'right' | 'justify' | string;
+  headingLevel?: number;
+  firstLineIndent?: boolean;
+  isList?: boolean;
+  isEmpty?: boolean;
 }
 
 export interface FileInfo {
@@ -108,6 +119,9 @@ export interface ProcessOptions {
   keyPassword?: string;
   keyPath?: string;
   shuffleRows?: boolean;
+  createArchive?: boolean;
+  archivePassword?: string;
+  archivePath?: string;
   pdfRedactionBoxes?: PDFRedactionBox[];
   pdfRedactTerms?: string[];
 }
@@ -124,6 +138,9 @@ export interface ProcessResult {
   error?: string;
   effectivePassword?: string;
   keyPasswordGenerated?: boolean;
+  archivePath?: string;
+  archivePassword?: string;
+  archivePasswordGenerated?: boolean;
 }
 
 export interface AuditRecord {

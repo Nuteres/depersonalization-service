@@ -26,6 +26,9 @@ export interface ProgressState {
 export type SuccessResult = (ProcessResult | RestoreResult) & {
   outputPath?: string;
   keyPath?: string;
+  archivePath?: string;
+  archivePassword?: string;
+  archivePasswordGenerated?: boolean;
 };
 
 class AppState {
@@ -34,6 +37,10 @@ class AppState {
   strategy = $state<AnonymizationStrategy>('tokens');
   currentFilePath = $state<string>('');
   currentFileInfo = $state<FileInfo | null>(null);
+  isFileLoading = $state<boolean>(false);
+  loadingFileName = $state<string>('');
+  loadingFileSize = $state<string>('');
+  loadingFileStatus = $state<string>('');
   currentSalt = $state<string>('152fz-secure-salt');
   isProcessing = $state<boolean>(false);
   progress = $state<ProgressState>({
@@ -82,6 +89,24 @@ class AppState {
 
   setFileInfo(info: FileInfo | null): void {
     this.currentFileInfo = info;
+  }
+
+  startFileLoading(fileName: string, status?: string, sizeStr?: string): void {
+    this.isFileLoading = true;
+    this.loadingFileName = fileName;
+    this.loadingFileSize = sizeStr || '';
+    this.loadingFileStatus = status || 'Чтение документа и первичный анализ ПДн (152-ФЗ)...';
+  }
+
+  updateFileLoadingStatus(status: string): void {
+    this.loadingFileStatus = status;
+  }
+
+  finishFileLoading(): void {
+    this.isFileLoading = false;
+    this.loadingFileName = '';
+    this.loadingFileSize = '';
+    this.loadingFileStatus = '';
   }
 
   setSalt(salt: string): void {
@@ -165,6 +190,10 @@ class AppState {
   reset(): void {
     this.currentFilePath = '';
     this.currentFileInfo = null;
+    this.isFileLoading = false;
+    this.loadingFileName = '';
+    this.loadingFileSize = '';
+    this.loadingFileStatus = '';
     this.processingMode = 'replace';
     this.strategy = 'tokens';
     this.isProcessing = false;
