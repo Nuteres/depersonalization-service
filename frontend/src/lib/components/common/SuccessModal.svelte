@@ -187,7 +187,7 @@
           <div class="flex items-center justify-between gap-2">
             <span class="text-[11px] font-mono font-bold text-[#1C1917] uppercase tracking-wider flex items-center space-x-1.5">
               <span>📦</span>
-              <span>Защищённый архив (для отправки):</span>
+              <span>Защищённый архив:</span>
             </span>
             <button
               type="button"
@@ -209,7 +209,7 @@
               <div class="flex items-center justify-between gap-2">
                 <span class="text-[11px] font-mono font-bold text-[#1C1917] flex items-center space-x-1">
                   <span>🔒</span>
-                  <span>Пароль архива (сообщите получателю):</span>
+                  <span>Пароль архива:</span>
                 </span>
                 <div class="flex items-center gap-2">
                   <button

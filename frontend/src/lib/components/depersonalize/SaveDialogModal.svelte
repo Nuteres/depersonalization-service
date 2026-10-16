@@ -477,12 +477,9 @@
                   <span class="font-bold text-[#1C1917] text-xs">
                     Перемешать строки
                   </span>
-                  <span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono font-medium bg-stone-100 text-stone-600 border border-stone-200">
-                    РКН № 140
-                  </span>
                 </div>
                 <div class="text-[11px] text-[#78716C] mt-1 leading-relaxed font-sans">
-                  Случайный порядок записей (метод перемешивания по Приказу Роскомнадзора № 140) для защиты от деанонимизации по позиции в реестре. Данные внутри строк расшифровываются корректно, но порядок строк остаётся перемешанным.
+                  Случайный порядок записей для защиты от деанонимизации по позиции в реестре. Данные внутри строк восстанавливаются корректно, но порядок строк остаётся перемешанным.
                 </div>
               </div>
             </label>
@@ -684,12 +681,9 @@
                 <span class="font-bold text-[#1C1917] text-xs">
                   Упаковать в ZIP-архив с паролем
                 </span>
-                <span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono font-medium bg-stone-100 text-stone-600 border border-stone-200">
-                  Для e-mail / СБ
-                </span>
               </div>
               <div class="text-[11px] text-[#78716C] mt-0.5 leading-relaxed font-sans">
-                Создаёт защищённый паролем универсальный ZIP-архив с деперсонализированным файлом для безопасной отправки по почте.
+                Создаёт защищённый паролем универсальный ZIP-архив с деперсонализированным файлом для безопасной отправки.
               </div>
             </div>
           </label>
@@ -729,7 +723,7 @@
                     for="archive-password-input"
                     class="block text-[11px] font-mono text-[#57534E]"
                   >
-                    Пароль архива (для получателя):
+                    Пароль архива:
                   </label>
                   {#if archivePassword.trim()}
                     <span class="text-[10px] font-mono {archivePasswordError ? 'text-[#DC2626]' : 'text-[#16A34A]'}">
