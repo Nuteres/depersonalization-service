@@ -21,6 +21,22 @@
     return lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath;
   }
 
+  function formatDuration(ms: number): string {
+    if (ms < 1000) {
+      return `${ms} мс`;
+    }
+    const totalSeconds = Math.round(ms / 1000);
+    if (totalSeconds < 60) {
+      return `${totalSeconds} сек`;
+    }
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (seconds === 0) {
+      return `${minutes} мин`;
+    }
+    return `${minutes} мин ${seconds} сек`;
+  }
+
   const savedDir = $derived.by(() => {
     return getDirectory(appState.successResult?.outputPath || appState.successResult?.archivePath || '');
   });
@@ -98,14 +114,14 @@
   const statsText = $derived.by(() => {
     const res = appState.successResult;
     if (!res) return '';
-    const duration = res.durationMs || 0;
+    const formattedDuration = formatDuration(res.durationMs || 0);
     if ('restoredCells' in res && typeof res.restoredCells === 'number') {
-      return `Восстановлено ячеек с ПДн: ${res.restoredCells.toLocaleString('ru-RU')} ▪ Время: ${duration} мс`;
+      return `Восстановлено ячеек с ПДн: ${res.restoredCells.toLocaleString('ru-RU')} ▪ Время: ${formattedDuration}`;
     }
     if ('rowsCount' in res && typeof res.rowsCount === 'number') {
-      return `Обработано строк: ${res.rowsCount.toLocaleString('ru-RU')} ▪ Время: ${duration} мс`;
+      return `Обработано строк: ${res.rowsCount.toLocaleString('ru-RU')} ▪ Время: ${formattedDuration}`;
     }
-    return `Время: ${duration} мс`;
+    return `Время: ${formattedDuration}`;
   });
 
   async function handleRevealFolder() {
@@ -158,7 +174,7 @@
       </div>
 
       <!-- Compact Files & Location Card -->
-      <div class="border border-[#E8E7E3] bg-[#FAF9F5] p-3.5 space-y-2.5">
+      <div class="border border-[#E8E7E3] bg-[#FAF9F5] p-3.5 space-y-2">
         <div class="flex items-center justify-between text-xs font-mono text-[#57534E]">
           <div class="flex items-center gap-1.5 min-w-0 pr-2">
             <span class="text-stone-500 shrink-0">📁</span>
@@ -177,45 +193,30 @@
           </button>
         </div>
 
-        <div class="space-y-1.5 pt-1.5 border-t border-[#E8E7E3]">
+        <div class="space-y-1 pt-2 border-t border-[#E8E7E3]">
           {#if appState.successResult.outputPath}
-            <div class="flex items-center justify-between text-xs font-mono bg-white px-3 py-2 border border-[#E8E7E3]">
-              <span class="flex items-center gap-2 truncate text-[#1C1917]">
-                <span class="shrink-0">📄</span>
-                <span class="truncate font-medium" title={appState.successResult.outputPath}>
-                  {outputFileName}
-                </span>
-              </span>
-              <span class="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 border border-emerald-200 uppercase font-sans shrink-0 ml-2 font-medium">
-                {isRestore ? 'Восстановлен' : 'Очищен'}
+            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-1 px-1">
+              <span class="shrink-0 text-stone-500">📄</span>
+              <span class="truncate font-medium select-all" title={appState.successResult.outputPath}>
+                {outputFileName}
               </span>
             </div>
           {/if}
 
           {#if !isRestore && appState.successResult.archivePath}
-            <div class="flex items-center justify-between text-xs font-mono bg-white px-3 py-2 border border-[#E8E7E3]">
-              <span class="flex items-center gap-2 truncate text-[#1C1917]">
-                <span class="shrink-0">📦</span>
-                <span class="truncate font-medium" title={appState.successResult.archivePath}>
-                  {archiveFileName}
-                </span>
-              </span>
-              <span class="text-[10px] text-amber-800 bg-amber-50 px-1.5 py-0.5 border border-amber-200 uppercase font-sans shrink-0 ml-2 font-medium">
-                ZIP-архив
+            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-1 px-1">
+              <span class="shrink-0 text-stone-500">📦</span>
+              <span class="truncate font-medium select-all" title={appState.successResult.archivePath}>
+                {archiveFileName}
               </span>
             </div>
           {/if}
 
           {#if !isRestore && appState.successResult.keyPath}
-            <div class="flex items-center justify-between text-xs font-mono bg-white px-3 py-2 border border-[#E8E7E3]">
-              <span class="flex items-center gap-2 truncate text-[#1C1917]">
-                <span class="shrink-0">🔑</span>
-                <span class="truncate font-medium" title={appState.successResult.keyPath}>
-                  {keyFileName}
-                </span>
-              </span>
-              <span class="text-[10px] text-stone-600 bg-stone-100 px-1.5 py-0.5 border border-stone-200 uppercase font-sans shrink-0 ml-2 font-medium">
-                Ключ .depmap
+            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-1 px-1">
+              <span class="shrink-0 text-stone-500">🔑</span>
+              <span class="truncate font-medium select-all" title={appState.successResult.keyPath}>
+                {keyFileName}
               </span>
             </div>
           {/if}
@@ -224,7 +225,7 @@
 
       <!-- Password-Protected Archive Card -->
       {#if !isRestore && appState.successResult.archivePassword}
-        <div class="border border-[#1C1917] bg-[#FAF9F5] p-3 space-y-1.5">
+        <div class="border border-[#E8E7E3] bg-[#FAF9F5] p-3 space-y-1.5">
           <div class="flex items-center justify-between gap-2">
             <span class="text-[11px] font-mono font-bold text-[#1C1917] uppercase tracking-wider flex items-center space-x-1.5">
               <span>📦</span>
