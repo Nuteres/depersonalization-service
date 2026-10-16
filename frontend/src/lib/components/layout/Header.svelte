@@ -23,10 +23,10 @@
         {#if appState.isFileLoading}
           <div
             id="header-loading-indicator"
-            class="flex items-center space-x-1.5 bg-emerald-50 border border-emerald-300 text-emerald-800 px-2 py-0.5 text-[10px] font-mono shadow-2xs"
+            class="flex items-center space-x-1.5 bg-[#FAF9F5] border border-[#E8E7E3] text-[#44403C] px-2 py-0.5 text-[10px] font-mono shadow-2xs"
           >
-            <div class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></div>
-            <span class="truncate max-w-[200px]">Поиск ПДн: {appState.loadingFileName}...</span>
+            <div class="w-1.5 h-1.5 rounded-full bg-stone-500 animate-pulse"></div>
+            <span class="truncate max-w-[200px]">Анализ: {appState.loadingFileName}...</span>
           </div>
         {/if}
       </div>

@@ -123,49 +123,29 @@
   <!-- FILE LOADING & INSPECTING STATE -->
   <div
     id="file-loading-card"
-    class="border border-[#E8E7E3] bg-[#FAF9F5] p-6 sm:p-8 text-center flex flex-col items-center justify-center gap-4 shadow-sm select-none relative overflow-hidden"
+    class="border border-[#E8E7E3] bg-[#FAF9F5] p-8 sm:p-10 text-center flex flex-col items-center justify-center gap-3 select-none shadow-2xs"
   >
-    <!-- Top Animated Shimmer Progress Bar -->
-    <div class="absolute top-0 left-0 right-0 h-1.5 bg-[#E8E7E3] overflow-hidden">
-      <div class="h-full bg-emerald-600 animate-loading-bar w-1/2"></div>
+    <!-- Minimalist Document Icon / Spinner -->
+    <div class="relative flex items-center justify-center w-10 h-10">
+      <div class="w-10 h-10 border-2 border-[#E8E7E3] border-t-[#1C1917] rounded-full animate-spin"></div>
+      <span class="absolute text-sm select-none">📄</span>
     </div>
 
-    <!-- Spinner + Animated status -->
-    <div class="relative flex items-center justify-center w-14 h-14 mt-1">
-      <div class="w-14 h-14 border-3 border-stone-200 border-t-emerald-700 rounded-full animate-spin"></div>
-      <span class="absolute text-xl select-none">📊</span>
-    </div>
-
-    <div class="flex flex-col items-center gap-1.5 max-w-lg">
-      <div class="font-bold text-base text-[#1C1917] flex items-center justify-center gap-2 flex-wrap">
-        <span>Загрузка файла:</span>
-        <span class="font-mono text-emerald-800 bg-emerald-50 px-2 py-0.5 border border-emerald-200 truncate max-w-[320px]">
+    <!-- File Name & Primary Status -->
+    <div class="flex flex-col items-center gap-1 max-w-md">
+      <div class="font-bold text-sm text-[#1C1917] flex items-center justify-center gap-2 flex-wrap">
+        <span>Анализ файла:</span>
+        <span class="font-mono text-xs text-[#1C1917] bg-[#F0EFEB] px-2 py-0.5 border border-[#E8E7E3] truncate max-w-[280px]">
           {appState.loadingFileName}
         </span>
         {#if appState.loadingFileSize}
-          <span class="font-mono text-xs text-[#78716C] bg-stone-100 px-1.5 py-0.5 border border-stone-200">
-            {appState.loadingFileSize}
+          <span class="font-mono text-[11px] text-[#78716C]">
+            ({appState.loadingFileSize})
           </span>
         {/if}
       </div>
       <div class="text-xs text-[#78716C] leading-relaxed">
-        {appState.loadingFileStatus || 'Выполняется распаковка структуры, определение колонок и поиск персональных данных (152-ФЗ)...'}
-      </div>
-    </div>
-
-    <!-- Active Stages / Progress Badges -->
-    <div class="flex flex-wrap items-center justify-center gap-2 mt-1">
-      <div class="text-[11px] font-mono px-2.5 py-1 bg-white border border-[#E8E7E3] text-[#44403C] flex items-center gap-2 shadow-2xs">
-        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-        <span>Чтение структуры ячеек и листов</span>
-      </div>
-      <div class="text-[11px] font-mono px-2.5 py-1 bg-white border border-[#E8E7E3] text-[#44403C] flex items-center gap-2 shadow-2xs">
-        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-        <span>Эвристика заголовков колонок</span>
-      </div>
-      <div class="text-[11px] font-mono px-2.5 py-1 bg-white border border-[#E8E7E3] text-[#44403C] flex items-center gap-2 shadow-2xs">
-        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-        <span>Контрольные суммы СНИЛС, ИНН, Карт</span>
+        Поиск категорий персональных данных и проверка структуры...
       </div>
     </div>
   </div>

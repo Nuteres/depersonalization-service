@@ -198,11 +198,8 @@
 
       <div class="flex-1 flex flex-col">
         {#if restoreState.isLoadingData}
-          <div class="flex-1 flex flex-col items-center justify-center p-6 text-center bg-[#FAF9F5] border border-[#E8E7E3] gap-3 relative overflow-hidden">
-            <div class="absolute top-0 left-0 right-0 h-1 bg-[#E8E7E3] overflow-hidden">
-              <div class="h-full bg-emerald-600 animate-loading-bar w-1/2"></div>
-            </div>
-            <div class="w-7 h-7 border-2 border-stone-200 border-t-emerald-700 rounded-full animate-spin mt-1"></div>
+          <div class="flex-1 flex flex-col items-center justify-center p-6 text-center bg-[#FAF9F5] border border-[#E8E7E3] gap-2.5 select-none">
+            <div class="w-7 h-7 border-2 border-[#E8E7E3] border-t-[#1C1917] rounded-full animate-spin"></div>
             <div class="font-semibold text-xs text-[#1C1917]">Чтение структуры файла данных...</div>
             <div class="text-[11px] text-[#78716C]">Определение таблиц, строк и колонок</div>
           </div>
