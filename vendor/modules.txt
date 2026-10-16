@@ -170,11 +170,15 @@ github.com/xuri/excelize/v2
 # github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9
 ## explicit; go 1.15
 github.com/xuri/nfp
+# github.com/yeka/zip v0.0.0-20231116150916-03d6312748a9
+## explicit
+github.com/yeka/zip
 # golang.org/x/crypto v0.53.0
 ## explicit; go 1.25.0
 golang.org/x/crypto/acme
 golang.org/x/crypto/acme/autocert
 golang.org/x/crypto/md4
+golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/ripemd160
 # golang.org/x/net v0.56.0
 ## explicit; go 1.25.0
