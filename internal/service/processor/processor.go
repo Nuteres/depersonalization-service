@@ -16,6 +16,7 @@ import (
 	"dep_service/pkg/audit"
 	"dep_service/pkg/depmap"
 	"dep_service/pkg/formats"
+	"dep_service/pkg/ziputil"
 )
 
 // Processor handles streaming file anonymization, cancellation, and key generation.
@@ -57,6 +58,30 @@ func (p *Processor) SetAuditLogger(l *audit.AuditLogger) {
 // AuditLogger returns the current audit logger.
 func (p *Processor) AuditLogger() *audit.AuditLogger {
 	return p.audit
+}
+
+// ValidTargetExtensions returns the allowed target extensions for a given input file extension.
+func ValidTargetExtensions(inputExt string) []string {
+	switch strings.ToLower(inputExt) {
+	case ".csv", ".tsv":
+		return []string{".csv", ".tsv"}
+	case ".xlsx", ".xlsm", ".xltx", ".xltm":
+		return []string{".xlsx", ".xlsm", ".xltx", ".xltm"}
+	case ".ods", ".xods":
+		return []string{".ods", ".xlsx"}
+	case ".xlsb", ".xls":
+		return []string{".xlsx"}
+	case ".docx":
+		return []string{".docx"}
+	case ".odt":
+		return []string{".odt"}
+	case ".txt":
+		return []string{".txt"}
+	case ".pdf":
+		return []string{".pdf"}
+	default:
+		return nil
+	}
 }
 
 // Process processes the input file according to options and reports progress via reporter.
@@ -129,24 +154,39 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	if stat.IsDir() {
 		return nil, fmt.Errorf("%w: path is a directory, not a file: %s", domain.ErrUnsupportedFormat, opts.InputPath)
 	}
-
 	ext := strings.ToLower(filepath.Ext(opts.InputPath))
-	targetExt := ext
-	if ext == ".xls" || ext == ".xlsb" {
-		targetExt = ".xlsx"
+	if ext == ".pdf" && stat.Size() > domain.MaxPDFInteractiveFileSize {
+		return nil, fmt.Errorf("%w: размер PDF документа (%s) превышает допустимый лимит безопасности %s",
+			domain.ErrFileTooLarge,
+			formatBytes(stat.Size()),
+			formatBytes(domain.MaxPDFInteractiveFileSize),
+		)
 	}
 
-	switch ext {
-	case ".csv", ".tsv", ".xlsx", ".xlsm", ".xltx", ".xltm", ".ods", ".xods", ".xlsb", ".xls", ".docx", ".odt", ".pdf", ".txt":
-		// Supported format
-	default:
+	validExts := ValidTargetExtensions(ext)
+	if len(validExts) == 0 {
 		return nil, fmt.Errorf("%w: %s", domain.ErrUnsupportedFormat, ext)
 	}
+
+	defaultTargetExt := validExts[0]
 
 	if strings.TrimSpace(outPath) == "" {
 		dir := filepath.Dir(opts.InputPath)
 		base := strings.TrimSuffix(filepath.Base(opts.InputPath), filepath.Ext(opts.InputPath))
-		outPath = filepath.Join(dir, base+"_anonymized"+targetExt)
+		outPath = filepath.Join(dir, base+"_anonymized"+defaultTargetExt)
+	} else {
+		outExt := strings.ToLower(filepath.Ext(outPath))
+		hasValidExt := false
+		for _, v := range validExts {
+			if outExt == v {
+				hasValidExt = true
+				break
+			}
+		}
+		if !hasValidExt {
+			// Enforce authentic target extension to guarantee file structure integrity
+			outPath = strings.TrimSuffix(outPath, filepath.Ext(outPath)) + defaultTargetExt
+		}
 	}
 
 	if filepath.Clean(opts.InputPath) == filepath.Clean(outPath) {
@@ -169,6 +209,17 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 
 	if opts.CreateKey && strings.TrimSpace(opts.KeyPassword) != "" {
 		if err := depmap.ValidatePassword(opts.KeyPassword); err != nil {
+			return nil, err
+		}
+	}
+
+	archivePath := strings.TrimSpace(opts.ArchivePath)
+	if opts.CreateArchive && archivePath == "" {
+		archivePath = strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".zip"
+	}
+
+	if opts.CreateArchive && strings.TrimSpace(opts.ArchivePassword) != "" {
+		if err := ziputil.ValidateArchivePassword(opts.ArchivePassword); err != nil {
 			return nil, err
 		}
 	}
@@ -326,6 +377,9 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 		if opts.CreateKey && keyPath != "" {
 			_ = os.Remove(keyPath)
 		}
+		if opts.CreateArchive && archivePath != "" {
+			_ = os.Remove(archivePath)
+		}
 	}
 
 	anon := anonymizer.New(salt)
@@ -427,6 +481,36 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 		keyCreated = true
 	}
 
+	// Archive generation
+	var effectiveArchivePassword string
+	var archivePasswordGenerated bool
+	var finalArchivePath string
+	if opts.CreateArchive {
+		if ctx.Err() != nil {
+			cleanup()
+			return nil, ctx.Err()
+		}
+
+		pwd := strings.TrimSpace(opts.ArchivePassword)
+		if pwd == "" {
+			genPwd, err := depmap.GenerateRandomPassword(16)
+			if err != nil {
+				cleanup()
+				return nil, fmt.Errorf("failed to generate archive password: %w", err)
+			}
+			effectiveArchivePassword = genPwd
+			archivePasswordGenerated = true
+		} else {
+			effectiveArchivePassword = pwd
+		}
+
+		if err := ziputil.CreatePasswordZip(outPath, archivePath, effectiveArchivePassword); err != nil {
+			cleanup()
+			return nil, fmt.Errorf("failed to create password-protected archive: %w", err)
+		}
+		finalArchivePath = archivePath
+	}
+
 	if ctx.Err() != nil {
 		cleanup()
 		return nil, ctx.Err()
@@ -439,15 +523,18 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	durationMs := time.Since(startTime).Milliseconds()
 
 	res = &domain.ProcessResult{
-		Success:              true,
-		InputPath:            opts.InputPath,
-		OutputPath:           outPath,
-		RowsCount:            totalRows,
-		EntitiesCount:        entitiesCount,
-		DurationMs:           durationMs,
-		Message:              fmt.Sprintf("Файл успешно сохранен: %s (%d мс)", filepath.Base(outPath), durationMs),
-		EffectivePassword:    effectivePassword,
-		KeyPasswordGenerated: keyPasswordGenerated,
+		Success:                  true,
+		InputPath:                opts.InputPath,
+		OutputPath:               outPath,
+		RowsCount:                totalRows,
+		EntitiesCount:            entitiesCount,
+		DurationMs:               durationMs,
+		Message:                  fmt.Sprintf("Файл успешно сохранен: %s (%d мс)", filepath.Base(outPath), durationMs),
+		EffectivePassword:        effectivePassword,
+		KeyPasswordGenerated:     keyPasswordGenerated,
+		ArchivePath:              finalArchivePath,
+		ArchivePassword:          effectiveArchivePassword,
+		ArchivePasswordGenerated: archivePasswordGenerated,
 	}
 	if opts.CreateKey {
 		res.KeyPath = keyPath
@@ -455,3 +542,18 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 
 	return res, nil
 }
+
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d Б", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	units := []string{"КБ", "МБ", "ГБ", "ТБ"}
+	return fmt.Sprintf("%.1f %s", float64(bytes)/float64(div), units[exp])
+}
+

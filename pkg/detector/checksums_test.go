@@ -48,3 +48,33 @@ func TestINN12Validation(t *testing.T) {
 		t.Fatalf("expected 13-digit string to be invalid INN-12")
 	}
 }
+
+func TestCardValidation(t *testing.T) {
+	// The number from user document that falsely triggered bank card
+	userAppId := "4612525897100570"
+	if ValidateCardNumber(userAppId) {
+		t.Fatalf("expected user app-id %s to be INVALID as a bank card", userAppId)
+	}
+	if ValidateCardLuhn(userAppId) {
+		t.Fatalf("expected user app-id %s to fail Luhn checksum", userAppId)
+	}
+
+	// Valid card numbers
+	validVisa := "4532015112830366"
+	if !ValidateCardNumber(validVisa) {
+		t.Fatalf("expected valid Visa %s to pass", validVisa)
+	}
+	validMir := "2200 0000 0000 0004" // 2200000000000004: Luhn sum 10 -> valid
+	if !ValidateCardNumber(validMir) {
+		t.Fatalf("expected valid Mir %s to pass", validMir)
+	}
+
+	// Invalid prefix or short length
+	if ValidateCardNumber("1234567890123456") {
+		t.Fatalf("expected unknown prefix to be invalid card")
+	}
+	if ValidateCardNumber("4532") {
+		t.Fatalf("expected short number to be invalid card")
+	}
+}
+

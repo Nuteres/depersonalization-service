@@ -2,11 +2,28 @@ import { InspectFile, SelectFile } from '../api/wails';
 import { appState } from '../stores/appState.svelte';
 import { tableState } from '../stores/tableState.svelte';
 
+function formatFileSize(bytes: number): string {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
 /**
  * Loads and inspects a file, updating appState and tableState accordingly.
  */
-export async function loadFile(path: string): Promise<boolean> {
+export async function loadFile(path: string, size?: number): Promise<boolean> {
   if (!path) return false;
+
+  const fileName = path.split('/').pop()?.split('\\').pop() || 'файл';
+  const sizeStr = size ? formatFileSize(size) : '';
+
+  appState.startFileLoading(
+    fileName,
+    'Чтение документа и первичный поиск ПДн (152-ФЗ)...',
+    sizeStr
+  );
+  appState.showToast(`Загрузка «${fileName}»... Идёт первичный поиск ПДн`, 'info');
 
   try {
     const info = await InspectFile(path);
@@ -31,11 +48,15 @@ export async function loadFile(path: string): Promise<boolean> {
       }
     }
 
+    const entityCount = info.entities ? info.entities.length : 0;
+    appState.showToast(`Файл «${info.name}» загружен. Найдено категорий ПДн: ${entityCount}`, 'success');
     return true;
   } catch (err) {
     console.error('Error loading file:', err);
     appState.showToast(`Ошибка открытия файла: ${err}`, 'error');
     return false;
+  } finally {
+    appState.finishFileLoading();
   }
 }
 

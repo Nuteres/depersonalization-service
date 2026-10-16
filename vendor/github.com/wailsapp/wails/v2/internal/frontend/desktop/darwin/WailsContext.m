@@ -616,19 +616,13 @@ extern void didReceiveNotificationResponse(const char *jsonPayload, const char* 
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
                     if (@available(macOS 11.0, *)) {
                         UTType *t = [UTType typeWithFilenameExtension:filter];
-                        if (t != nil) {
-                            [contentTypes addObject:t];
-                        }
+                        [contentTypes addObject:t];
                     }
 #endif
                 }
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
             if (@available(macOS 11.0, *)) {
-                if ([contentTypes count] > 0) {
-                    [dialog setAllowedContentTypes:contentTypes];
-                } else {
-                    [dialog setAllowsOtherFileTypes:true];
-                }
+                [dialog setAllowedContentTypes:contentTypes];
             }
 #endif
 #else
@@ -660,21 +654,23 @@ extern void didReceiveNotificationResponse(const char *jsonPayload, const char* 
     [dialog setResolvesAliases: resolveAliases];
     [dialog setTreatsFilePackagesAsDirectories: treatPackagesAsDirectories];
 
-    // Setup modal dialog execution
-    NSModalResponse returnCode = [dialog runModal];
-    if ( returnCode != NSModalResponseOK) {
-        processOpenFileDialogResponse("[]");
-        return;
-    }
-    NSMutableArray *arr = [NSMutableArray new];
-    for (NSURL *url in [dialog URLs]) {
-        [arr addObject:[url path]];
-    }
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:arr options:0 error:nil];
-    NSString *nsjson = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
-    processOpenFileDialogResponse([nsjson UTF8String]);
-    [nsjson release];
-    [arr release];
+    // Setup callback handler
+    [dialog beginSheetModalForWindow:self.mainWindow completionHandler:^(NSModalResponse returnCode) {
+        if ( returnCode != NSModalResponseOK) {
+            processOpenFileDialogResponse("[]");
+            return;
+        }
+        NSMutableArray *arr = [NSMutableArray new];
+        for (NSURL *url in [dialog URLs]) {
+            [arr addObject:[url path]];
+        }
+        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:arr options:0 error:nil];
+        NSString *nsjson = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        processOpenFileDialogResponse([nsjson UTF8String]);
+        [nsjson release];
+        [arr release];
+    }];
+
 }
 
 
@@ -703,9 +699,7 @@ extern void didReceiveNotificationResponse(const char *jsonPayload, const char* 
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
                 if (@available(macOS 11.0, *)) {
                     UTType *t = [UTType typeWithFilenameExtension:filter];
-                    if (t != nil) {
-                        [contentTypes addObject:t];
-                    }
+                    [contentTypes addObject:t];
                 }
 #endif
             }
@@ -743,16 +737,18 @@ extern void didReceiveNotificationResponse(const char *jsonPayload, const char* 
     [dialog setTreatsFilePackagesAsDirectories: treatPackagesAsDirectories];
     [dialog setShowsHiddenFiles: showHiddenFiles];
 
-    // Setup modal dialog execution
-    NSModalResponse saveReturnCode = [dialog runModal];
-    if ( saveReturnCode == NSModalResponseOK ) {
-        NSURL *url = [dialog URL];
-        if ( url != nil ) {
-            processSaveFileDialogResponse([url.path UTF8String]);
-            return;
+    // Setup callback handler
+    [dialog beginSheetModalForWindow:self.mainWindow completionHandler:^(NSModalResponse returnCode) {
+        if ( returnCode == NSModalResponseOK ) {
+            NSURL *url = [dialog URL];
+            if ( url != nil ) {
+                processSaveFileDialogResponse([url.path UTF8String]);
+                return;
+            }
         }
-    }
-    processSaveFileDialogResponse("");
+        processSaveFileDialogResponse("");
+    }];
+
 }
 
 /***** Notifications ******/

@@ -135,7 +135,7 @@
 <div class="min-h-screen flex flex-col p-6 sm:p-10 max-w-6xl mx-auto selection:bg-amber-100">
   <Header />
 
-  <main class="flex-1 flex flex-col pt-8">
+  <main class="flex-1 flex flex-col pt-5 sm:pt-6">
     {#if appState.currentAppMode === 'depersonalize'}
       <DepersonalizeView />
     {:else if appState.currentAppMode === 'restore'}
@@ -153,7 +153,7 @@
       id="zoom-indicator-overlay"
       class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-200"
     >
-      <div class="bg-[#1C1917]/90 text-white font-mono text-xs px-3.5 py-1.5 border border-stone-700 shadow-xl flex items-center space-x-2 backdrop-blur-xs">
+      <div class="bg-[#1C1917]/90 text-white font-mono text-xs px-3.5 py-1.5 border border-stone-700 rounded-md shadow-xl flex items-center space-x-2 backdrop-blur-xs animate-surface-enter">
         <span class="text-stone-400">Масштаб:</span>
         <span class="font-bold text-amber-300">{Math.round(zoomState.currentZoom * 100)}%</span>
       </div>

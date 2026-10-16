@@ -2,7 +2,17 @@
   import { onMount } from 'svelte';
   import { appState } from '../../stores/appState.svelte';
   import { tableState } from '../../stores/tableState.svelte';
-  import { SaveFileDialog, SaveKeyFileDialog, ProcessFileWithSheets, ProcessFileWithOptions, ValidateKeyPassword } from '../../api/wails';
+  import {
+    SaveFileDialog,
+    SaveKeyFileDialog,
+    SaveArchiveFileDialog,
+    GenerateArchivePassword,
+    ValidateArchivePassword,
+    ProcessFileWithSheets,
+    ProcessFileWithOptions,
+    ValidateKeyPassword
+  } from '../../api/wails';
+  import { copyToClipboard } from '../../services/clipboard';
   import type { PasswordValidationResult } from '../../types/domain';
 
   interface Props {
@@ -32,7 +42,14 @@
   let keyPath = $state('');
   let selectedExportFormat = $state('xlsx');
 
-  // Real-time password validation
+  // Archive state
+  let createArchive = $state(false);
+  let archivePassword = $state('');
+  let showArchivePassword = $state(false);
+  let archivePath = $state('');
+  let archivePasswordError = $state('');
+
+  // Real-time password validation for key
   $effect(() => {
     const trimmed = keyPassword.trim();
     if (!trimmed) {
@@ -54,11 +71,27 @@
     }
   });
 
+  // Real-time validation for archive password
+  $effect(() => {
+    if (!createArchive || !archivePassword.trim()) {
+      archivePasswordError = '';
+    } else {
+      ValidateArchivePassword(archivePassword).then((res) => {
+        archivePasswordError = res.valid ? '' : res.error;
+      });
+    }
+  });
+
   const isPasswordValid = $derived(
     appState.currentFileInfo?.fileType === 'pdf' ||
     !createKey ||
     !keyPassword.trim() ||
     passwordValidation.valid
+  );
+
+  const isFormValid = $derived(
+    isPasswordValid &&
+    (!createArchive || !archivePassword.trim() || !archivePasswordError)
   );
 
   // Generate random salt on open if not already set
@@ -73,8 +106,13 @@
   // Initialize selected export format when file changes
   $effect(() => {
     if (appState.currentFileInfo) {
-      const ext = (appState.currentFileInfo.extension || 'xlsx').replace('.', '').toLowerCase();
-      selectedExportFormat = ext === 'xls' || ext === 'xlsb' ? 'xlsx' : ext;
+      const formats = supportedFormats;
+      if (formats && formats.length > 0 && formats[0]) {
+        selectedExportFormat = formats[0];
+      } else {
+        const ext = (appState.currentFileInfo.extension || 'xlsx').replace('.', '').toLowerCase();
+        selectedExportFormat = ext === 'xls' || ext === 'xlsb' ? 'xlsx' : ext;
+      }
       if (appState.currentFileInfo.fileType !== 'table') {
         shuffleRows = false;
       }
@@ -93,6 +131,13 @@
     const ext = (info.extension || 'xlsx').replace('.', '').toLowerCase();
     return ext === 'xls' || ext === 'xlsb' ? ['xlsx'] : [ext];
   });
+
+  function handleSelectFormat(fmt: string) {
+    selectedExportFormat = fmt;
+    if (outputPath) {
+      outputPath = outputPath.replace(/\.[^/.]+$/, `.${fmt}`);
+    }
+  }
 
   const formatHint = $derived.by(() => {
     const origExt = (appState.currentFileInfo?.extension || '').replace('.', '').toLowerCase();
@@ -149,12 +194,47 @@
     }
   }
 
+  async function handleSelectArchivePath() {
+    const ext = selectedExportFormat;
+    const baseName = appState.currentFileInfo?.name.replace(/\.[^/.]+$/, '') || 'data';
+    const defaultName = `${baseName}_anonymized.zip`;
+    const chosen = await SaveArchiveFileDialog(defaultName);
+    if (chosen) {
+      archivePath = chosen;
+    }
+  }
+
+  async function handleGenerateArchivePassword() {
+    try {
+      const pwd = await GenerateArchivePassword();
+      if (pwd) {
+        archivePassword = pwd;
+        archivePasswordError = '';
+      }
+    } catch (err) {
+      console.error('Failed to generate archive password:', err);
+    }
+  }
+
+  async function handleCopyArchivePassword() {
+    if (!archivePassword) return;
+    const ok = await copyToClipboard(archivePassword);
+    if (ok) {
+      appState.showToast('Пароль архива скопирован в буфер обмена!', 'success');
+    }
+  }
+
   async function handleStart() {
     if (!appState.currentFileInfo || !appState.currentFilePath) return;
-    if (!isPasswordValid) return;
+    if (!isFormValid) return;
 
-    let destPath = outputPath;
-    if (!destPath) {
+    let destPath = outputPath.trim();
+    if (destPath) {
+      const curExt = destPath.split('.').pop()?.toLowerCase();
+      if (curExt !== selectedExportFormat) {
+        destPath = `${destPath.replace(/\.[^/.]+$/, '')}.${selectedExportFormat}`;
+      }
+    } else {
       const ext = selectedExportFormat;
       const baseName = appState.currentFileInfo.name.replace(/\.[^/.]+$/, '');
       const defaultName = `${baseName}_anonymized.${ext}`;
@@ -204,7 +284,26 @@
       const effectiveKeyPath = effectiveCreateKey ? keyPath : '';
 
       let result;
-      if (isPdf && appState.pdfRedactionBoxes && appState.pdfRedactionBoxes.length > 0) {
+      if (createArchive) {
+        result = await ProcessFileWithOptions({
+          inputPath: appState.currentFilePath,
+          outputPath: destPath,
+          mode: appState.processingMode,
+          strategy: effectiveMode,
+          salt,
+          disabledCols: globalDisabled,
+          disabledBySheet,
+          createKey: effectiveCreateKey,
+          keyPassword: effectiveKeyPassword,
+          keyPath: effectiveKeyPath,
+          shuffleRows: effectiveShuffle,
+          createArchive: true,
+          archivePassword: archivePassword.trim(),
+          archivePath: archivePath.trim(),
+          pdfRedactionBoxes: isPdf ? (appState.pdfRedactionBoxes || []) : undefined,
+          pdfRedactTerms: isPdf ? (appState.pdfRedactTerms || []) : undefined,
+        });
+      } else if (isPdf && appState.pdfRedactionBoxes && appState.pdfRedactionBoxes.length > 0) {
         result = await ProcessFileWithOptions({
           inputPath: appState.currentFilePath,
           outputPath: destPath,
@@ -271,7 +370,7 @@
 {#if isOpen && appState.currentFileInfo}
   <div
     id="save-options-modal"
-    class="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50 overscroll-contain"
+    class="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 overscroll-contain transition-opacity"
     role="dialog"
     aria-modal="true"
     tabindex="-1"
@@ -284,7 +383,7 @@
     }}
   >
     <div
-      class="bg-white border border-[#E8E7E3] shadow-2xl max-w-lg w-full p-6 flex flex-col gap-4 max-h-[calc(100%-2rem)] overflow-y-auto custom-scrollbar"
+      class="bg-white border border-[#E8E7E3] rounded-lg shadow-2xl max-w-lg w-full p-6 flex flex-col gap-4 max-h-[calc(100%-2rem)] overflow-y-auto custom-scrollbar animate-surface-enter"
     >
       <!-- Modal Header -->
       <div class="flex items-center justify-between border-b border-[#F0EFEB] pb-3">
@@ -294,15 +393,18 @@
         <button
           type="button"
           onclick={onClose}
-          class="text-stone-400 hover:text-stone-700 text-sm font-bold cursor-pointer"
+          class="text-stone-400 hover:text-stone-700 p-1 rounded-md hover:bg-stone-100 transition pressable cursor-pointer"
+          title="Закрыть"
         >
-          ✕
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
       </div>
 
-      <div class="space-y-4 text-xs">
+      <div class="space-y-3.5 text-xs">
         <!-- Input File Meta Box -->
-        <div class="p-3 bg-[#FAF9F5] border border-[#E8E7E3] flex items-center justify-between font-mono">
+        <div class="p-3 bg-[#FAF9F5] border border-[#E8E7E3] rounded-lg flex items-center justify-between font-mono">
           <span class="font-bold text-[#1C1917] truncate flex-1 min-w-0" title={appState.currentFileInfo.name}>
             {appState.currentFileInfo.name}
           </span>
@@ -319,37 +421,44 @@
           </span>
         </div>
 
-        <!-- Format Export Selection Block -->
-        <div class="space-y-1.5 border border-[#E8E7E3] p-4 bg-white">
-          <label
-            for="export-format-select"
-            class="block text-[11px] font-mono font-bold text-[#1C1917] uppercase tracking-wider"
-          >
-            Формат сохранения:
-          </label>
-          <select
-            id="export-format-select"
-            bind:value={selectedExportFormat}
-            class="w-full px-3 py-2 border border-[#E8E7E3] bg-[#FAF9F5] text-xs font-mono text-[#1C1917] focus:outline-none focus:border-[#1C1917] cursor-pointer"
-          >
-            {#each supportedFormats as fmt}
-              <option value={fmt}>{getFormatDisplayName(fmt)}</option>
-            {/each}
-          </select>
-          {#if formatHint}
-            <div class="text-[11px] text-[#78716C] mt-1 font-sans">
-              {formatHint}
+        <!-- Format Export Selection Block (shown only when multiple formats are supported) -->
+        {#if supportedFormats.length > 1}
+          <div class="space-y-2 border border-[#E8E7E3] rounded-lg p-3.5 bg-white">
+            <div class="text-xs font-semibold text-[#1C1917]">
+              Формат сохранения
             </div>
-          {/if}
-        </div>
+            <div class="grid gap-2" style="grid-template-columns: repeat({supportedFormats.length}, minmax(0, 1fr));">
+              {#each supportedFormats as fmt}
+                <button
+                  type="button"
+                  onclick={() => handleSelectFormat(fmt)}
+                  class="pressable py-1.5 rounded-md border text-center text-xs font-semibold cursor-pointer transition {selectedExportFormat === fmt
+                    ? 'border-[#1C1917] bg-[#F5F5F4] text-[#1C1917] shadow-2xs'
+                    : 'border-[#E8E7E3] hover:border-[#1C1917] bg-white text-[#78716C] hover:text-[#1C1917]'}"
+                >
+                  {fmt.toUpperCase()}
+                </button>
+              {/each}
+            </div>
+            {#if formatHint}
+              <div class="text-[11px] text-[#78716C] mt-1 font-sans">
+                {formatHint}
+              </div>
+            {/if}
+          </div>
+        {:else if formatHint}
+          <div class="px-3 py-2 bg-[#FAF9F5] border border-[#E8E7E3] rounded-lg text-[11px] text-[#78716C] font-sans">
+            {formatHint}
+          </div>
+        {/if}
 
         <!-- Output Destination File Path -->
-        <div class="space-y-1.5 border border-[#E8E7E3] p-4 bg-white">
+        <div class="space-y-2 border border-[#E8E7E3] rounded-lg p-3.5 bg-white">
           <label
             for="output-path-input"
-            class="block text-[11px] font-mono font-bold text-[#1C1917] uppercase tracking-wider"
+            class="block text-xs font-semibold text-[#1C1917]"
           >
-            Путь для сохранения файла:
+            Путь для сохранения файла
           </label>
           <div class="flex items-center gap-2">
             <input
@@ -357,12 +466,12 @@
               type="text"
               bind:value={outputPath}
               placeholder="По умолчанию рядом с исходным файлом..."
-              class="flex-1 px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5] truncate"
+              class="flex-1 px-3 py-1.5 border border-[#E8E7E3] rounded-md focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5] truncate"
             />
             <button
               type="button"
               onclick={handleSelectOutputPath}
-              class="px-3 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold whitespace-nowrap cursor-pointer shadow-2xs"
+              class="px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md whitespace-nowrap cursor-pointer shadow-2xs pressable"
             >
               Обзор...
             </button>
@@ -371,7 +480,7 @@
 
         <!-- Shuffle Rows Toggle (Only for tabular files: Excel, CSV, ODS) -->
         {#if appState.currentFileInfo.fileType === 'table'}
-          <div class="border border-[#E8E7E3] p-4 bg-white">
+          <div class="border border-[#E8E7E3] rounded-lg p-3.5 bg-white hover-sheen transition">
             <label class="flex items-start space-x-2.5 cursor-pointer select-none group">
               <div class="relative flex items-center justify-center mt-0.5 shrink-0">
                 <input
@@ -381,26 +490,19 @@
                   class="sr-only"
                 />
                 <div
-                  class="w-4 h-4 border transition-colors flex items-center justify-center {shuffleRows ? 'bg-[#1C1917] border-[#1C1917]' : 'bg-white border-[#A8A29E] group-hover:border-[#1C1917]'}"
+                  class="w-4 h-4 rounded border transition-colors flex items-center justify-center pressable {shuffleRows ? 'bg-[#1C1917] border-[#1C1917] checked' : 'bg-white border-[#A8A29E] group-hover:border-[#1C1917]'}"
                 >
-                  {#if shuffleRows}
-                    <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  {/if}
+                  <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <path class="checkmark-path" d="M5 13l4 4L19 7" />
+                  </svg>
                 </div>
               </div>
               <div>
-                <div class="flex items-center gap-2">
-                  <span class="font-bold text-[#1C1917] text-xs">
-                    Перемешать строки
-                  </span>
-                  <span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono font-medium bg-stone-100 text-stone-600 border border-stone-200">
-                    РКН № 140
-                  </span>
-                </div>
+                <span class="font-semibold text-[#1C1917] text-xs">
+                  Перемешать строки
+                </span>
                 <div class="text-[11px] text-[#78716C] mt-1 leading-relaxed font-sans">
-                  Случайный порядок записей (метод перемешивания по Приказу Роскомнадзора № 140) для защиты от деанонимизации по позиции в реестре. Данные внутри строк расшифровываются корректно, но порядок строк остаётся перемешанным.
+                  Случайный порядок записей для защиты от деанонимизации по позиции в реестре. Данные внутри строк расшифровываются корректно.
                 </div>
               </div>
             </label>
@@ -409,191 +511,333 @@
 
         <!-- Key Generation Option (Only for non-PDF files: tables and text) -->
         {#if appState.currentFileInfo.fileType !== 'pdf'}
-          <div class="space-y-3 border border-[#E8E7E3] p-4 bg-white">
+          <div class="space-y-3 border border-[#E8E7E3] rounded-lg p-3.5 bg-white hover-sheen transition">
+            <label class="flex items-start space-x-2.5 cursor-pointer select-none group">
+              <div class="relative flex items-center justify-center mt-0.5 shrink-0">
+                <input
+                  id="create-key-checkbox"
+                  type="checkbox"
+                  bind:checked={createKey}
+                  class="sr-only"
+                />
+                <div
+                  class="w-4 h-4 rounded border transition-colors flex items-center justify-center pressable {createKey ? 'bg-[#1C1917] border-[#1C1917] checked' : 'bg-white border-[#A8A29E] group-hover:border-[#1C1917]'}"
+                >
+                  <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <path class="checkmark-path" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+              <div>
+                <span class="font-semibold text-[#1C1917] text-xs">
+                  Создать ключ деобезличивания
+                </span>
+                <div class="text-[11px] text-[#78716C] mt-0.5 leading-relaxed font-sans">
+                  Позволяет в будущем восстановить исходные данные.
+                </div>
+              </div>
+            </label>
+
+            {#if createKey}
+              <div class="pt-3 border-t border-[#F0EFEB] space-y-3">
+                <!-- Key file path destination -->
+                <div class="space-y-1.5">
+                  <label
+                    for="key-path-input"
+                    class="block text-xs font-semibold text-[#1C1917]"
+                  >
+                    Путь для сохранения ключа
+                  </label>
+                  <div class="flex items-center gap-2">
+                    <input
+                      id="key-path-input"
+                      type="text"
+                      bind:value={keyPath}
+                      placeholder="Рядом с обработанным файлом..."
+                      class="flex-1 px-3 py-1.5 border border-[#E8E7E3] rounded-md focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5] truncate"
+                    />
+                    <button
+                      type="button"
+                      onclick={handleSelectKeyPath}
+                      class="px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md whitespace-nowrap cursor-pointer shadow-2xs pressable"
+                    >
+                      Обзор...
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Password for Key -->
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between">
+                    <label
+                      for="key-password-input"
+                      class="block text-xs font-semibold text-[#1C1917]"
+                    >
+                      Пароль ключа
+                    </label>
+                    {#if keyPassword.trim()}
+                      <span class="text-[10px] font-mono font-medium">
+                        {#if passwordValidation.score <= 1}
+                          <span class="text-[#DC2626]">Слабый</span>
+                        {:else if passwordValidation.score === 2}
+                          <span class="text-[#D97706]">Средний</span>
+                        {:else if passwordValidation.score === 3}
+                          <span class="text-[#2563EB]">Хороший</span>
+                        {:else}
+                          <span class="text-[#16A34A]">Надежный</span>
+                        {/if}
+                      </span>
+                    {/if}
+                  </div>
+
+                  <div class="relative flex items-center">
+                    <input
+                      id="key-password-input"
+                      type={showPassword ? 'text' : 'password'}
+                      bind:value={keyPassword}
+                      placeholder="Оставьте пустым для автогенерации"
+                      class="w-full pr-8 px-3 py-1.5 border rounded-md {keyPassword.trim() && !passwordValidation.valid ? 'border-[#DC2626] focus:border-[#DC2626]' : 'border-[#E8E7E3] focus:border-[#1C1917]'} focus:outline-none text-xs font-mono bg-[#FAF9F5]"
+                    />
+                    {#if keyPassword}
+                      <button
+                        type="button"
+                        onclick={() => showPassword = !showPassword}
+                        class="absolute right-2 text-[#78716C] hover:text-[#1C1917] p-1 text-xs select-none cursor-pointer"
+                        title={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                        aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                      >
+                        {#if showPassword}
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                          </svg>
+                        {:else}
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        {/if}
+                      </button>
+                    {/if}
+                  </div>
+
+                  <!-- Password strength indicator bars -->
+                  {#if keyPassword.trim()}
+                    <div class="grid grid-cols-4 gap-1 pt-0.5">
+                      <div class="h-1 rounded-full transition-colors {passwordValidation.score >= 1 ? (passwordValidation.score === 1 ? 'bg-[#DC2626]' : passwordValidation.score === 2 ? 'bg-[#D97706]' : passwordValidation.score === 3 ? 'bg-[#2563EB]' : 'bg-[#16A34A]') : 'bg-[#E7E5E4]'}"></div>
+                      <div class="h-1 rounded-full transition-colors {passwordValidation.score >= 2 ? (passwordValidation.score === 2 ? 'bg-[#D97706]' : passwordValidation.score === 3 ? 'bg-[#2563EB]' : 'bg-[#16A34A]') : 'bg-[#E7E5E4]'}"></div>
+                      <div class="h-1 rounded-full transition-colors {passwordValidation.score >= 3 ? (passwordValidation.score === 3 ? 'bg-[#2563EB]' : 'bg-[#16A34A]') : 'bg-[#E7E5E4]'}"></div>
+                      <div class="h-1 rounded-full transition-colors {passwordValidation.score >= 4 ? 'bg-[#16A34A]' : 'bg-[#E7E5E4]'}"></div>
+                    </div>
+
+                    <!-- Requirements checklist -->
+                    <div class="mt-2 bg-[#FAF9F5] p-2.5 border border-[#E8E7E3] rounded-md text-[11px] font-sans">
+                      <div class="font-medium text-[#44403C] mb-1.5 text-[10.5px]">Требования к паролю:</div>
+                      <div class="grid grid-cols-2 gap-x-2 gap-y-1">
+                        <div class="flex items-center space-x-1.5 {passwordValidation.minLength ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                          <span>{passwordValidation.minLength ? '✓' : '▪'}</span>
+                          <span>12+ символов</span>
+                        </div>
+                        <div class="flex items-center space-x-1.5 {passwordValidation.onlyLatin ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                          <span>{passwordValidation.onlyLatin ? '✓' : '▪'}</span>
+                          <span>Только латиница</span>
+                        </div>
+                        <div class="flex items-center space-x-1.5 {passwordValidation.hasUppercase ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                          <span>{passwordValidation.hasUppercase ? '✓' : '▪'}</span>
+                          <span>Заглавные буквы</span>
+                        </div>
+                        <div class="flex items-center space-x-1.5 {passwordValidation.hasLowercase ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                          <span>{passwordValidation.hasLowercase ? '✓' : '▪'}</span>
+                          <span>Строчные буквы</span>
+                        </div>
+                        <div class="flex items-center space-x-1.5 {passwordValidation.hasDigit ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                          <span>{passwordValidation.hasDigit ? '✓' : '▪'}</span>
+                          <span>Цифры 0-9</span>
+                        </div>
+                        <div class="flex items-center space-x-1.5 {passwordValidation.hasSpecial ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
+                          <span>{passwordValidation.hasSpecial ? '✓' : '▪'}</span>
+                          <span>Спецсимволы</span>
+                        </div>
+                      </div>
+
+                      {#if keyPassword.trim() && !passwordValidation.onlyLatin}
+                        <div class="mt-2 pt-1.5 border-t border-[#E8E7E3] text-[10.5px] text-[#DC2626] font-medium flex items-center space-x-1">
+                          <span>⚠</span>
+                          <span>Кириллица и пробелы запрещены — используйте только латиницу</span>
+                        </div>
+                      {/if}
+                    </div>
+                  {:else}
+                    <p class="text-[11px] text-[#78716C] leading-relaxed">
+                      Минимум 12 символов: только латиница (A-Z, a-z), цифры и спецсимволы. Если оставить пустым — пароль будет сгенерирован автоматически.
+                    </p>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Archive Generation Option (For all files) -->
+        <div class="space-y-3 border border-[#E8E7E3] rounded-lg p-3.5 bg-white hover-sheen transition">
           <label class="flex items-start space-x-2.5 cursor-pointer select-none group">
             <div class="relative flex items-center justify-center mt-0.5 shrink-0">
               <input
-                id="create-key-checkbox"
+                id="create-archive-checkbox"
                 type="checkbox"
-                bind:checked={createKey}
+                bind:checked={createArchive}
                 class="sr-only"
               />
               <div
-                class="w-4 h-4 border transition-colors flex items-center justify-center {createKey ? 'bg-[#1C1917] border-[#1C1917]' : 'bg-white border-[#A8A29E] group-hover:border-[#1C1917]'}"
+                class="w-4 h-4 rounded border transition-colors flex items-center justify-center pressable {createArchive ? 'bg-[#1C1917] border-[#1C1917] checked' : 'bg-white border-[#A8A29E] group-hover:border-[#1C1917]'}"
               >
-                {#if createKey}
-                  <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                {/if}
+                <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <path class="checkmark-path" d="M5 13l4 4L19 7" />
+                </svg>
               </div>
             </div>
             <div>
-              <div class="font-bold text-[#1C1917] text-xs">
-                Создать ключ восстановления
-              </div>
-              <div class="text-[11px] text-[#78716C] mt-0.5 leading-relaxed">
-                Позволяет в будущем восстановить исходные данные.
+              <span class="font-semibold text-[#1C1917] text-xs">
+                Упаковать в ZIP-архив с паролем
+              </span>
+              <div class="text-[11px] text-[#78716C] mt-0.5 leading-relaxed font-sans">
+                Создает защищенный архив с обработанным файлом и ключом деобезличивания.
               </div>
             </div>
           </label>
 
-          {#if createKey}
+          {#if createArchive}
             <div class="pt-3 border-t border-[#F0EFEB] space-y-3">
-              <!-- Key file path destination -->
+              <!-- Archive file path destination -->
               <div class="space-y-1.5">
                 <label
-                  for="key-path-input"
-                  class="block text-[11px] font-mono text-[#57534E]"
+                  for="archive-path-input"
+                  class="block text-xs font-semibold text-[#1C1917]"
                 >
-                  Путь для сохранения ключа:
+                  Путь для сохранения архива
                 </label>
                 <div class="flex items-center gap-2">
                   <input
-                    id="key-path-input"
+                    id="archive-path-input"
                     type="text"
-                    bind:value={keyPath}
-                    placeholder="Рядом с обработанным файлом..."
-                    class="flex-1 px-3 py-2 border border-[#E8E7E3] focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5] truncate"
+                    bind:value={archivePath}
+                    placeholder="По умолчанию рядом с файлом (*.zip)..."
+                    class="flex-1 px-3 py-1.5 border border-[#E8E7E3] rounded-md focus:border-[#1C1917] focus:outline-none text-xs font-mono bg-[#FAF9F5] truncate"
                   />
                   <button
                     type="button"
-                    onclick={handleSelectKeyPath}
-                    class="px-3 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold whitespace-nowrap cursor-pointer shadow-2xs"
+                    onclick={handleSelectArchivePath}
+                    class="px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md whitespace-nowrap cursor-pointer shadow-2xs pressable"
                   >
                     Обзор...
                   </button>
                 </div>
               </div>
 
-              <!-- Password for Key -->
+              <!-- Password for Archive -->
               <div class="space-y-1.5">
                 <div class="flex items-center justify-between">
                   <label
-                    for="key-password-input"
-                    class="block text-[11px] font-mono text-[#57534E]"
+                    for="archive-password-input"
+                    class="block text-xs font-semibold text-[#1C1917]"
                   >
-                    Пароль ключа:
+                    Пароль архива
                   </label>
-                  {#if keyPassword.trim()}
-                    <span class="text-[10px] font-mono font-medium">
-                      {#if passwordValidation.score <= 1}
-                        <span class="text-[#DC2626]">Слабый</span>
-                      {:else if passwordValidation.score === 2}
-                        <span class="text-[#D97706]">Средний</span>
-                      {:else if passwordValidation.score === 3}
-                        <span class="text-[#2563EB]">Хороший</span>
-                      {:else}
-                        <span class="text-[#16A34A]">Надежный</span>
-                      {/if}
+                  {#if archivePassword.trim()}
+                    <span class="text-[10px] font-mono {archivePasswordError ? 'text-[#DC2626]' : 'text-[#16A34A]'}">
+                      {archivePasswordError ? 'Некорректный пароль' : 'Пароль подходит'}
                     </span>
                   {/if}
                 </div>
 
-                <div class="relative flex items-center">
-                  <input
-                    id="key-password-input"
-                    type={showPassword ? 'text' : 'password'}
-                    bind:value={keyPassword}
-                    placeholder="Оставьте пустым для автогенерации"
-                    class="w-full pr-8 px-3 py-2 border {keyPassword.trim() && !passwordValidation.valid ? 'border-[#DC2626] focus:border-[#DC2626]' : 'border-[#E8E7E3] focus:border-[#1C1917]'} focus:outline-none text-xs font-mono bg-[#FAF9F5]"
-                  />
-                  {#if keyPassword}
+                <div class="relative flex items-center gap-1.5">
+                  <div class="relative flex-1 flex items-center">
+                    <input
+                      id="archive-password-input"
+                      type={showArchivePassword ? 'text' : 'password'}
+                      bind:value={archivePassword}
+                      placeholder="Оставьте пустым для автогенерации (16 симв.)"
+                      class="w-full pr-8 px-3 py-1.5 border rounded-md {archivePassword.trim() && archivePasswordError ? 'border-[#DC2626] focus:border-[#DC2626]' : 'border-[#E8E7E3] focus:border-[#1C1917]'} focus:outline-none text-xs font-mono bg-[#FAF9F5]"
+                    />
+                    {#if archivePassword}
+                      <button
+                        type="button"
+                        onclick={() => showArchivePassword = !showArchivePassword}
+                        class="absolute right-2 text-[#78716C] hover:text-[#1C1917] p-1 text-xs select-none cursor-pointer"
+                        title={showArchivePassword ? 'Скрыть пароль' : 'Показать пароль'}
+                        aria-label={showArchivePassword ? 'Скрыть пароль' : 'Показать пароль'}
+                      >
+                        {#if showArchivePassword}
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                          </svg>
+                        {:else}
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        {/if}
+                      </button>
+                    {/if}
+                  </div>
+                  <button
+                    type="button"
+                    onclick={handleGenerateArchivePassword}
+                    class="px-2.5 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md whitespace-nowrap cursor-pointer shadow-2xs flex items-center gap-1.5 pressable"
+                    title="Сгенерировать случайный пароль"
+                  >
+                    <svg class="w-3.5 h-3.5 text-stone-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span>Сгенерировать</span>
+                  </button>
+                  {#if archivePassword}
                     <button
                       type="button"
-                      onclick={() => showPassword = !showPassword}
-                      class="absolute right-2 text-[#78716C] hover:text-[#1C1917] p-1 text-xs select-none cursor-pointer"
-                      title={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
-                      aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                      onclick={handleCopyArchivePassword}
+                      class="px-2.5 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md whitespace-nowrap cursor-pointer shadow-2xs pressable"
+                      title="Скопировать пароль архива"
                     >
-                      {#if showPassword}
-                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
-                        </svg>
-                      {:else}
-                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                      {/if}
+                      <svg class="w-3.5 h-3.5 text-stone-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                      </svg>
                     </button>
                   {/if}
                 </div>
 
-                <!-- Password strength indicator bars -->
-                {#if keyPassword.trim()}
-                  <div class="grid grid-cols-4 gap-1 pt-0.5">
-                    <div class="h-1 rounded-xs transition-colors {passwordValidation.score >= 1 ? (passwordValidation.score === 1 ? 'bg-[#DC2626]' : passwordValidation.score === 2 ? 'bg-[#D97706]' : passwordValidation.score === 3 ? 'bg-[#2563EB]' : 'bg-[#16A34A]') : 'bg-[#E7E5E4]'}"></div>
-                    <div class="h-1 rounded-xs transition-colors {passwordValidation.score >= 2 ? (passwordValidation.score === 2 ? 'bg-[#D97706]' : passwordValidation.score === 3 ? 'bg-[#2563EB]' : 'bg-[#16A34A]') : 'bg-[#E7E5E4]'}"></div>
-                    <div class="h-1 rounded-xs transition-colors {passwordValidation.score >= 3 ? (passwordValidation.score === 3 ? 'bg-[#2563EB]' : 'bg-[#16A34A]') : 'bg-[#E7E5E4]'}"></div>
-                    <div class="h-1 rounded-xs transition-colors {passwordValidation.score >= 4 ? 'bg-[#16A34A]' : 'bg-[#E7E5E4]'}"></div>
-                  </div>
-
-                  <!-- Requirements checklist -->
-                  <div class="mt-2 bg-[#FAF9F5] p-2.5 border border-[#E8E7E3] text-[11px] font-sans">
-                    <div class="font-medium text-[#44403C] mb-1.5 text-[10.5px]">Требования к паролю:</div>
-                    <div class="grid grid-cols-2 gap-x-2 gap-y-1">
-                      <div class="flex items-center space-x-1.5 {passwordValidation.minLength ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.minLength ? '✓' : '▪'}</span>
-                        <span>12+ символов</span>
-                      </div>
-                      <div class="flex items-center space-x-1.5 {passwordValidation.onlyLatin ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.onlyLatin ? '✓' : '▪'}</span>
-                        <span>Только латиница</span>
-                      </div>
-                      <div class="flex items-center space-x-1.5 {passwordValidation.hasUppercase ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.hasUppercase ? '✓' : '▪'}</span>
-                        <span>Заглавные (A-Z)</span>
-                      </div>
-                      <div class="flex items-center space-x-1.5 {passwordValidation.hasLowercase ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.hasLowercase ? '✓' : '▪'}</span>
-                        <span>Строчные (a-z)</span>
-                      </div>
-                      <div class="flex items-center space-x-1.5 {passwordValidation.hasDigit ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.hasDigit ? '✓' : '▪'}</span>
-                        <span>Цифры (0-9)</span>
-                      </div>
-                      <div class="flex items-center space-x-1.5 {passwordValidation.hasSpecial ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                        <span>{passwordValidation.hasSpecial ? '✓' : '▪'}</span>
-                        <span>Спецсимволы (!@#$%...)</span>
-                      </div>
-                    </div>
-
-                    {#if keyPassword.trim() && !passwordValidation.onlyLatin}
-                      <div class="mt-2 pt-1.5 border-t border-[#E8E7E3] text-[10.5px] text-[#DC2626] font-medium flex items-center space-x-1">
-                        <span>⚠</span>
-                        <span>Кириллица и пробелы запрещены — используйте только латиницу</span>
-                      </div>
-                    {/if}
+                {#if archivePasswordError}
+                  <div class="text-[10.5px] text-[#DC2626] font-medium flex items-center space-x-1 mt-1">
+                    <span>⚠</span>
+                    <span>{archivePasswordError}</span>
                   </div>
                 {:else}
-                  <p class="text-[11px] text-[#78716C] leading-relaxed">
-                    Минимум 12 символов: только латиница (A-Z, a-z), цифры и спецсимволы. Если оставить пустым — пароль будет сгенерирован автоматически.
+                  <p class="text-[11px] text-[#78716C] leading-relaxed font-sans">
+                    Минимум 4 символа (только латиница, цифры и знаки). Если оставить пустым — при сохранении сгенерируется надёжный пароль на 16 символов.
                   </p>
                 {/if}
               </div>
             </div>
           {/if}
         </div>
-      {/if}
-    </div>
+      </div>
 
       <!-- Footer Buttons -->
       <div class="flex items-center justify-end space-x-2 pt-3 border-t border-[#F0EFEB]">
         <button
           type="button"
           onclick={onClose}
-          class="px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold transition cursor-pointer"
+          class="px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md pressable cursor-pointer"
         >
           Отмена
         </button>
         <button
           type="button"
           onclick={handleStart}
-          disabled={!isPasswordValid}
-          class="px-5 py-2 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm {isPasswordValid ? 'bg-[#1C1917] hover:bg-[#292524] text-white cursor-pointer active:scale-[0.99]' : 'bg-[#E7E5E4] text-[#A8A29E] cursor-not-allowed border border-[#D6D3D1]'}"
+          disabled={!isFormValid}
+          class="px-5 py-2 text-xs font-semibold rounded-md transition flex items-center gap-1.5 shadow-sm pressable {isFormValid ? 'bg-[#1C1917] hover:bg-[#292524] text-white cursor-pointer' : 'bg-[#E7E5E4] text-[#A8A29E] cursor-not-allowed border border-[#D6D3D1]'}"
         >
-          <span class="text-xs leading-none shrink-0 inline-flex items-center justify-center select-none">💾</span>
+          <svg class="w-3.5 h-3.5 text-stone-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+          </svg>
           <span>{appState.processingMode === 'delete' ? 'Начать удаление' : 'Начать обезличивание'}</span>
         </button>
       </div>

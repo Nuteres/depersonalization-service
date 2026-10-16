@@ -82,7 +82,7 @@
 {#if appState.showAuditModal}
   <div
     id="audit-modal"
-    class="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50 overscroll-contain"
+    class="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 overscroll-contain transition-opacity"
     role="dialog"
     aria-modal="true"
     aria-labelledby="audit-modal-title"
@@ -95,16 +95,15 @@
     }}
   >
     <div
-      class="bg-white border border-[#E8E7E3] shadow-2xl max-w-4xl w-full p-6 flex flex-col gap-4 max-h-[calc(100%-2rem)]"
+      class="bg-white border border-[#E8E7E3] rounded-lg shadow-2xl max-w-4xl w-full p-6 flex flex-col gap-4 max-h-[calc(100%-2rem)] animate-surface-enter"
     >
       <!-- Modal Header -->
       <div class="flex items-center justify-between border-b border-[#F0EFEB] pb-3">
         <div class="flex items-center space-x-2.5">
-          <span class="text-sm">📜</span>
-          <h2 id="audit-modal-title" class="text-sm font-bold text-[#1C1917]">
+          <h2 id="audit-modal-title" class="text-sm font-semibold text-[#1C1917]">
             Журнал операций
           </h2>
-          <span class="text-[11px] font-mono text-[#78716C] bg-[#FAF9F5] px-2 py-0.5 border border-[#E8E7E3]">
+          <span class="text-[11px] font-mono text-[#78716C] bg-[#FAF9F5] px-2 py-0.5 rounded border border-[#E8E7E3]">
             {records.length}
           </span>
         </div>
@@ -130,7 +129,7 @@
       </div>
 
       <!-- Table Content Area -->
-      <div class="flex-1 overflow-y-auto border border-[#E8E7E3] bg-white custom-scrollbar min-h-[220px]">
+      <div class="flex-1 overflow-y-auto border border-[#E8E7E3] bg-white rounded-md custom-scrollbar min-h-[220px]">
         {#if isLoading}
           <div class="flex items-center justify-center h-48 text-xs font-mono text-[#78716C]">
             Загрузка записей...
@@ -205,16 +204,15 @@
           type="button"
           onclick={handleExport}
           disabled={isExporting || records.length === 0}
-          class="px-3.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+          class="px-3.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md transition cursor-pointer flex items-center gap-1.5 shadow-2xs pressable disabled:opacity-50"
         >
-          <span class="text-xs">💾</span>
-          <span>Экспорт .jsonl</span>
+          <span>Экспорт</span>
         </button>
 
         <button
           type="button"
           onclick={() => appState.closeAuditModal()}
-          class="px-4 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold transition cursor-pointer shadow-sm active:scale-[0.99]"
+          class="px-4 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold rounded-md transition cursor-pointer shadow-sm pressable"
         >
           Закрыть
         </button>

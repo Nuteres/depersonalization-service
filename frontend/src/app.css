@@ -16,6 +16,19 @@
   --risk-bg: #FEF2F2;
   --risk-border: #FECACA;
   --risk-text: #991B1B;
+
+  /* Apple Fluid Easing & Material 3 Physics */
+  --ease-apple-fluid: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-apple-press: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-m3-emphasized: cubic-bezier(0.2, 0.0, 0.0, 1.0);
+  --ease-m3-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1.0);
+  --ease-m3-accelerate: cubic-bezier(0.4, 0.0, 1.0, 1.0);
+
+  /* Kinetic Durations */
+  --dur-micro: 120ms;
+  --dur-reveal: 180ms;
+  --dur-surface: 260ms;
+  --dur-exit: 120ms;
 }
 
 body {
@@ -100,3 +113,103 @@ body.modal-open {
   overflow: hidden !important;
   height: 100vh !important;
 }
+
+@keyframes loading-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(50%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.animate-loading-bar {
+  animation: loading-progress 1.5s ease-in-out infinite;
+}
+
+/* Apple Tactile Micro-Press */
+.pressable {
+  transition: transform var(--dur-micro) var(--ease-apple-press),
+              background-color var(--dur-micro) ease-out,
+              border-color var(--dur-micro) ease-out,
+              box-shadow var(--dur-micro) ease-out;
+  will-change: transform;
+}
+.pressable:active {
+  transform: scale(0.985);
+}
+
+/* Frosted Liquid Glass */
+.liquid-glass {
+  background-color: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  border-top: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+/* Hover Sheen for Cards */
+.hover-sheen {
+  transition: border-color var(--dur-micro) ease-out,
+              box-shadow var(--dur-micro) ease-out,
+              background-color var(--dur-micro) ease-out;
+}
+.hover-sheen:hover {
+  border-color: rgba(28, 25, 23, 0.35);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* Spatial Origin Modal Enter Animation */
+@keyframes surface-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-surface-enter {
+  animation: surface-enter var(--dur-reveal) var(--ease-apple-fluid) forwards;
+  will-change: transform, opacity;
+}
+
+/* Animated Checkbox SVG Path */
+.checkmark-path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  transition: stroke-dashoffset 160ms var(--ease-apple-fluid);
+}
+.checked .checkmark-path {
+  stroke-dashoffset: 0;
+}
+
+/* Fluid Progress Bar */
+.progress-fill {
+  transition: width var(--dur-surface) var(--ease-apple-fluid);
+}
+
+/* Toggle Switch Thumb Kinetics */
+.toggle-thumb {
+  transition: translate 160ms var(--ease-apple-fluid),
+              background-color 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pressable,
+  .animate-surface-enter,
+  .progress-fill,
+  .checkmark-path,
+  .toggle-thumb {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}
+

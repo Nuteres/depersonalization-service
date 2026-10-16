@@ -695,3 +695,65 @@ func TestRestorer_AuditLogging(t *testing.T) {
 	}
 }
 
+func TestRestorer_Restore_XLSX_MislabeledAsCSV(t *testing.T) {
+	km := keymanager.New()
+	rest := restorer.New(km)
+	tmpDir := t.TempDir()
+
+	// 1. Create an anonymized XLSX file, then rename it to mislabeled.csv
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	_ = f.SetCellValue(sheet, "A1", "ФИО")
+	_ = f.SetCellValue(sheet, "A2", "Петров Петр Петрович") // Anonymized synthetic value
+	tempXLSX := filepath.Join(tmpDir, "temp.xlsx")
+	if err := f.SaveAs(tempXLSX); err != nil {
+		t.Fatalf("failed to save temp excel: %v", err)
+	}
+	_ = f.Close()
+	mislabeledCSV := filepath.Join(tmpDir, "mislabeled.csv")
+	if err := os.Rename(tempXLSX, mislabeledCSV); err != nil {
+		t.Fatalf("failed to rename temp excel to csv: %v", err)
+	}
+
+	// 2. Create a depmap key referencing original.xlsx
+	dm := depmap.New("original.xlsx")
+	dm.Put("Петров Петр Петрович", "Иванов Иван Иванович")
+	keyPath := filepath.Join(tmpDir, "key.depmap")
+	if _, err := dm.SaveFileWithAutoPassword(keyPath, "ValidPassword123!"); err != nil {
+		t.Fatalf("failed to save depmap: %v", err)
+	}
+
+	// 3. Restore the mislabeled file
+	destPath := filepath.Join(tmpDir, "restored.csv")
+	res, err := rest.Restore(context.Background(), domain.RestoreOptions{
+		InputPath:  mislabeledCSV,
+		KeyPath:    keyPath,
+		Password:   "ValidPassword123!",
+		OutputPath: destPath,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Restore failed: %v", err)
+	}
+
+	// 4. Verify cells were restored and count > 0
+	if res.RestoredCells != 1 {
+		t.Errorf("expected RestoredCells=1, got %d", res.RestoredCells)
+	}
+
+	// 5. Verify the restored file is a valid XLSX file and contains original value
+	restoredXLSXPath := filepath.Join(tmpDir, "restored.xlsx")
+	rf, err := excelize.OpenFile(restoredXLSXPath)
+	if err != nil {
+		t.Fatalf("failed to open restored file as XLSX: %v", err)
+	}
+	defer rf.Close()
+
+	val, err := rf.GetCellValue(sheet, "A2")
+	if err != nil {
+		t.Fatalf("failed to read cell value: %v", err)
+	}
+	if val != "Иванов Иван Иванович" {
+		t.Errorf("expected restored value 'Иванов Иван Иванович', got %q", val)
+	}
+}
+

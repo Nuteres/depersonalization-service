@@ -1250,7 +1250,7 @@ func findSensitiveMatches(text string, customTerms []string, disabledEntities ma
 
 		// 5. Card MIR / Luhn
 		if !disabledEntities["BANK_CARD"] && !disabledEntities["CARD"] {
-			addRegexMatches(reCard16, 1, nil)
+			addRegexMatches(reCard16, 1, detector.ValidateCardNumber)
 		}
 
 		// 6. FIO
@@ -2063,7 +2063,11 @@ func ExtractPDFRawTextAndPageCount(pdfBytes []byte) (int, string, error) {
 	fontCMaps, defaultCMap := extractFontCMaps(objMap)
 
 	var sb strings.Builder
+	const maxExtractedPDFText = 10 * 1024 * 1024 // 10 MB maximum text for inspection
 	for _, obj := range objects {
+		if sb.Len() >= maxExtractedPDFText {
+			break
+		}
 		if !obj.HasStream || len(obj.StreamData) == 0 {
 			continue
 		}
@@ -2075,7 +2079,7 @@ func ExtractPDFRawTextAndPageCount(pdfBytes []byte) (int, string, error) {
 		if obj.Compressed {
 			zr, err := zlib.NewReader(bytes.NewReader(obj.StreamData))
 			if err == nil {
-				decomp, readErr := io.ReadAll(zr)
+				decomp, readErr := io.ReadAll(io.LimitReader(zr, 20*1024*1024))
 				_ = zr.Close()
 				if readErr == nil {
 					streamData = decomp

@@ -1078,6 +1078,123 @@ func TestDOCX_Process_StrategySemanticTokens(t *testing.T) {
 	}
 }
 
+func TestDOCX_UserDocument_AppIdNotBankCard(t *testing.T) {
+	docXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:r><w:t>Обязательные условия:</w:t><w:br/></w:r>
+      <w:r><w:t>x-app-id: 4612525897100570</w:t><w:br/></w:r>
+      <w:r><w:t>Кандидат: Иванов Иван Иванович</w:t><w:br/></w:r>
+      <w:r><w:t>Email: ivan@rt.ru</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>`
+
+	anon := anonymizer.New("test-appid-salt")
+	h := formats.NewDOCXHandler(anon)
+	data := createTestDocx(docXML)
+
+	_, entities, snippets, _, _, err := h.Inspect(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	for _, e := range entities {
+		if e.Type == "BANK_CARD" || e.Type == "CARD" {
+			t.Fatalf("found unexpected bank card entity in document: %+v", e)
+		}
+	}
+	for _, s := range snippets {
+		if s.Type == "BANK_CARD" || s.Type == "CARD" || strings.Contains(s.Original, "4612525897100570") {
+			t.Fatalf("x-app-id was falsely detected as bank card snippet: %+v", s)
+		}
+	}
+}
+
+func TestDOCX_Inspect_RichFormattingPreserved(t *testing.T) {
+	docXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:pPr>
+        <w:jc w:val="center"/>
+      </w:pPr>
+      <w:r>
+        <w:rPr><w:b/></w:rPr>
+        <w:t>API ДЛЯ IQHR: АВТОМАТИЗАЦИЯ ЗАГРУЗКИ B2C</w:t>
+      </w:r>
+    </w:p>
+    <w:p/>
+    <w:p>
+      <w:pPr>
+        <w:jc w:val="right"/>
+      </w:pPr>
+      <w:r>
+        <w:rPr><w:i/></w:rPr>
+        <w:t>Г. Воронеж, 2025</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:r>
+        <w:rPr><w:b/></w:rPr>
+        <w:t>Кандидат: </w:t>
+      </w:r>
+      <w:r>
+        <w:t>Иванов Иван Иванович</w:t>
+      </w:r>
+    </w:p>
+  </w:body>
+</w:document>`
+
+	anon := anonymizer.New("test-format-salt")
+	h := formats.NewDOCXHandler(anon)
+	data := createTestDocx(docXML)
+
+	_, _, _, _, blocks, err := h.Inspect(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	if len(blocks) != 4 {
+		t.Fatalf("expected 4 blocks (including empty spacer), got %d", len(blocks))
+	}
+
+	// Block 0: Title, centered and bold
+	if blocks[0].Alignment != "center" {
+		t.Errorf("expected block 0 alignment 'center', got %q", blocks[0].Alignment)
+	}
+	if len(blocks[0].Segments) == 0 || !blocks[0].Segments[0].IsBold {
+		t.Errorf("expected block 0 to have bold segment, got %+v", blocks[0].Segments)
+	}
+
+	// Block 1: Empty spacer paragraph
+	if !blocks[1].IsEmpty {
+		t.Errorf("expected block 1 to be marked IsEmpty=true, got %+v", blocks[1])
+	}
+
+	// Block 2: Right-aligned and italic
+	if blocks[2].Alignment != "right" {
+		t.Errorf("expected block 2 alignment 'right', got %q", blocks[2].Alignment)
+	}
+	if len(blocks[2].Segments) == 0 || !blocks[2].Segments[0].IsItalic {
+		t.Errorf("expected block 2 to have italic segment, got %+v", blocks[2].Segments)
+	}
+
+	// Block 3: Mixed formatting with FIO entity
+	if len(blocks[3].Segments) < 2 {
+		t.Fatalf("expected at least 2 segments in block 3, got %d: %+v", len(blocks[3].Segments), blocks[3].Segments)
+	}
+	if !blocks[3].Segments[0].IsBold || blocks[3].Segments[0].Text != "Кандидат: " {
+		t.Errorf("expected segment 0 to be bold 'Кандидат: ', got %+v", blocks[3].Segments[0])
+	}
+	if !blocks[3].Segments[1].IsEntity || blocks[3].Segments[1].Type != "FIO" {
+		t.Errorf("expected segment 1 to be FIO entity, got %+v", blocks[3].Segments[1])
+	}
+}
+
+
+
 
 
 

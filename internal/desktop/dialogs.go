@@ -74,12 +74,10 @@ func (a *DesktopApp) SaveFileDialog(defaultName string) (string, error) {
 		case ".docx":
 			filters = []runtime.FileFilter{
 				{DisplayName: "Документ Word (*.docx)", Pattern: "*.docx"},
-				{DisplayName: "Документ OpenDocument Text (*.odt)", Pattern: "*.odt"},
 			}
 		case ".odt":
 			filters = []runtime.FileFilter{
 				{DisplayName: "Документ OpenDocument Text (*.odt)", Pattern: "*.odt"},
-				{DisplayName: "Документ Word (*.docx)", Pattern: "*.docx"},
 			}
 		case ".txt":
 			filters = []runtime.FileFilter{
@@ -89,10 +87,13 @@ func (a *DesktopApp) SaveFileDialog(defaultName string) (string, error) {
 			filters = []runtime.FileFilter{
 				{DisplayName: "Документ PDF (*.pdf)", Pattern: "*.pdf"},
 			}
-		default:
+		case ".csv", ".tsv":
 			filters = []runtime.FileFilter{
 				{DisplayName: "Таблица CSV (*.csv)", Pattern: "*.csv"},
-				{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
+			}
+		default:
+			filters = []runtime.FileFilter{
+				{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
 			}
 		}
 	}
@@ -183,6 +184,31 @@ func (a *DesktopApp) SaveAuditFileDialog(defaultName string) (string, error) {
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to open audit save dialog: %w", err)
+	}
+	return selected, nil
+}
+
+// SaveArchiveFileDialog opens a native system file save dialog for .zip archives.
+func (a *DesktopApp) SaveArchiveFileDialog(defaultName string) (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("application context not initialized")
+	}
+
+	var filters []runtime.FileFilter
+	if goruntime.GOOS != "darwin" {
+		filters = []runtime.FileFilter{
+			{DisplayName: "ZIP-архив (*.zip)", Pattern: "*.zip"},
+			{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
+		}
+	}
+
+	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Сохранить защищённый ZIP-архив",
+		DefaultFilename: defaultName,
+		Filters:         filters,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to open archive save dialog: %w", err)
 	}
 	return selected, nil
 }

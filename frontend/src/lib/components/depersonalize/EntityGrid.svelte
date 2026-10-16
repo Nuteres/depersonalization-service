@@ -62,7 +62,7 @@
   <div>
     {#if entities.length === 0}
       <!-- Zero PII Entities Found -->
-      <div class="bg-white border border-[#E8E7E3] p-5 text-xs text-[#78716C] flex items-center space-x-3 shadow-2xs">
+      <div class="bg-white border border-[#E8E7E3] rounded-lg p-5 text-xs text-[#78716C] flex items-center space-x-3 shadow-2xs">
         <span class="text-base text-emerald-600 font-bold shrink-0">✔</span>
         <div>
           <div class="font-semibold text-[#1C1917] text-sm">В файле не обнаружено персональных данных</div>
@@ -73,13 +73,12 @@
       </div>
     {:else}
       <!-- Header bar for entities -->
-      <div id="entity-cards-header" class="flex items-center justify-between mb-3">
-        <div class="flex items-center space-x-2">
-          <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">Обнаруженные категории ПДн</span>
-          <span class="hidden sm:inline text-[11px] text-[#78716C]">(нажмите на карточку, чтобы исключить из обработки)</span>
-        </div>
+      <div id="entity-cards-header" class="flex items-center justify-between mb-3 px-1">
+        <span class="text-xs font-semibold text-[#1C1917] tracking-tight">
+          Категории данных
+        </span>
         <span id="entity-count-badge" class="text-xs font-mono text-[#78716C]">
-          {activeCount} из {totalCount} в обработке
+          {activeCount} / {totalCount}
         </span>
       </div>
 
@@ -91,9 +90,9 @@
         {#each entities as ent}
           {@const isDisabled = disabledCols.includes(ent.columnIndex)}
           <div
-            class="group relative bg-white border transition-all cursor-pointer select-none p-3.5 flex flex-col justify-between {isDisabled
-              ? 'border-dashed border-stone-300 bg-stone-50/60 opacity-60'
-              : 'border-[#E8E7E3] hover:border-[#1C1917] shadow-2xs'}"
+            class="group relative border transition-all cursor-pointer select-none p-3.5 flex flex-col justify-between rounded-lg pressable hover-sheen {isDisabled
+              ? 'border-dashed border-stone-300 bg-[#FAF9F5]/70 opacity-60'
+              : 'bg-white border-[#E8E7E3] shadow-2xs'}"
             onclick={() => toggle(ent.columnIndex)}
             role="button"
             tabindex="0"
@@ -103,11 +102,11 @@
           >
             <!-- Header: Column/Category label + Single Toggle Switch -->
             <div class="flex items-center justify-between gap-2 mb-2">
-              <span class="text-[11px] font-mono font-semibold tracking-wider text-[#A8A29E] uppercase">
-                {appState.currentFileInfo?.fileType === 'text' ? 'КАТЕГОРИЯ' : 'КОЛОНКА'} #{ent.columnIndex}
+              <span class="text-[11px] font-mono font-medium text-[#A8A29E]">
+                {appState.currentFileInfo?.fileType === 'text' ? 'Категория' : 'Колонка'} {ent.columnIndex}
               </span>
 
-              <!-- Square Toggle Switch -->
+              <!-- Tactile Fluid Toggle Switch -->
               <button
                 type="button"
                 onclick={(e) => {
@@ -115,12 +114,12 @@
                   toggle(ent.columnIndex);
                 }}
                 title={isDisabled ? 'Включить в обработку' : 'Исключить из обработки'}
-                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-none border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {isDisabled
+                class="relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors focus:outline-none {isDisabled
                   ? 'bg-stone-300'
                   : 'bg-emerald-600'}"
               >
                 <span
-                  class="pointer-events-none inline-block h-4 w-4 transform rounded-none bg-white shadow-sm ring-0 transition duration-200 ease-in-out {isDisabled
+                  class="pointer-events-none inline-block h-3 w-3 rounded-full bg-white shadow-xs toggle-thumb transform {isDisabled
                     ? 'translate-x-0'
                     : 'translate-x-4'}"
                 ></span>
@@ -140,7 +139,7 @@
                 <div
                   class="text-sm font-normal text-stone-400 italic truncate"
                 >
-                  (Без названия)
+                  Без названия
                 </div>
               {/if}
             </div>

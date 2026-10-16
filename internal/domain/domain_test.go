@@ -14,7 +14,7 @@ func TestDomainModelsInitialization(t *testing.T) {
 		Extension:              ".xlsx",
 		FileType:               "table",
 		Format:                 "xlsx",
-		SupportedExportFormats: []string{"xlsx", "csv"},
+		SupportedExportFormats: []string{"xlsx"},
 		Size:                   1024,
 		RowCount:               100,
 		ParagraphCount:         0,

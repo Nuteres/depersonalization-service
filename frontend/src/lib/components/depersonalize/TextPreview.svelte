@@ -95,6 +95,31 @@
     }
   }
 
+  function getAlignmentClass(alignment?: string): string {
+    switch (alignment) {
+      case 'center':
+        return 'text-center';
+      case 'right':
+        return 'text-right';
+      case 'justify':
+        return 'text-justify';
+      case 'left':
+      default:
+        return 'text-left';
+    }
+  }
+
+  function getSegmentStyleClass(seg: TextParagraphSegment): string {
+    const classes: string[] = [];
+    if (seg.isBold) classes.push('font-bold text-[#1C1917]');
+    if (seg.isItalic) classes.push('italic');
+    if (seg.isUnderline) classes.push('underline underline-offset-2');
+    if (seg.isStrike) classes.push('line-through');
+    if (seg.isCode) classes.push('font-mono bg-stone-100 px-1 py-0.5 rounded text-[13px]');
+    return classes.join(' ');
+  }
+
+
   // Count total entity segments across all document blocks or paragraphs
   interface FlatEntityMark {
     globalIndex: number;
@@ -202,48 +227,39 @@
 {#if fileInfo && (fileInfo.fileType === 'text' || fileInfo.format === 'docx' || fileInfo.format === 'odt')}
   <div
     id="text-inspection-box"
-    class="bg-white border border-[#E8E7E3] shadow-sm flex flex-col select-text"
+    class="bg-white border border-[#E8E7E3] rounded-lg shadow-2xs hover-sheen flex flex-col select-text overflow-hidden"
   >
     <!-- Compact Header Toolbar (Single Row) -->
     <div
-      class="px-5 py-3 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]"
+      class="px-5 py-2.5 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]"
     >
-      <!-- Title & Document Stats -->
+      <!-- Title -->
       <div class="flex items-center space-x-2">
-        <span class="w-2 h-2 rounded-none bg-emerald-500"></span>
-        <span
-          class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
-        >
-          Предпросмотр документа ({fileInfo.format.toUpperCase()})
-        </span>
-        <span class="text-xs text-[#78716C] font-mono">
-          ▪ {allEntityMarks.length > 0 ? allEntityMarks.length : snippets.length} фрагментов ПДн
+        <span class="text-xs font-semibold text-[#1C1917]">
+          Предпросмотр
         </span>
       </div>
 
       <!-- Controls Right: Before/After Toggle -->
-      <div class="flex items-center space-x-3">
-        <!-- Toggle: Cleaned vs Original -->
-        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium shadow-2xs">
+      <div class="flex items-center gap-2.5">
+        <div class="inline-flex border border-[#E8E7E3] bg-[#F0EFEB] rounded-md p-0.5 text-xs font-medium">
           <button
             type="button"
             onclick={() => (isBefore = false)}
-            class="flex items-center space-x-1.5 px-3 py-1 {!isBefore
-              ? 'bg-emerald-700 text-white font-semibold shadow-xs'
+            class="px-3 py-1 rounded pressable {!isBefore
+              ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            <span class="w-1.5 h-1.5 rounded-none {!isBefore ? 'bg-emerald-300' : 'bg-emerald-500'}"></span>
-            <span>Обезличенный вид</span>
+            Очищенные данные
           </button>
           <button
             type="button"
             onclick={() => (isBefore = true)}
-            class="flex items-center space-x-1.5 px-3 py-1 {isBefore
-              ? 'bg-amber-700 text-white font-semibold shadow-xs'
+            class="px-3 py-1 rounded pressable {isBefore
+              ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            <span class="w-1.5 h-1.5 rounded-none {isBefore ? 'bg-amber-300' : 'bg-amber-500'}"></span>
-            <span>Исходный вид</span>
+            Исходные с ПДн
           </button>
         </div>
       </div>
@@ -263,9 +279,12 @@
             <!-- Structured Document Blocks: Paragraphs, Headings and Tables -->
             <div class="space-y-3">
               {#each documentBlocks as block, bIdx}
-                {#if block.type === 'heading' && block.segments}
-                  <h3 class="mt-5 mb-2 font-bold text-[16px] sm:text-[17px] text-[#1C1917] tracking-tight break-words">
-                    {#each block.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
+                {#if block.isEmpty}
+                  <!-- Empty Paragraph Spacer preserving document vertical rhythm -->
+                  <div class="h-4 my-1 select-none pointer-events-none"></div>
+                {:else if block.type === 'heading' && block.segments}
+                  <h3 class="mt-6 mb-2 font-bold {block.headingLevel === 1 ? 'text-[18px] sm:text-[19px]' : block.headingLevel === 2 ? 'text-[16px] sm:text-[17px]' : 'text-[15px] sm:text-[16px]'} text-[#1C1917] tracking-tight break-words {getAlignmentClass(block.alignment)}">
+                    {#each block.segments as seg, sIdx}{#if !seg.isEntity}<span class="{getSegmentStyleClass(seg)}">{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
                         ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
                         : !isBefore
                         ? appState.processingMode === 'delete'
@@ -277,12 +296,12 @@
                         onmouseenter={(e) => handleMarkHover(e, seg)}
                         onmouseleave={handleMarkLeave}
                         onclick={() => toggleEntityType(seg.type || '')}
-                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
+                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {getSegmentStyleClass(seg)} hover:scale-[1.02]"
                       >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                   </h3>
                 {:else if block.type === 'paragraph' && block.segments}
-                  <p class="mb-3 whitespace-pre-wrap leading-relaxed text-justify break-words">
-                    {#each block.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
+                  <p class="mb-3 whitespace-pre-wrap leading-relaxed break-words {getAlignmentClass(block.alignment)} {block.firstLineIndent ? 'indent-6 sm:indent-8' : ''} {block.isList ? 'pl-4' : ''}">
+                    {#each block.segments as seg, sIdx}{#if !seg.isEntity}<span class="{getSegmentStyleClass(seg)}">{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${sIdx}`] || 0}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
                         ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
                         : !isBefore
                         ? appState.processingMode === 'delete'
@@ -294,7 +313,7 @@
                         onmouseenter={(e) => handleMarkHover(e, seg)}
                         onmouseleave={handleMarkLeave}
                         onclick={() => toggleEntityType(seg.type || '')}
-                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
+                        class="inline px-1.5 py-0.5 rounded-[3px] border font-medium text-[13.5px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {getSegmentStyleClass(seg)} hover:scale-[1.02]"
                       >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                   </p>
                 {:else if block.type === 'table' && block.table}
@@ -305,8 +324,8 @@
                         {#each block.table.rows as row, rIdx}
                           <tr class="{row.isHeader ? 'bg-[#F5F4F0] font-semibold text-[#1C1917] border-b-2 border-[#D5D3CC]' : 'border-b border-[#E8E7E3] hover:bg-[#FAF9F5]/70'}">
                             {#each row.cells as cell, cIdx}
-                              <td class="p-2 sm:p-2.5 border-r border-[#E8E7E3] last:border-r-0 align-top break-words whitespace-pre-wrap">
-                                {#each cell.segments as seg, sIdx}{#if !seg.isEntity}<span>{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${rIdx}_${cIdx}_${sIdx}`] || 0}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
+                              <td class="p-2 sm:p-2.5 border-r border-[#E8E7E3] last:border-r-0 align-top break-words whitespace-pre-wrap {cell.alignment ? getAlignmentClass(cell.alignment) : ''}">
+                                {#each cell.segments as seg, sIdx}{#if !seg.isEntity}<span class="{getSegmentStyleClass(seg)}">{seg.text}</span>{:else}{@const gIdx = entityIndexMap[`${bIdx}_${rIdx}_${cIdx}_${sIdx}`] || 0}{@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}{@const markClass = isTypeDisabled
                                     ? 'bg-stone-100 text-stone-600 border-dashed border-stone-400 hover:bg-stone-200 hover:border-stone-600'
                                     : !isBefore
                                     ? appState.processingMode === 'delete'
@@ -318,7 +337,7 @@
                                     onmouseenter={(e) => handleMarkHover(e, seg)}
                                     onmouseleave={handleMarkLeave}
                                     onclick={() => toggleEntityType(seg.type || '')}
-                                    class="inline px-1 py-0.5 rounded-[3px] border font-medium text-[12px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} hover:scale-[1.02]"
+                                    class="inline px-1 py-0.5 rounded-[3px] border font-medium text-[12px] font-mono shadow-xs transition-all duration-150 cursor-pointer text-left align-baseline {markClass} {getSegmentStyleClass(seg)} hover:scale-[1.02]"
                                   >{#if isTypeDisabled}<span class="line-through decoration-stone-400">{seg.original || seg.text}</span>{:else if !isBefore}{appState.processingMode === 'delete' ? '[УДАЛЕНО]' : (seg.anonymized || seg.text)}{:else}{seg.original || seg.text}{/if}</button>{/if}{/each}
                               </td>
                             {/each}
@@ -337,7 +356,7 @@
                 <p class="mb-4 last:mb-0 whitespace-pre-wrap leading-relaxed text-justify break-words">
                   {#each para.segments as seg, sIdx}
                     {#if !seg.isEntity}
-                      <span>{seg.text}</span>
+                      <span class="{getSegmentStyleClass(seg)}">{seg.text}</span>
                     {:else}
                       {@const gIdx = entityIndexMap[`${pIdx}_${sIdx}`] || 0}
                       {@const isTypeDisabled = isEntityTypeDisabled(seg.type || '')}

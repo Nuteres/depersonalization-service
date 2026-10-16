@@ -31,7 +31,7 @@
     class="fixed bottom-6 right-6 z-50 max-w-md w-full shadow-xl transition-all"
     role="alert"
   >
-    <div class="flex items-start gap-3 p-3.5 border text-xs font-mono {currentStyle.bg}">
+    <div class="flex items-start gap-3 p-3.5 border rounded-lg text-xs font-mono animate-surface-enter {currentStyle.bg}">
       <span class="font-bold shrink-0">{currentStyle.icon}</span>
       <div class="flex-1 font-sans text-xs break-words">
         {appState.toast.message}
@@ -39,7 +39,7 @@
       <button
         type="button"
         onclick={() => appState.hideToast()}
-        class="text-stone-400 hover:text-stone-700 transition cursor-pointer shrink-0 font-mono text-sm leading-none ml-1"
+        class="text-stone-400 hover:text-stone-700 transition cursor-pointer shrink-0 font-mono text-sm leading-none ml-1 pressable"
         aria-label="Закрыть уведомление"
       >
         ✕

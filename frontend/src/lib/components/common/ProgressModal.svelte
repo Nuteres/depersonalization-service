@@ -46,27 +46,27 @@
 {#if appState.showProgressModal}
   <div
     id="progress-modal"
-    class="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50"
+    class="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 transition-opacity"
     role="dialog"
     aria-modal="true"
     aria-labelledby="progress-modal-title"
   >
-    <div class="bg-white border border-[#E8E7E3] shadow-2xl max-w-md w-full p-6 flex flex-col gap-4">
+    <div class="bg-white border border-[#E8E7E3] rounded-lg shadow-2xl max-w-md w-full p-6 flex flex-col gap-4 animate-surface-enter">
       <div class="flex items-center justify-between border-b border-[#F0EFEB] pb-3">
         <div class="flex items-center space-x-2">
-          <span id="progress-indicator" class="w-2.5 h-2.5 rounded-none bg-emerald-600 animate-pulse"></span>
+          <span id="progress-indicator" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           <h2 id="progress-modal-title" class="text-sm font-bold text-[#1C1917]">{modalTitle}</h2>
         </div>
-        <span id="progress-pct-badge" class="font-mono text-xs font-bold text-[#1C1917] bg-[#F0EFEB] px-2 py-0.5">
+        <span id="progress-pct-badge" class="font-mono text-xs font-bold text-[#1C1917] bg-[#F0EFEB] px-2 py-0.5 rounded border border-[#E8E7E3]">
           {appState.progress.percent}%
         </span>
       </div>
 
       <div class="space-y-2">
-        <div class="w-full bg-[#F0EFEB] h-3 rounded-none overflow-hidden">
+        <div class="w-full bg-[#F0EFEB] h-2.5 rounded-full overflow-hidden p-0.5 border border-[#E8E7E3]">
           <div
             id="progress-bar-fill"
-            class="bg-[#1C1917] h-full transition-all duration-150"
+            class="progress-fill bg-[#1C1917] h-full rounded-full"
             style="width: {appState.progress.percent}%"
           ></div>
         </div>
@@ -82,7 +82,7 @@
           type="button"
           onclick={handleCancel}
           disabled={isCanceling}
-          class="px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+          class="px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md pressable disabled:opacity-50 cursor-pointer"
         >
           {isCanceling ? 'Отмена...' : 'Отмена'}
         </button>

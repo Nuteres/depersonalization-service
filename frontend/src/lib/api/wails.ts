@@ -55,6 +55,9 @@ interface WailsAppBinding {
   GetFileBase64?: (path: string) => Promise<string>;
   ProcessFileWithOptions?: (options: any) => Promise<ProcessResult>;
   SetClipboardText?: (text: string) => Promise<boolean>;
+  SaveArchiveFileDialog?: (defaultName: string) => Promise<string>;
+  GenerateArchivePassword?: () => Promise<string>;
+  ValidateArchivePassword?: (password: string) => Promise<[boolean, string]>;
 }
 
 interface WailsRuntimeBinding {
@@ -716,5 +719,51 @@ export async function SetClipboardText(text: string): Promise<boolean> {
   }
   return false;
 }
+
+export async function SaveArchiveFileDialog(defaultName: string): Promise<string> {
+  const app = getApp();
+  if (app?.SaveArchiveFileDialog) {
+    return await app.SaveArchiveFileDialog(defaultName);
+  }
+  return defaultName;
+}
+
+export async function GenerateArchivePassword(): Promise<string> {
+  const app = getApp();
+  if (app?.GenerateArchivePassword) {
+    return await app.GenerateArchivePassword();
+  }
+  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+  let ret = '';
+  for (let i = 0; i < 16; i++) {
+    ret += charset.charAt(Math.floor(Math.random() * charset.length));
+  }
+  return ret;
+}
+
+export async function ValidateArchivePassword(password: string): Promise<{ valid: boolean; error: string }> {
+  const app = getApp();
+  if (app?.ValidateArchivePassword) {
+    const res = await app.ValidateArchivePassword(password);
+    if (Array.isArray(res)) {
+      return { valid: res[0], error: res[1] || '' };
+    }
+  }
+  const trimmed = password.trim();
+  if (trimmed.length < 4) {
+    return { valid: false, error: 'Пароль архива должен содержать не менее 4 символов' };
+  }
+  if (password.length !== trimmed.length) {
+    return { valid: false, error: 'Пароль архива не должен содержать пробелов' };
+  }
+  for (let i = 0; i < password.length; i++) {
+    const code = password.charCodeAt(i);
+    if (code < 33 || code > 126) {
+      return { valid: false, error: 'Пароль архива может содержать только латиницу, цифры и спецсимволы без пробелов' };
+    }
+  }
+  return { valid: true, error: '' };
+}
+
 
 

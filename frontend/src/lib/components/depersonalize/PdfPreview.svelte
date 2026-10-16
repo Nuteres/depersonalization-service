@@ -4,7 +4,7 @@
   import { GetFileBase64 } from '../../api/wails';
   import type { PDFRedactionBox } from '../../types/domain';
 
-  // View state
+  const MAX_PREVIEW_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
   let isBefore = $state(false); // false = Anonymized, true = Original
   let isLoading = $state(false);
   let loadError = $state<string | null>(null);
@@ -204,6 +204,12 @@
     pagesData = [];
     disabledInstanceIds = new Set();
 
+    if (fileInfo?.size && fileInfo.size > MAX_PREVIEW_FILE_SIZE) {
+      loadError = `Размер файла (${(fileInfo.size / (1024 * 1024)).toFixed(1)} МБ) превышает лимит безопасности 100 МБ для интерактивного предпросмотра`;
+      isLoading = false;
+      return;
+    }
+
     try {
       const base64Data = await GetFileBase64(path);
       if (!base64Data) {
@@ -213,12 +219,13 @@
       const bytes = base64ToUint8Array(base64Data);
       const pdf = await loadPdf(bytes);
       const numPages = pdf.numPages;
+      const pagesToRender = numPages;
       const targetScale = 1.35; // Standard desktop reading scale
 
       const pagesList: RenderedPageData[] = [];
       let globalCounter = 0;
 
-      for (let pNum = 1; pNum <= numPages; pNum++) {
+      for (let pNum = 1; pNum <= pagesToRender; pNum++) {
         const page = await pdf.getPage(pNum);
         const viewport = page.getViewport({ scale: targetScale });
         const textContent = await page.getTextContent();
@@ -423,7 +430,7 @@
       // Render canvases on next animation frame once DOM elements mount
       requestAnimationFrame(async () => {
         const dpr = window.devicePixelRatio || 1;
-        for (let pNum = 1; pNum <= numPages; pNum++) {
+        for (let pNum = 1; pNum <= pagesToRender; pNum++) {
           const canvas = canvasRefs[pNum];
           if (!canvas) continue;
 
@@ -457,47 +464,40 @@
 {#if fileInfo && fileInfo.fileType === 'pdf'}
   <div
     id="pdf-inspection-box"
-    class="bg-white border border-[#E8E7E3] shadow-sm flex flex-col select-text"
+    class="bg-white border border-[#E8E7E3] rounded-lg shadow-2xs hover-sheen flex flex-col select-text overflow-hidden"
   >
     <!-- Compact Header Toolbar (Sticky) -->
+    <!-- Header Toolbar (Single Row) -->
     <div
-      class="px-5 py-3 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5] sticky top-0 z-40"
+      class="px-5 py-2.5 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5] sticky top-0 z-40"
     >
-      <!-- Title & Document Stats -->
+      <!-- Title -->
       <div class="flex items-center space-x-2">
-        <span class="w-2 h-2 rounded-none bg-emerald-500"></span>
-        <span
-          class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
-        >
-          Предпросмотр документа (PDF)
-        </span>
-        <span class="text-xs text-[#78716C] font-mono">
-          ▪ {pagesData.length > 0 ? pagesData.length : (fileInfo.pageCount || 1)} стр. ▪ {allDetectedEntities.length} фрагментов ПДн
+        <span class="text-xs font-semibold text-[#1C1917]">
+          Предпросмотр
         </span>
       </div>
 
       <!-- Controls Right: Before/After Toggle -->
-      <div class="flex items-center space-x-3">
-        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium shadow-2xs">
+      <div class="flex items-center gap-2.5">
+        <div class="inline-flex border border-[#E8E7E3] bg-[#F0EFEB] rounded-md p-0.5 text-xs font-medium">
           <button
             type="button"
             onclick={() => (isBefore = false)}
-            class="flex items-center space-x-1.5 px-3 py-1 {!isBefore
-              ? 'bg-emerald-700 text-white font-semibold shadow-xs'
+            class="px-3 py-1 rounded pressable {!isBefore
+              ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            <span class="w-1.5 h-1.5 rounded-none {!isBefore ? 'bg-emerald-300' : 'bg-emerald-500'}"></span>
-            <span>Обезличенный вид</span>
+            Очищенные данные
           </button>
           <button
             type="button"
             onclick={() => (isBefore = true)}
-            class="flex items-center space-x-1.5 px-3 py-1 {isBefore
-              ? 'bg-amber-700 text-white font-semibold shadow-xs'
+            class="px-3 py-1 rounded pressable {isBefore
+              ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            <span class="w-1.5 h-1.5 rounded-none {isBefore ? 'bg-amber-300' : 'bg-amber-500'}"></span>
-            <span>Исходный вид</span>
+            Исходные с ПДн
           </button>
         </div>
       </div>
@@ -514,9 +514,12 @@
           <span class="text-xs font-mono text-[#78716C]">Рендеринг страниц через Mozilla PDF.js...</span>
         </div>
       {:else if loadError}
-        <div class="text-center py-20 px-6 max-w-md mx-auto bg-white border border-rose-200 p-6 shadow-sm">
-          <div class="text-rose-600 font-bold text-sm mb-2">Не удалось отобразить PDF</div>
-          <p class="text-xs text-[#78716C] font-mono leading-relaxed">{loadError}</p>
+        <div class="text-center py-16 px-6 max-w-lg mx-auto bg-white border border-rose-200 p-6 shadow-sm">
+          <div class="text-rose-600 font-bold text-sm mb-2">Не удалось отобразить PDF в интерактивном предпросмотре</div>
+          <p class="text-xs text-[#78716C] font-mono leading-relaxed mb-3">{loadError}</p>
+          <p class="text-[11px] text-[#A8A29E] leading-relaxed">
+            Файлы размером свыше 100 МБ не загружаются в браузерный предпросмотр для предотвращения переполнения оперативной памяти. Обезличивание документа по-прежнему доступно по кнопке внизу.
+          </p>
         </div>
       {:else if pagesData.length > 0}
         <!-- Render each page sequentially in continuous scroll -->

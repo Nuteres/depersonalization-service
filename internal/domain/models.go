@@ -52,6 +52,19 @@ type FileInfo struct {
 	PDFRedactedSnippet     string                 `json:"pdfRedactedSnippet,omitempty"`
 }
 
+const (
+	// MaxPDFInteractiveFileSize is the maximum file size (100 MB) permitted for PDF documents.
+	// PDF files exceeding this limit are safely restricted to prevent out-of-memory crashes during browser canvas/base64 rendering.
+	// Streaming formats (CSV, TSV, XLSX, XLSB, ODS, XLS, DOCX, ODT, TXT) are not subject to this restriction.
+	MaxPDFInteractiveFileSize = 100 * 1024 * 1024 // 100 MB
+
+	// MaxInteractiveFileSize is maintained for backward compatibility and applies to PDF documents.
+	MaxInteractiveFileSize = MaxPDFInteractiveFileSize
+
+	// MaxBase64PreviewFileSize is the maximum file size (100 MB) permitted for base64 encoding over IPC.
+	MaxBase64PreviewFileSize = MaxPDFInteractiveFileSize
+)
+
 // DocxTextSnippet represents a single detected entity snippet.
 type DocxTextSnippet struct {
 	Original   string `json:"original"`
@@ -61,16 +74,22 @@ type DocxTextSnippet struct {
 
 // TextParagraphSegment represents a piece of text inside a paragraph, indicating if it was anonymized.
 type TextParagraphSegment struct {
-	Text       string `json:"text"`
-	IsEntity   bool   `json:"isEntity"`
-	Type       string `json:"type,omitempty"`
-	Original   string `json:"original,omitempty"`
-	Anonymized string `json:"anonymized,omitempty"`
+	Text        string `json:"text"`
+	IsEntity    bool   `json:"isEntity"`
+	Type        string `json:"type,omitempty"`
+	Original    string `json:"original,omitempty"`
+	Anonymized  string `json:"anonymized,omitempty"`
+	IsBold      bool   `json:"isBold,omitempty"`
+	IsItalic    bool   `json:"isItalic,omitempty"`
+	IsUnderline bool   `json:"isUnderline,omitempty"`
+	IsStrike    bool   `json:"isStrike,omitempty"`
+	IsCode      bool   `json:"isCode,omitempty"`
 }
 
 // TextTableCellPreview represents a cell inside a table row for Word-like preview.
 type TextTableCellPreview struct {
-	Segments []TextParagraphSegment `json:"segments"`
+	Segments  []TextParagraphSegment `json:"segments"`
+	Alignment string                 `json:"alignment,omitempty"`
 }
 
 // TextTableRowPreview represents a table row for Word-like preview.
@@ -86,10 +105,15 @@ type TextTablePreview struct {
 
 // TextDocumentBlock represents either a top-level paragraph or a table in a document.
 type TextDocumentBlock struct {
-	Type     string                 `json:"type"` // "paragraph" or "table"
-	Index    int                    `json:"index"`
-	Segments []TextParagraphSegment `json:"segments,omitempty"`
-	Table    *TextTablePreview      `json:"table,omitempty"`
+	Type            string                 `json:"type"` // "paragraph" or "table"
+	Index           int                    `json:"index"`
+	Segments        []TextParagraphSegment `json:"segments,omitempty"`
+	Table           *TextTablePreview      `json:"table,omitempty"`
+	Alignment       string                 `json:"alignment,omitempty"` // "left", "center", "right", "justify"
+	HeadingLevel    int                    `json:"headingLevel,omitempty"`
+	FirstLineIndent bool                   `json:"firstLineIndent,omitempty"`
+	IsList          bool                   `json:"isList,omitempty"`
+	IsEmpty         bool                   `json:"isEmpty,omitempty"`
 }
 
 // TextParagraphPreview holds the segmented text of a paragraph for inline Word-like document preview.
@@ -98,3 +122,4 @@ type TextParagraphPreview struct {
 	Segments []TextParagraphSegment `json:"segments"`
 	Table    *TextTablePreview      `json:"table,omitempty"`
 }
+

@@ -946,3 +946,167 @@ func TestProcessor_ShuffleRows_IgnoredForTextFormats(t *testing.T) {
 		t.Errorf("expected [ФИО_ token in output, got: %s", outText)
 	}
 }
+
+func TestProcessor_CreateArchive(t *testing.T) {
+	km := keymanager.New()
+	insp := inspector.New()
+	proc := processor.New(km, insp)
+
+	tmpDir := t.TempDir()
+	inPath := filepath.Join(tmpDir, "records.csv")
+	outPath := filepath.Join(tmpDir, "records_anonymized.csv")
+
+	content := "ФИО,Телефон\nИванов Иван,+79991234567\nПетров Петр,+79997654321\n"
+	if err := os.WriteFile(inPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write input file: %v", err)
+	}
+
+	opts := domain.ProcessOptions{
+		InputPath:       inPath,
+		OutputPath:      outPath,
+		Salt:            "test-salt",
+		Mode:            domain.ModeReplace,
+		Strategy:        domain.StrategySemanticTokens,
+		CreateArchive:   true,
+		ArchivePassword: "ArchivePass123",
+	}
+
+	res, err := proc.Process(context.Background(), opts, func(p, total, pct int) {})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	if !res.Success {
+		t.Fatalf("expected success, got false: %s", res.Error)
+	}
+
+	// 1. Both files must exist on disk
+	if _, err := os.Stat(outPath); err != nil {
+		t.Errorf("expected uncompressed output file to exist: %v", err)
+	}
+	expectedZipPath := filepath.Join(tmpDir, "records_anonymized.zip")
+	if _, err := os.Stat(expectedZipPath); err != nil {
+		t.Errorf("expected zip archive to exist: %v", err)
+	}
+
+	// 2. Result fields must be populated
+	if res.ArchivePath != expectedZipPath {
+		t.Errorf("expected ArchivePath %q, got %q", expectedZipPath, res.ArchivePath)
+	}
+	if res.ArchivePassword != "ArchivePass123" {
+		t.Errorf("expected ArchivePassword ArchivePass123, got %q", res.ArchivePassword)
+	}
+	if res.ArchivePasswordGenerated {
+		t.Errorf("expected ArchivePasswordGenerated to be false for manual password")
+	}
+
+	// 3. Test auto-generation when password is empty
+	outPath2 := filepath.Join(tmpDir, "records2_anonymized.csv")
+	optsAuto := domain.ProcessOptions{
+		InputPath:     inPath,
+		OutputPath:    outPath2,
+		Salt:          "test-salt",
+		Mode:          domain.ModeReplace,
+		Strategy:      domain.StrategySemanticTokens,
+		CreateArchive: true,
+	}
+	resAuto, err := proc.Process(context.Background(), optsAuto, func(p, total, pct int) {})
+	if err != nil {
+		t.Fatalf("Process with auto password failed: %v", err)
+	}
+	if len(resAuto.ArchivePassword) != 16 {
+		t.Errorf("expected 16-char auto generated password, got %q", resAuto.ArchivePassword)
+	}
+	if !resAuto.ArchivePasswordGenerated {
+		t.Errorf("expected ArchivePasswordGenerated to be true")
+	}
+	if _, err := os.Stat(resAuto.ArchivePath); err != nil {
+		t.Errorf("expected auto archive to exist: %v", err)
+	}
+}
+
+func TestProcessor_ValidTargetExtensions(t *testing.T) {
+	tests := []struct {
+		ext      string
+		expected []string
+	}{
+		{".csv", []string{".csv", ".tsv"}},
+		{".tsv", []string{".csv", ".tsv"}},
+		{".xlsx", []string{".xlsx", ".xlsm", ".xltx", ".xltm"}},
+		{".ods", []string{".ods", ".xlsx"}},
+		{".xlsb", []string{".xlsx"}},
+		{".xls", []string{".xlsx"}},
+		{".docx", []string{".docx"}},
+		{".odt", []string{".odt"}},
+		{".txt", []string{".txt"}},
+		{".pdf", []string{".pdf"}},
+		{".unknown", nil},
+	}
+
+	for _, tt := range tests {
+		got := processor.ValidTargetExtensions(tt.ext)
+		if len(got) != len(tt.expected) {
+			t.Errorf("ValidTargetExtensions(%q): got %v, want %v", tt.ext, got, tt.expected)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.expected[i] {
+				t.Errorf("ValidTargetExtensions(%q)[%d]: got %q, want %q", tt.ext, i, got[i], tt.expected[i])
+			}
+		}
+	}
+}
+
+func TestProcessor_EnforceTargetExtension_XLSX_Not_CSV(t *testing.T) {
+	km := keymanager.New()
+	proc := processor.New(km)
+	tmpDir := t.TempDir()
+
+	// 1. Create a minimal XLSX file
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	_ = f.SetCellValue(sheet, "A1", "ФИО")
+	_ = f.SetCellValue(sheet, "A2", "Иванов Иван Иванович")
+	inPath := filepath.Join(tmpDir, "test.xlsx")
+	if err := f.SaveAs(inPath); err != nil {
+		t.Fatalf("failed to save test.xlsx: %v", err)
+	}
+
+	// 2. Specify OutputPath ending in .csv (which was the bug causing fake CSV)
+	badOutPath := filepath.Join(tmpDir, "output_anonymized.csv")
+	opts := domain.ProcessOptions{
+		InputPath:  inPath,
+		OutputPath: badOutPath,
+		Salt:       "test-salt-123",
+		Mode:       domain.ModeReplace,
+		Strategy:   domain.StrategySemanticTokens,
+		CreateKey:  true,
+	}
+
+	res, err := proc.Process(context.Background(), opts, nil)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	// 3. OutputPath must have been corrected to .xlsx
+	if !strings.HasSuffix(res.OutputPath, ".xlsx") {
+		t.Errorf("expected OutputPath to end in .xlsx, got %q", res.OutputPath)
+	}
+
+	// 4. Must be openable by excelize without error
+	outF, err := excelize.OpenFile(res.OutputPath)
+	if err != nil {
+		t.Fatalf("failed to open output as excel: %v", err)
+	}
+	defer outF.Close()
+
+	// 5. Verify the cell was anonymized
+	val, err := outF.GetCellValue(sheet, "A2")
+	if err != nil {
+		t.Fatalf("failed to get cell value: %v", err)
+	}
+	if val == "Иванов Иван Иванович" || val == "" {
+		t.Errorf("expected anonymized value in A2, got %q", val)
+	}
+}
+

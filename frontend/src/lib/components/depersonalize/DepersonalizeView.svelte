@@ -22,7 +22,7 @@
 <div id="depersonalization-view" class="flex-1 flex flex-col gap-6 pb-12">
   <HeroBanner onOpenSaveModal={openSaveModal} />
 
-  {#if appState.currentFileInfo}
+  {#if !appState.isFileLoading && appState.currentFileInfo}
     {#if appState.currentFileInfo.sheets && appState.currentFileInfo.sheets.length > 1}
       <SheetTabs />
     {/if}

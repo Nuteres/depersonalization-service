@@ -16,24 +16,26 @@
 
   const badgeText = $derived.by(() => {
     if (isInspecting) return 'Проверка...';
-    return isValid ? '✔ Готов' : '.DEPMAP';
+    return isValid ? 'Готов' : '.depmap';
   });
 
   const badgeClass = $derived.by(() => {
     if (isInspecting) {
-      return 'text-[10px] px-1.5 py-0.5 font-medium bg-amber-50 text-amber-700 border border-amber-200';
+      return 'text-[10px] px-1.5 py-0.5 font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded';
     }
     return isValid
-      ? 'text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.5'
-      : 'text-[10px] bg-[#FAF9F5] text-[#78716C] border border-[#E8E7E3] px-1.5 py-0.5';
+      ? 'text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.5 rounded'
+      : 'text-[10px] bg-[#FAF9F5] text-[#78716C] border border-[#E8E7E3] px-1.5 py-0.5 rounded font-mono';
   });
 </script>
 
-<div id="restore-key-info" class="flex-1 flex flex-col justify-between p-4 bg-[#FAF9F5] border border-[#E8E7E3] text-xs font-sans">
+<div id="restore-key-info" class="flex-1 flex flex-col justify-between p-4 bg-[#FAF9F5] border border-[#E8E7E3] rounded-lg text-xs font-sans hover-sheen">
   <div>
     <div class="flex items-start justify-between gap-2 mb-2">
       <div class="flex items-center gap-2 min-w-0">
-        <span class="text-base shrink-0 select-none">🔑</span>
+        <svg class="w-4 h-4 text-emerald-700 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+        </svg>
         <span class="font-bold text-[#1C1917] truncate font-sans" id="restore-key-name" title={keyFileName}>
           {keyFileName}
         </span>

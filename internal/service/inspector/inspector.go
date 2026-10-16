@@ -70,8 +70,14 @@ func (i *Inspector) Inspect(ctx context.Context, path string) (*domain.FileInfo,
 	if stat.IsDir() {
 		return nil, fmt.Errorf("%w: path is a directory", domain.ErrUnsupportedFormat)
 	}
-
 	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".pdf" && stat.Size() > domain.MaxPDFInteractiveFileSize {
+		return nil, fmt.Errorf("%w: размер PDF документа (%s) превышает допустимый лимит безопасности %s во избежание переполнения оперативной памяти при рендеринге",
+			domain.ErrFileTooLarge,
+			formatBytes(stat.Size()),
+			formatBytes(domain.MaxPDFInteractiveFileSize),
+		)
+	}
 	switch ext {
 	case ".csv", ".tsv":
 		return inspectCSV(ctx, path)
@@ -268,7 +274,7 @@ func inspectCSV(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Extension:              strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."),
 		FileType:               "table",
 		Format:                 "csv",
-		SupportedExportFormats: []string{"csv", "xlsx"},
+		SupportedExportFormats: []string{"csv"},
 		Size:                   stat.Size(),
 		RowCount:               rowCount,
 		PageCount:              1,
@@ -471,7 +477,7 @@ func inspectXLSX(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Extension:              strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."),
 		FileType:               "table",
 		Format:                 "xlsx",
-		SupportedExportFormats: []string{"xlsx", "csv"},
+		SupportedExportFormats: []string{"xlsx"},
 		Size:                   stat.Size(),
 		RowCount:               primarySheet.RowCount,
 		PageCount:              len(sheets),
@@ -602,7 +608,7 @@ func inspectODS(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Extension:              "ods",
 		FileType:               "table",
 		Format:                 "ods",
-		SupportedExportFormats: []string{"ods", "xlsx", "csv"},
+		SupportedExportFormats: []string{"ods", "xlsx"},
 		Size:                   stat.Size(),
 		RowCount:               primarySheet.RowCount,
 		PageCount:              len(allSheets),
@@ -823,7 +829,7 @@ func inspectDOCX(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Extension:              "docx",
 		FileType:               "text",
 		Format:                 "docx",
-		SupportedExportFormats: []string{"docx", "odt"},
+		SupportedExportFormats: []string{"docx"},
 		Size:                   stat.Size(),
 		RowCount:               paramCount,
 		ParagraphCount:         paramCount,
@@ -877,7 +883,7 @@ func inspectODT(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Extension:              "odt",
 		FileType:               "text",
 		Format:                 "odt",
-		SupportedExportFormats: []string{"odt", "docx"},
+		SupportedExportFormats: []string{"odt"},
 		Size:                   stat.Size(),
 		RowCount:               paramCount,
 		ParagraphCount:         paramCount,
@@ -1081,7 +1087,9 @@ func findPDFSensitiveMatches(text string) []pdfEntityMatch {
 	addRegexMatches(rePhonePrefixed, 1, string(detector.EntityPhone), nil)
 
 	// 5. Bank Card
-	addRegexMatches(reCard16, 1, string(detector.EntityCard), nil)
+	addRegexMatches(reCard16, 1, string(detector.EntityCard), func(s string) bool {
+		return detector.ValidateCardNumber(s)
+	})
 
 	// 6. FIO
 	addRegexMatches(reFIOPatronymic, 1, string(detector.EntityFIO), isFIOValid)
@@ -1219,4 +1227,19 @@ func extractPDFInfo(ctx context.Context, pdfBytes []byte) ([]formats.DocxTextSni
 
 	return snippets, entities, rawText, pageCount
 }
+
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d Б", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	units := []string{"КБ", "МБ", "ГБ", "ТБ"}
+	return fmt.Sprintf("%.1f %s", float64(bytes)/float64(div), units[exp])
+}
+
 

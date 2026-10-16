@@ -328,7 +328,7 @@ func findDocxSensitiveMatches(text string) []docxMatch {
 
 	// 1. Bank card & 20-digit Account (Priority 1)
 	addRegexMatches(docxCard16, 1, string(detector.EntityCard), func(s string) bool {
-		return len(cleanDigits(s)) == 16
+		return detector.ValidateCardNumber(s)
 	})
 	addRegexMatches(docxBankAccount, 1, string(detector.EntityCard), func(s string) bool {
 		return len(cleanDigits(s)) == 20
@@ -510,11 +510,21 @@ type docxTextNode struct {
 	startOffset int // byte offset of '<' in <w:t ...>
 	endOffset   int // byte offset after '>' in </w:t>
 	text        string
+	isBold      bool
+	isItalic    bool
+	isUnderline bool
+	isStrike    bool
+	isCode      bool
 }
 
 type docxParagraph struct {
-	nodes     []docxTextNode
-	isHeading bool
+	nodes           []docxTextNode
+	isHeading       bool
+	headingLevel    int
+	alignment       string // "left", "center", "right", "justify"
+	firstLineIndent bool
+	isList          bool
+	isEmpty         bool
 }
 
 func isDocxHeadingText(str string) bool {
@@ -542,6 +552,7 @@ func isDocxHeadingText(str string) bool {
 
 type docxCell struct {
 	paragraphs []docxParagraph
+	alignment  string
 }
 
 type docxRow struct {
@@ -567,11 +578,69 @@ type docxBlock struct {
 	table     docxTable
 }
 
+func getAttrVal(attrs []xml.Attr, local string) string {
+	for _, a := range attrs {
+		if a.Name.Local == local {
+			return a.Value
+		}
+	}
+	return ""
+}
+
+func isPropertyTrue(attrs []xml.Attr) bool {
+	val := strings.ToLower(strings.TrimSpace(getAttrVal(attrs, "val")))
+	if val == "" {
+		return true // presence without val implies true in WordprocessingML, e.g. <w:b/>
+	}
+	return val != "0" && val != "false" && val != "none" && val != "off"
+}
+
+func isUnderlineTrue(attrs []xml.Attr) bool {
+	val := strings.ToLower(strings.TrimSpace(getAttrVal(attrs, "val")))
+	if val == "" {
+		return true
+	}
+	return val != "none" && val != "0" && val != "false" && val != "off"
+}
+
+func getAlignmentVal(attrs []xml.Attr) string {
+	val := strings.ToLower(strings.TrimSpace(getAttrVal(attrs, "val")))
+	switch val {
+	case "center":
+		return "center"
+	case "right", "end":
+		return "right"
+	case "both", "distribute", "justify":
+		return "justify"
+	case "left", "start":
+		return "left"
+	default:
+		return ""
+	}
+}
+
+func hasFirstLineIndent(attrs []xml.Attr) bool {
+	val := strings.TrimSpace(getAttrVal(attrs, "firstLine"))
+	return val != "" && val != "0"
+}
+
 func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 	dec := xml.NewDecoder(bytes.NewReader(xmlData))
 	var blocks []docxBlock
 	var curNodes []docxTextNode
 	curPIsHeading := false
+	curPHeadingLevel := 0
+	curPAlign := ""
+	curPFirstLineIndent := false
+	curPIsList := false
+
+	rDepth := 0
+	curRBold := false
+	curRItalic := false
+	curRUnderline := false
+	curRStrike := false
+	curRCode := false
+
 	pDepth := 0
 	inT := false
 	var curTText strings.Builder
@@ -580,6 +649,7 @@ func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 	tblDepth := 0
 	trDepth := 0
 	tcDepth := 0
+	curCellAlign := ""
 
 	var curTable docxTable
 	var curRow docxRow
@@ -631,20 +701,74 @@ func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 			} else if isWordElement(t.Name, "tc") {
 				if tblDepth > 0 && trDepth > 0 && tcDepth == 0 {
 					curCell = docxCell{}
+					curCellAlign = ""
 				}
 				tcDepth++
+			} else if tcDepth > 0 && pDepth == 0 && isWordElement(t.Name, "jc") {
+				if a := getAlignmentVal(t.Attr); a != "" {
+					curCellAlign = a
+				}
 			} else if isWordElement(t.Name, "p") {
 				if pDepth == 0 {
 					curNodes = nil
 					curPIsHeading = false
+					curPHeadingLevel = 0
+					curPAlign = ""
+					curPFirstLineIndent = false
+					curPIsList = false
 				}
 				pDepth++
 			} else if pDepth > 0 && isWordElement(t.Name, "pStyle") {
-				for _, attr := range t.Attr {
-					if attr.Name.Local == "val" {
-						valLower := strings.ToLower(attr.Value)
-						if strings.Contains(valLower, "heading") || strings.Contains(valLower, "title") || strings.Contains(valLower, "заголовок") {
-							curPIsHeading = true
+				valLower := strings.ToLower(getAttrVal(t.Attr, "val"))
+				if strings.Contains(valLower, "heading") || strings.Contains(valLower, "title") || strings.Contains(valLower, "заголовок") {
+					curPIsHeading = true
+					if strings.Contains(valLower, "1") {
+						curPHeadingLevel = 1
+					} else if strings.Contains(valLower, "2") {
+						curPHeadingLevel = 2
+					} else if strings.Contains(valLower, "3") {
+						curPHeadingLevel = 3
+					} else {
+						curPHeadingLevel = 1
+					}
+				}
+			} else if pDepth > 0 && rDepth == 0 && isWordElement(t.Name, "jc") {
+				if a := getAlignmentVal(t.Attr); a != "" {
+					curPAlign = a
+				}
+			} else if pDepth > 0 && rDepth == 0 && isWordElement(t.Name, "ind") {
+				if hasFirstLineIndent(t.Attr) {
+					curPFirstLineIndent = true
+				}
+			} else if pDepth > 0 && rDepth == 0 && isWordElement(t.Name, "numPr") {
+				curPIsList = true
+			} else if pDepth > 0 && isWordElement(t.Name, "r") {
+				if rDepth == 0 {
+					curRBold = false
+					curRItalic = false
+					curRUnderline = false
+					curRStrike = false
+					curRCode = false
+				}
+				rDepth++
+			} else if pDepth > 0 && rDepth > 0 && isWordElement(t.Name, "b") {
+				curRBold = isPropertyTrue(t.Attr)
+			} else if pDepth > 0 && rDepth > 0 && isWordElement(t.Name, "bCs") {
+				curRBold = true
+			} else if pDepth > 0 && rDepth > 0 && isWordElement(t.Name, "i") {
+				curRItalic = isPropertyTrue(t.Attr)
+			} else if pDepth > 0 && rDepth > 0 && isWordElement(t.Name, "iCs") {
+				curRItalic = true
+			} else if pDepth > 0 && rDepth > 0 && isWordElement(t.Name, "u") {
+				curRUnderline = isUnderlineTrue(t.Attr)
+			} else if pDepth > 0 && rDepth > 0 && (isWordElement(t.Name, "strike") || isWordElement(t.Name, "dstrike")) {
+				curRStrike = isPropertyTrue(t.Attr)
+			} else if pDepth > 0 && rDepth > 0 && isWordElement(t.Name, "rFonts") {
+				for _, a := range t.Attr {
+					if a.Name.Local == "ascii" || a.Name.Local == "hAnsi" || a.Name.Local == "cs" {
+						fontLower := strings.ToLower(a.Value)
+						if strings.Contains(fontLower, "courier") || strings.Contains(fontLower, "consolas") || strings.Contains(fontLower, "mono") {
+							curRCode = true
 						}
 					}
 				}
@@ -657,12 +781,22 @@ func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 					startOffset: offsetBefore,
 					endOffset:   offsetAfter,
 					text:        "\n",
+					isBold:      curRBold,
+					isItalic:    curRItalic,
+					isUnderline: curRUnderline,
+					isStrike:    curRStrike,
+					isCode:      curRCode,
 				})
 			} else if pDepth > 0 && isWordElement(t.Name, "tab") {
 				curNodes = append(curNodes, docxTextNode{
 					startOffset: offsetBefore,
 					endOffset:   offsetAfter,
 					text:        "\t",
+					isBold:      curRBold,
+					isItalic:    curRItalic,
+					isUnderline: curRUnderline,
+					isStrike:    curRStrike,
+					isCode:      curRCode,
 				})
 			} else if pDepth > 0 && (isWordElement(t.Name, "endnoteRef") || isWordElement(t.Name, "footnoteRef")) {
 				if curNoteId != "" && !inSpecialNote {
@@ -687,23 +821,47 @@ func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 					startOffset: tStartOffset,
 					endOffset:   offsetAfter,
 					text:        curTText.String(),
+					isBold:      curRBold,
+					isItalic:    curRItalic,
+					isUnderline: curRUnderline,
+					isStrike:    curRStrike,
+					isCode:      curRCode,
 				})
+			} else if isWordElement(t.Name, "r") {
+				rDepth--
+				if rDepth <= 0 {
+					rDepth = 0
+					curRBold = false
+					curRItalic = false
+					curRUnderline = false
+					curRStrike = false
+					curRCode = false
+				}
 			} else if isWordElement(t.Name, "p") {
 				pDepth--
 				if pDepth == 0 {
 					if !inSpecialNote {
 						isHeading := curPIsHeading
+						var sb strings.Builder
+						for _, n := range curNodes {
+							sb.WriteString(n.text)
+						}
+						str := strings.TrimSpace(sb.String())
 						if !isHeading && tblDepth == 0 {
-							var sb strings.Builder
-							for _, n := range curNodes {
-								sb.WriteString(n.text)
-							}
-							str := strings.TrimSpace(sb.String())
 							if isDocxHeadingText(str) {
 								isHeading = true
+								curPHeadingLevel = 1
 							}
 						}
-						p := docxParagraph{nodes: curNodes, isHeading: isHeading}
+						p := docxParagraph{
+							nodes:           curNodes,
+							isHeading:       isHeading,
+							headingLevel:    curPHeadingLevel,
+							alignment:       curPAlign,
+							firstLineIndent: curPFirstLineIndent,
+							isList:          curPIsList,
+							isEmpty:         len(str) == 0,
+						}
 						if tblDepth > 0 && tcDepth > 0 {
 							curCell.paragraphs = append(curCell.paragraphs, p)
 						} else {
@@ -719,12 +877,18 @@ func parseDocxXML(xmlData []byte) ([]docxBlock, error) {
 					}
 					curNodes = nil
 					curPIsHeading = false
+					curPHeadingLevel = 0
+					curPAlign = ""
+					curPFirstLineIndent = false
+					curPIsList = false
 				}
 			} else if isWordElement(t.Name, "tc") {
 				tcDepth--
 				if tcDepth == 0 && tblDepth > 0 && trDepth > 0 {
+					curCell.alignment = curCellAlign
 					curRow.cells = append(curRow.cells, curCell)
 					curCell = docxCell{}
+					curCellAlign = ""
 				}
 			} else if isWordElement(t.Name, "tr") {
 				trDepth--
@@ -764,24 +928,90 @@ func extractParagraphsFromBlocks(blocks []docxBlock) []docxParagraph {
 	return paras
 }
 
-func buildParagraphSegments(text string, matches []docxMatch, anon *anonymizer.Anonymizer, ts *anonymizer.TokenSession) []TextParagraphSegment {
+// buildStyledParagraphSegments creates structured segments preserving formatting styles (bold, italic, etc.)
+// and entity replacement tokens.
+func buildStyledParagraphSegments(nodes []docxTextNode, matches []docxMatch, anon *anonymizer.Anonymizer, ts *anonymizer.TokenSession) []TextParagraphSegment {
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	type nodeSpan struct {
+		node  docxTextNode
+		start int
+		end   int
+	}
+
+	var pStr strings.Builder
+	spans := make([]nodeSpan, 0, len(nodes))
+	for _, n := range nodes {
+		start := pStr.Len()
+		pStr.WriteString(n.text)
+		end := pStr.Len()
+		spans = append(spans, nodeSpan{node: n, start: start, end: end})
+	}
+	text := pStr.String()
+
 	if len(matches) == 0 {
-		return []TextParagraphSegment{
-			{
-				Text:     text,
-				IsEntity: false,
-			},
+		var segments []TextParagraphSegment
+		for _, sp := range spans {
+			if sp.start == sp.end {
+				continue
+			}
+			segments = append(segments, TextParagraphSegment{
+				Text:        sp.node.text,
+				IsEntity:    false,
+				IsBold:      sp.node.isBold,
+				IsItalic:    sp.node.isItalic,
+				IsUnderline: sp.node.isUnderline,
+				IsStrike:    sp.node.isStrike,
+				IsCode:      sp.node.isCode,
+			})
 		}
+		return segments
+	}
+
+	getStyleAt := func(offset int) (bold, italic, underline, strike, code bool) {
+		for _, sp := range spans {
+			if offset >= sp.start && offset < sp.end {
+				return sp.node.isBold, sp.node.isItalic, sp.node.isUnderline, sp.node.isStrike, sp.node.isCode
+			}
+		}
+		if len(spans) > 0 {
+			last := spans[len(spans)-1].node
+			return last.isBold, last.isItalic, last.isUnderline, last.isStrike, last.isCode
+		}
+		return false, false, false, false, false
+	}
+
+	emitNonEntity := func(start, end int) []TextParagraphSegment {
+		if start >= end || start >= len(text) {
+			return nil
+		}
+		var segs []TextParagraphSegment
+		for _, sp := range spans {
+			iStart := max(start, sp.start)
+			iEnd := min(end, sp.end)
+			if iStart < iEnd {
+				chunkText := text[iStart:iEnd]
+				segs = append(segs, TextParagraphSegment{
+					Text:        chunkText,
+					IsEntity:    false,
+					IsBold:      sp.node.isBold,
+					IsItalic:    sp.node.isItalic,
+					IsUnderline: sp.node.isUnderline,
+					IsStrike:    sp.node.isStrike,
+					IsCode:      sp.node.isCode,
+				})
+			}
+		}
+		return segs
 	}
 
 	var segments []TextParagraphSegment
 	lastIdx := 0
 	for _, m := range matches {
 		if m.start > lastIdx && m.start <= len(text) {
-			segments = append(segments, TextParagraphSegment{
-				Text:     text[lastIdx:m.start],
-				IsEntity: false,
-			})
+			segments = append(segments, emitNonEntity(lastIdx, m.start)...)
 		}
 		var repl string
 		if ts != nil {
@@ -789,23 +1019,45 @@ func buildParagraphSegments(text string, matches []docxMatch, anon *anonymizer.A
 		} else {
 			repl = generateSynthetic(anon, m.entityType, m.value)
 		}
+		b, it, u, s, c := getStyleAt(m.start)
 		segments = append(segments, TextParagraphSegment{
-			Text:       repl,
-			IsEntity:   true,
-			Type:       m.entityType,
-			Original:   m.value,
-			Anonymized: repl,
+			Text:        repl,
+			IsEntity:    true,
+			Type:        m.entityType,
+			Original:    m.value,
+			Anonymized:  repl,
+			IsBold:      b,
+			IsItalic:    it,
+			IsUnderline: u,
+			IsStrike:    s,
+			IsCode:      c,
 		})
 		lastIdx = m.end
 	}
 	if lastIdx < len(text) {
-		segments = append(segments, TextParagraphSegment{
-			Text:     text[lastIdx:],
-			IsEntity: false,
-		})
+		segments = append(segments, emitNonEntity(lastIdx, len(text))...)
 	}
-	return segments
+
+	var merged []TextParagraphSegment
+	for _, seg := range segments {
+		if len(merged) > 0 && !seg.IsEntity && !merged[len(merged)-1].IsEntity &&
+			seg.IsBold == merged[len(merged)-1].IsBold &&
+			seg.IsItalic == merged[len(merged)-1].IsItalic &&
+			seg.IsUnderline == merged[len(merged)-1].IsUnderline &&
+			seg.IsStrike == merged[len(merged)-1].IsStrike &&
+			seg.IsCode == merged[len(merged)-1].IsCode {
+			merged[len(merged)-1].Text += seg.Text
+		} else {
+			merged = append(merged, seg)
+		}
+	}
+	return merged
 }
+
+func buildParagraphSegments(text string, matches []docxMatch, anon *anonymizer.Anonymizer, ts *anonymizer.TokenSession) []TextParagraphSegment {
+	return buildStyledParagraphSegments([]docxTextNode{{text: text}}, matches, anon, ts)
+}
+
 
 func getDisabledEntityTypes(options map[string]interface{}) map[string]bool {
 	disabled := make(map[string]bool)
@@ -932,6 +1184,13 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 				pStr := paraText.String()
 				trimmedP := strings.TrimSpace(pStr)
 				if trimmedP == "" {
+					if isBodyOrNotes {
+						documentBlocks = append(documentBlocks, TextDocumentBlock{
+							Type:    "paragraph",
+							Index:   len(documentBlocks) + 1,
+							IsEmpty: true,
+						})
+					}
 					continue
 				}
 
@@ -947,7 +1206,7 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 				}
 
 				if isBodyOrNotes {
-					segments := buildParagraphSegments(pStr, matches, h.Anon, ts)
+					segments := buildStyledParagraphSegments(b.paragraph.nodes, matches, h.Anon, ts)
 
 					paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
 						Index:    len(paragraphPreviews) + 1,
@@ -959,9 +1218,14 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 						blockTypeStr = "heading"
 					}
 					documentBlocks = append(documentBlocks, TextDocumentBlock{
-						Type:     blockTypeStr,
-						Index:    len(documentBlocks) + 1,
-						Segments: segments,
+						Type:            blockTypeStr,
+						Index:           len(documentBlocks) + 1,
+						Segments:        segments,
+						Alignment:       b.paragraph.alignment,
+						HeadingLevel:    b.paragraph.headingLevel,
+						FirstLineIndent: b.paragraph.firstLineIndent,
+						IsList:          b.paragraph.isList,
+						IsEmpty:         false,
 					})
 				}
 			} else if b.blockType == docxBlockTypeTable {
@@ -970,12 +1234,15 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 					var cellPreviews []TextTableCellPreview
 					for _, c := range r.cells {
 						var cellText strings.Builder
+						var allCellNodes []docxTextNode
 						for pIdx, cp := range c.paragraphs {
 							if pIdx > 0 {
 								cellText.WriteString("\n")
+								allCellNodes = append(allCellNodes, docxTextNode{text: "\n"})
 							}
 							for _, n := range cp.nodes {
 								cellText.WriteString(n.text)
+								allCellNodes = append(allCellNodes, n)
 							}
 						}
 						cStr := cellText.String()
@@ -993,9 +1260,9 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 						if isBodyOrNotes {
 							var segments []TextParagraphSegment
 							if strings.TrimSpace(cStr) == "" {
-								segments = []TextParagraphSegment{{Text: cStr, IsEntity: false}}
+								segments = buildStyledParagraphSegments(allCellNodes, nil, h.Anon, ts)
 							} else {
-								segments = buildParagraphSegments(cStr, matches, h.Anon, ts)
+								segments = buildStyledParagraphSegments(allCellNodes, matches, h.Anon, ts)
 								paragraphPreviews = append(paragraphPreviews, TextParagraphPreview{
 									Index:    len(paragraphPreviews) + 1,
 									Segments: segments,
@@ -1003,7 +1270,8 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 							}
 
 							cellPreviews = append(cellPreviews, TextTableCellPreview{
-								Segments: segments,
+								Segments:  segments,
+								Alignment: c.alignment,
 							})
 						}
 					}
