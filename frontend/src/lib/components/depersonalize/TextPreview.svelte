@@ -111,7 +111,7 @@
 
   function getSegmentStyleClass(seg: TextParagraphSegment): string {
     const classes: string[] = [];
-    if (seg.isBold) classes.push('font-bold text-[#1C1917]');
+    if (seg.isBold) classes.push('font-bold');
     if (seg.isItalic) classes.push('italic');
     if (seg.isUnderline) classes.push('underline underline-offset-2');
     if (seg.isStrike) classes.push('line-through');

@@ -68,6 +68,14 @@ func TestCardValidation(t *testing.T) {
 	if !ValidateCardNumber(validMir) {
 		t.Fatalf("expected valid Mir %s to pass", validMir)
 	}
+	validAmex := "378282246310005" // 15 digits Amex
+	if !ValidateCardNumber(validAmex) {
+		t.Fatalf("expected valid Amex %s to pass", validAmex)
+	}
+	validVisa13 := "4000000000006" // 13 digits Visa
+	if !ValidateCardNumber(validVisa13) {
+		t.Fatalf("expected valid 13-digit Visa %s to pass", validVisa13)
+	}
 
 	// Invalid prefix or short length
 	if ValidateCardNumber("1234567890123456") {

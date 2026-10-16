@@ -103,9 +103,9 @@ type TextTablePreview struct {
 	Rows []TextTableRowPreview `json:"rows"`
 }
 
-// TextDocumentBlock represents either a top-level paragraph or a table in a document.
+// TextDocumentBlock represents either a top-level paragraph, heading, or a table in a document.
 type TextDocumentBlock struct {
-	Type            string                 `json:"type"` // "paragraph" or "table"
+	Type            string                 `json:"type"` // "paragraph", "heading", or "table"
 	Index           int                    `json:"index"`
 	Segments        []TextParagraphSegment `json:"segments,omitempty"`
 	Table           *TextTablePreview      `json:"table,omitempty"`

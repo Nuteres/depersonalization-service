@@ -1269,9 +1269,19 @@ func (h *DOCXHandler) Inspect(r io.ReaderAt, size int64) (int, []EntityCount, []
 								})
 							}
 
+							cellAlign := c.alignment
+							if cellAlign == "" {
+								for _, cp := range c.paragraphs {
+									if cp.alignment != "" {
+										cellAlign = cp.alignment
+										break
+									}
+								}
+							}
+
 							cellPreviews = append(cellPreviews, TextTableCellPreview{
 								Segments:  segments,
-								Alignment: c.alignment,
+								Alignment: cellAlign,
 							})
 						}
 					}

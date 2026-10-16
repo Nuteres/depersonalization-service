@@ -89,12 +89,13 @@ func ValidTargetExtensions(inputExt string) []string {
 // and optional .depmap key container generation.
 func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, reporter domain.ProgressReporter) (res *domain.ProcessResult, err error) {
 	var (
-		sourceHash string
-		resultHash string
-		totalRows  int
-		entities   []string
-		keyCreated bool
-		outPath    = opts.OutputPath
+		sourceHash     string
+		resultHash     string
+		totalRows      int
+		entities       []string
+		keyCreated     bool
+		archiveCreated bool
+		outPath        = opts.OutputPath
 	)
 
 	if opts.Mode == "" {
@@ -374,10 +375,10 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	cleanup := func() {
 		closeOutFile()
 		_ = os.Remove(outPath)
-		if opts.CreateKey && keyPath != "" {
+		if keyCreated && keyPath != "" {
 			_ = os.Remove(keyPath)
 		}
-		if opts.CreateArchive && archivePath != "" {
+		if archiveCreated && archivePath != "" {
 			_ = os.Remove(archivePath)
 		}
 	}
@@ -504,10 +505,11 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 			effectiveArchivePassword = pwd
 		}
 
-		if err := ziputil.CreatePasswordZip(outPath, archivePath, effectiveArchivePassword); err != nil {
+		if err := ziputil.CreatePasswordZip(ctx, outPath, archivePath, effectiveArchivePassword); err != nil {
 			cleanup()
 			return nil, fmt.Errorf("failed to create password-protected archive: %w", err)
 		}
+		archiveCreated = true
 		finalArchivePath = archivePath
 	}
 

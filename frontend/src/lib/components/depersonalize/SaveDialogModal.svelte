@@ -47,7 +47,24 @@
   let archivePassword = $state('');
   let showArchivePassword = $state(false);
   let archivePath = $state('');
-  let archivePasswordError = $state('');
+
+  function getArchivePasswordError(pwd: string): string {
+    const trimmed = pwd.trim();
+    if (!trimmed) return '';
+    if (pwd.length < 4) return 'Пароль архива должен содержать не менее 4 символов';
+    if (pwd !== trimmed) return 'Пароль архива не должен содержать пробелов';
+    for (let i = 0; i < pwd.length; i++) {
+      const code = pwd.charCodeAt(i);
+      if (code < 33 || code > 126) {
+        return 'Пароль архива может содержать только латиницу, цифры и спецсимволы без пробелов';
+      }
+    }
+    return '';
+  }
+
+  const archivePasswordError = $derived(
+    createArchive && archivePassword.trim() ? getArchivePasswordError(archivePassword) : ''
+  );
 
   // Real-time password validation for key
   $effect(() => {
@@ -71,17 +88,6 @@
     }
   });
 
-  // Real-time validation for archive password
-  $effect(() => {
-    if (!createArchive || !archivePassword.trim()) {
-      archivePasswordError = '';
-    } else {
-      ValidateArchivePassword(archivePassword).then((res) => {
-        archivePasswordError = res.valid ? '' : res.error;
-      });
-    }
-  });
-
   const isPasswordValid = $derived(
     appState.currentFileInfo?.fileType === 'pdf' ||
     !createKey ||
@@ -91,7 +97,7 @@
 
   const isFormValid = $derived(
     isPasswordValid &&
-    (!createArchive || !archivePassword.trim() || !archivePasswordError)
+    (!createArchive || !archivePassword.trim() || archivePasswordError === '')
   );
 
   // Generate random salt on open if not already set
@@ -209,7 +215,6 @@
       const pwd = await GenerateArchivePassword();
       if (pwd) {
         archivePassword = pwd;
-        archivePasswordError = '';
       }
     } catch (err) {
       console.error('Failed to generate archive password:', err);
@@ -700,7 +705,7 @@
                 Упаковать в ZIP-архив с паролем
               </span>
               <div class="text-[11px] text-[#78716C] mt-0.5 leading-relaxed font-sans">
-                Создает защищенный архив с обработанным файлом и ключом деобезличивания.
+                Создает защищенный паролем архив с обработанным файлом для отправки по почте.
               </div>
             </div>
           </label>

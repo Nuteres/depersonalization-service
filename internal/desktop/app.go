@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	goruntime "runtime"
 	"runtime/debug"
@@ -118,17 +119,29 @@ func (a *DesktopApp) InspectFile(path string) (*domain.FileInfo, error) {
 
 // GetFileBase64 reads the file at path and returns its contents encoded as a base64 string.
 func (a *DesktopApp) GetFileBase64(path string) (string, error) {
-	stat, err := os.Stat(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %w", err)
+	}
+	defer f.Close()
+
+	stat, err := f.Stat()
 	if err != nil {
 		return "", fmt.Errorf("failed to stat file: %w", err)
 	}
 	if stat.Size() > domain.MaxBase64PreviewFileSize {
 		return "", fmt.Errorf("%w: размер файла превышает лимит безопасности для предпросмотра (100 МБ)", domain.ErrFileTooLarge)
 	}
-	data, err := os.ReadFile(path)
+
+	limited := io.LimitReader(f, domain.MaxBase64PreviewFileSize+1)
+	data, err := io.ReadAll(limited)
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
+	if int64(len(data)) > domain.MaxBase64PreviewFileSize {
+		return "", fmt.Errorf("%w: размер файла превышает лимит безопасности для предпросмотра (100 МБ)", domain.ErrFileTooLarge)
+	}
+
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 

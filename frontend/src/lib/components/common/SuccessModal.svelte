@@ -113,15 +113,19 @@
     return null;
   });
 
-  async function handleRevealFolder() {
-    const path = appState.successResult?.outputPath || appState.successResult?.archivePath;
-    if (!path) return;
+  async function handleRevealFile(targetPath?: string) {
+    if (!targetPath) return;
     try {
-      await OpenContainingFolder(path);
+      await OpenContainingFolder(targetPath);
     } catch (err) {
       console.error('Failed to open containing folder:', err);
       appState.showToast('Не удалось открыть папку', 'error');
     }
+  }
+
+  async function handleRevealFolder() {
+    const path = appState.successResult?.outputPath || appState.successResult?.archivePath || appState.successResult?.keyPath;
+    await handleRevealFile(path);
   }
 </script>
 
@@ -160,49 +164,88 @@
         </button>
       </div>
 
-      <!-- Compact Files & Location Card -->
-      <div class="border border-[#E8E7E3] bg-[#FAF9F5] rounded-lg p-3.5 space-y-2">
-        <div class="flex items-center gap-1.5 min-w-0 text-xs font-mono text-[#57534E]">
-          <svg class="w-3.5 h-3.5 text-stone-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-          </svg>
-          <span class="text-[#78716C] shrink-0">Папка:</span>
-          <span class="font-semibold text-[#1C1917] truncate select-all" title={savedDir}>
-            {savedDir}
-          </span>
+      <!-- Saved Files Card -->
+      <div class="border border-[#E8E7E3] bg-[#FAF9F5] rounded-lg p-3 space-y-2">
+        <div class="text-[11px] font-semibold text-[#78716C] uppercase tracking-wider">
+          Сохраненные файлы
         </div>
 
-        <div class="space-y-1.5 pt-2 border-t border-[#E8E7E3]">
+        <div class="space-y-1.5">
           {#if appState.successResult.outputPath}
-            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-0.5">
-              <svg class="w-3.5 h-3.5 text-emerald-700 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span class="truncate font-medium select-all" title={appState.successResult.outputPath}>
-                {outputFileName}
-              </span>
+            <div class="flex items-center justify-between gap-2 bg-white border border-[#E8E7E3] rounded-md p-2">
+              <div class="min-w-0 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 text-emerald-700 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <div class="min-w-0">
+                  <div class="text-xs font-mono font-medium text-[#1C1917] truncate select-all" title={appState.successResult.outputPath}>
+                    {outputFileName}
+                  </div>
+                  <div class="text-[10px] text-[#78716C] font-mono truncate select-all" title={appState.successResult.outputPath}>
+                    {getDirectory(appState.successResult.outputPath)}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onclick={() => handleRevealFile(appState.successResult?.outputPath)}
+                class="px-2 py-1 bg-[#FAF9F5] hover:bg-[#F5F5F4] border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-[11px] font-medium rounded shadow-2xs pressable shrink-0 cursor-pointer"
+                title="Показать файл в папке"
+              >
+                Показать
+              </button>
             </div>
           {/if}
 
           {#if !isRestore && appState.successResult.archivePath}
-            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-0.5">
-              <svg class="w-3.5 h-3.5 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-              </svg>
-              <span class="truncate font-medium select-all" title={appState.successResult.archivePath}>
-                {archiveFileName}
-              </span>
+            <div class="flex items-center justify-between gap-2 bg-white border border-[#E8E7E3] rounded-md p-2">
+              <div class="min-w-0 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+                <div class="min-w-0">
+                  <div class="text-xs font-mono font-medium text-[#1C1917] truncate select-all" title={appState.successResult.archivePath}>
+                    {archiveFileName}
+                  </div>
+                  <div class="text-[10px] text-[#78716C] font-mono truncate select-all" title={appState.successResult.archivePath}>
+                    {getDirectory(appState.successResult.archivePath)}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onclick={() => handleRevealFile(appState.successResult?.archivePath)}
+                class="px-2 py-1 bg-[#FAF9F5] hover:bg-[#F5F5F4] border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-[11px] font-medium rounded shadow-2xs pressable shrink-0 cursor-pointer"
+                title="Показать архив в папке"
+              >
+                Показать
+              </button>
             </div>
           {/if}
 
           {#if !isRestore && appState.successResult.keyPath}
-            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-0.5">
-              <svg class="w-3.5 h-3.5 text-stone-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-              </svg>
-              <span class="truncate font-medium select-all" title={appState.successResult.keyPath}>
-                {keyFileName}
-              </span>
+            <div class="flex items-center justify-between gap-2 bg-white border border-[#E8E7E3] rounded-md p-2">
+              <div class="min-w-0 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 text-stone-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                <div class="min-w-0">
+                  <div class="text-xs font-mono font-medium text-[#1C1917] truncate select-all" title={appState.successResult.keyPath}>
+                    {keyFileName}
+                  </div>
+                  <div class="text-[10px] text-[#78716C] font-mono truncate select-all" title={appState.successResult.keyPath}>
+                    {getDirectory(appState.successResult.keyPath)}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onclick={() => handleRevealFile(appState.successResult?.keyPath)}
+                class="px-2 py-1 bg-[#FAF9F5] hover:bg-[#F5F5F4] border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-[11px] font-medium rounded shadow-2xs pressable shrink-0 cursor-pointer"
+                title="Показать ключ в папке"
+              >
+                Показать
+              </button>
             </div>
           {/if}
         </div>

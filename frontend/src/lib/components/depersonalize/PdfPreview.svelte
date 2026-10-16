@@ -517,9 +517,11 @@
         <div class="text-center py-16 px-6 max-w-lg mx-auto bg-white border border-rose-200 p-6 shadow-sm">
           <div class="text-rose-600 font-bold text-sm mb-2">Не удалось отобразить PDF в интерактивном предпросмотре</div>
           <p class="text-xs text-[#78716C] font-mono leading-relaxed mb-3">{loadError}</p>
-          <p class="text-[11px] text-[#A8A29E] leading-relaxed">
-            Файлы размером свыше 100 МБ не загружаются в браузерный предпросмотр для предотвращения переполнения оперативной памяти. Обезличивание документа по-прежнему доступно по кнопке внизу.
-          </p>
+          {#if fileInfo && fileInfo.size > MAX_PREVIEW_FILE_SIZE}
+            <p class="text-[11px] text-[#A8A29E] leading-relaxed">
+              Файлы размером свыше 100 МБ не загружаются в браузерный предпросмотр для предотвращения переполнения оперативной памяти. Обезличивание документа по-прежнему доступно по кнопке внизу.
+            </p>
+          {/if}
         </div>
       {:else if pagesData.length > 0}
         <!-- Render each page sequentially in continuous scroll -->

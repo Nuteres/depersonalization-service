@@ -1007,9 +1007,20 @@ func TestInspector_LargeCSV_Allowed_And_LargePDF_Rejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create large.csv: %v", err)
 	}
-	_, _ = f.WriteString("ФИО,Телефон\nИванов Иван,+79991234567\n")
-	if err := f.Truncate(120 * 1024 * 1024); err != nil {
-		t.Fatalf("failed to truncate large.csv: %v", err)
+	_, _ = f.WriteString("ФИО,Телефон\n")
+	chunk := bytes.Repeat([]byte("Иванов Иван,+79991234567\n"), 1024)
+	written := 0
+	target := 101 * 1024 * 1024
+	for written < target {
+		toWrite := chunk
+		if written+len(toWrite) > target {
+			toWrite = toWrite[:target-written]
+		}
+		n, err := f.Write(toWrite)
+		if err != nil {
+			t.Fatalf("failed to write to large.csv: %v", err)
+		}
+		written += n
 	}
 	_ = f.Close()
 

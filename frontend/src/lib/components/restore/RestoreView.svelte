@@ -215,7 +215,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
             </svg>
             <div class="font-semibold text-xs text-[#1C1917]">Выберите или перетащите файл</div>
-            <div class="text-[11px] text-[#A8A29E] mt-0.5 mb-3.5">XLSX, ODS, CSV, DOCX, TXT</div>
+            <div class="text-[11px] text-[#A8A29E] mt-0.5 mb-3.5">XLSX, ODS, CSV, DOCX, ODT</div>
             <button
               type="button"
               onclick={(e) => {

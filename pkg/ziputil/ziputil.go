@@ -1,6 +1,7 @@
 package ziputil
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -41,8 +42,19 @@ func ValidateArchivePassword(password string) error {
 // CreatePasswordZip упаковывает файл srcFilePath в защищённый паролем ZIP-архив destZipPath,
 // используя универсальное шифрование PKWARE (zip.StandardEncryption / ZipCrypto).
 // Внутри архива файл сохраняется под своим базовым именем (filepath.Base).
-// Создание выполняется атомарно через временный файл .tmp.
-func CreatePasswordZip(srcFilePath, destZipPath, password string) (err error) {
+// Создание выполняется атомарно через временный файл .tmp с проверкой отмены контекста.
+func CreatePasswordZip(ctx context.Context, srcFilePath, destZipPath, password string) (err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if filepath.Clean(srcFilePath) == filepath.Clean(destZipPath) {
+		return errors.New("целевой путь архива не может совпадать с исходным файлом")
+	}
+
 	if err := ValidateArchivePassword(password); err != nil {
 		return err
 	}
@@ -81,8 +93,23 @@ func CreatePasswordZip(srcFilePath, destZipPath, password string) (err error) {
 		return fmt.Errorf("не удалось инициализировать шифрование архива: %w", err)
 	}
 
-	if _, err := io.Copy(entryWriter, srcFile); err != nil {
-		return fmt.Errorf("ошибка при записи файла в архив: %w", err)
+	buf := make([]byte, 32*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		n, readErr := srcFile.Read(buf)
+		if n > 0 {
+			if _, writeErr := entryWriter.Write(buf[:n]); writeErr != nil {
+				return fmt.Errorf("ошибка при записи файла в архив: %w", writeErr)
+			}
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return fmt.Errorf("ошибка при чтении файла для архива: %w", readErr)
+		}
 	}
 
 	if err := zipWriter.Close(); err != nil {

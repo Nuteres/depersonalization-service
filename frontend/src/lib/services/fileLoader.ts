@@ -9,11 +9,14 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
+let loadSequence = 0;
+
 /**
  * Loads and inspects a file, updating appState and tableState accordingly.
  */
 export async function loadFile(path: string, size?: number): Promise<boolean> {
   if (!path) return false;
+  const loadId = ++loadSequence;
 
   const fileName = path.split('/').pop()?.split('\\').pop() || 'файл';
   const sizeStr = size ? formatFileSize(size) : '';
@@ -27,6 +30,9 @@ export async function loadFile(path: string, size?: number): Promise<boolean> {
 
   try {
     const info = await InspectFile(path);
+    if (loadId !== loadSequence) {
+      return false;
+    }
     if (!info) {
       appState.showToast('Не удалось получить информацию о файле', 'error');
       return false;
@@ -52,11 +58,14 @@ export async function loadFile(path: string, size?: number): Promise<boolean> {
     appState.showToast(`Файл «${info.name}» загружен. Найдено категорий ПДн: ${entityCount}`, 'success');
     return true;
   } catch (err) {
+    if (loadId !== loadSequence) return false;
     console.error('Error loading file:', err);
     appState.showToast(`Ошибка открытия файла: ${err}`, 'error');
     return false;
   } finally {
-    appState.finishFileLoading();
+    if (loadId === loadSequence) {
+      appState.finishFileLoading();
+    }
   }
 }
 

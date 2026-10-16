@@ -91,12 +91,12 @@ func ValidateCardLuhn(card string) bool {
 }
 
 // ValidateCardNumber validates that a string represents a valid bank card:
-// 1) Length must be 16, 18, or 19 digits.
+// 1) Length must be 13, 15, 16, 18, or 19 digits.
 // 2) Must start with a known card prefix (Mir, Visa, Mastercard, Maestro, UnionPay, Amex).
 // 3) Must pass the Luhn algorithm checksum.
 func ValidateCardNumber(card string) bool {
 	digits := cleanDigits(card)
-	if len(digits) != 16 && len(digits) != 18 && len(digits) != 19 {
+	if len(digits) != 13 && len(digits) != 15 && len(digits) != 16 && len(digits) != 18 && len(digits) != 19 {
 		return false
 	}
 	hasValidPrefix := false

@@ -175,6 +175,8 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 			ext = ".ods"
 		} else if origExt == ".docx" {
 			ext = ".docx"
+		} else if origExt == ".odt" {
+			ext = ".odt"
 		} else {
 			ext = ".xlsx"
 		}

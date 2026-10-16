@@ -14,7 +14,7 @@
 
 - 100% Air-Gapped: Zero external HTTP/WebSocket network calls, zero CDN requests, zero telemetry.
 - Go Vendor: All Go dependencies must be vendored into `vendor/` and built with `-mod=vendor`.
-- SemVer: Version bumped to `1.12.0` across `internal/version/version.go`, `frontend/package.json`, and `Makefile`.
+- SemVer: Version bumped to `1.13.3` across `internal/version/version.go`, `frontend/package.json`, and `Makefile`.
 - Encryption Algorithm: Strictly PKWARE Standard Encryption (`zip.StandardEncryption` / ZipCrypto) for universal out-of-the-box extraction in Windows Explorer and macOS.
 - File Preservation: Keep both the uncompressed depersonalized file and the password-protected `.zip` archive on disk.
 - Archive Contents: Archive must contain strictly the depersonalized file; the `.depmap` key file is never placed in the archive.
@@ -39,7 +39,7 @@
 
 **Interfaces:**
 - Produces:
-  - `ziputil.CreatePasswordZip(srcFilePath, destZipPath, password string) error`
+  - `ziputil.CreatePasswordZip(ctx context.Context, srcFilePath, destZipPath, password string) error`
   - `ziputil.ValidateArchivePassword(password string) error`
 
 - [ ] **Step 1: Write the failing test for `pkg/ziputil`**
@@ -48,9 +48,10 @@
 package ziputil_test
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"dep_service/pkg/ziputil"
@@ -241,7 +242,7 @@ if opts.CreateArchive && err == nil {
         effectiveArchivePassword = pwd
     }
 
-    if err := ziputil.CreatePasswordZip(outPath, archivePath, effectiveArchivePassword); err != nil {
+    if err := ziputil.CreatePasswordZip(ctx, outPath, archivePath, effectiveArchivePassword); err != nil {
         cleanup()
         return nil, fmt.Errorf("failed to create password-protected archive: %w", err)
     }

@@ -3,8 +3,9 @@
   import { zoomState } from '../../stores/zoomState.svelte';
 
   const envBadge = $derived.by(() => {
-    if (!appState.appInfo) return 'v1.13.0';
-    const v = appState.appInfo.version || '1.13.0';
+    if (!appState.appInfo) return '...';
+    const v = appState.appInfo.version;
+    if (!v) return '—';
     return v.startsWith('v') ? v : `v${v}`;
   });
 </script>

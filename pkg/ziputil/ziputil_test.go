@@ -1,6 +1,8 @@
 package ziputil_test
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,7 +22,7 @@ func TestCreatePasswordZip_SuccessAndExtract(t *testing.T) {
 	zipFile := filepath.Join(tmpDir, "report_anonymized.zip")
 	password := "Secret123"
 
-	err := ziputil.CreatePasswordZip(srcFile, zipFile, password)
+	err := ziputil.CreatePasswordZip(context.Background(), srcFile, zipFile, password)
 	if err != nil {
 		t.Fatalf("CreatePasswordZip failed: %v", err)
 	}
@@ -50,10 +52,42 @@ func TestCreatePasswordZip_SuccessAndExtract(t *testing.T) {
 	}
 	defer rc.Close()
 
-	buf := make([]byte, len(content))
-	n, _ := rc.Read(buf)
-	if string(buf[:n]) != string(content) {
-		t.Errorf("expected content %q, got %q", string(content), string(buf[:n]))
+	readContent, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("failed to read full entry content: %v", err)
+	}
+	if string(readContent) != string(content) {
+		t.Errorf("expected content %q, got %q", string(content), string(readContent))
+	}
+}
+
+func TestCreatePasswordZip_IdenticalPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcFile := filepath.Join(tmpDir, "same.xlsx")
+	if err := os.WriteFile(srcFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("failed to write src file: %v", err)
+	}
+
+	err := ziputil.CreatePasswordZip(context.Background(), srcFile, srcFile, "Secret123")
+	if err == nil {
+		t.Fatalf("expected error when srcFilePath == destZipPath, got nil")
+	}
+}
+
+func TestCreatePasswordZip_ContextCanceled(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcFile := filepath.Join(tmpDir, "test.xlsx")
+	if err := os.WriteFile(srcFile, []byte("test data"), 0644); err != nil {
+		t.Fatalf("failed to write src file: %v", err)
+	}
+	zipFile := filepath.Join(tmpDir, "test.zip")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-canceled
+
+	err := ziputil.CreatePasswordZip(ctx, srcFile, zipFile, "Secret123")
+	if err == nil {
+		t.Fatalf("expected context canceled error, got nil")
 	}
 }
 
