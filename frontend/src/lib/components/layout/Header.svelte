@@ -20,15 +20,6 @@
         <span id="app-env-badge" class="text-[10px] font-mono font-medium px-2 py-0.5 rounded-none bg-[#E8E7E3] text-[#44403C]">
           {envBadge}
         </span>
-        {#if appState.isFileLoading}
-          <div
-            id="header-loading-indicator"
-            class="flex items-center space-x-1.5 bg-[#FAF9F5] border border-[#E8E7E3] text-[#44403C] px-2 py-0.5 text-[10px] font-mono shadow-2xs"
-          >
-            <div class="w-1.5 h-1.5 rounded-full bg-stone-500 animate-pulse"></div>
-            <span class="truncate max-w-[200px]">Анализ: {appState.loadingFileName}...</span>
-          </div>
-        {/if}
       </div>
     </div>
   </div>
