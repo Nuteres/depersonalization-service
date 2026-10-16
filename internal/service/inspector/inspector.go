@@ -70,6 +70,13 @@ func (i *Inspector) Inspect(ctx context.Context, path string) (*domain.FileInfo,
 	if stat.IsDir() {
 		return nil, fmt.Errorf("%w: path is a directory", domain.ErrUnsupportedFormat)
 	}
+	if stat.Size() > domain.MaxInteractiveFileSize {
+		return nil, fmt.Errorf("%w: размер файла (%s) превышает допустимый лимит безопасности %s во избежание переполнения оперативной памяти",
+			domain.ErrFileTooLarge,
+			formatBytes(stat.Size()),
+			formatBytes(domain.MaxInteractiveFileSize),
+		)
+	}
 
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
@@ -1081,7 +1088,9 @@ func findPDFSensitiveMatches(text string) []pdfEntityMatch {
 	addRegexMatches(rePhonePrefixed, 1, string(detector.EntityPhone), nil)
 
 	// 5. Bank Card
-	addRegexMatches(reCard16, 1, string(detector.EntityCard), nil)
+	addRegexMatches(reCard16, 1, string(detector.EntityCard), func(s string) bool {
+		return detector.ValidateCardNumber(s)
+	})
 
 	// 6. FIO
 	addRegexMatches(reFIOPatronymic, 1, string(detector.EntityFIO), isFIOValid)
@@ -1219,4 +1228,19 @@ func extractPDFInfo(ctx context.Context, pdfBytes []byte) ([]formats.DocxTextSni
 
 	return snippets, entities, rawText, pageCount
 }
+
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d Б", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	units := []string{"КБ", "МБ", "ГБ", "ТБ"}
+	return fmt.Sprintf("%.1f %s", float64(bytes)/float64(div), units[exp])
+}
+
 
