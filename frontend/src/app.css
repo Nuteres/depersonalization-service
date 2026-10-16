@@ -197,7 +197,7 @@ body.modal-open {
 
 /* Toggle Switch Thumb Kinetics */
 .toggle-thumb {
-  transition: transform 160ms var(--ease-apple-fluid),
+  transition: translate 160ms var(--ease-apple-fluid),
               background-color 160ms ease-out;
 }
 
