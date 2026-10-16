@@ -9,10 +9,13 @@ type ProcessResult struct {
 	RowsCount     int    `json:"rowsCount"`
 	EntitiesCount int    `json:"entitiesCount"`
 	DurationMs    int64  `json:"durationMs"`
-	Message              string `json:"message"`
-	Error                string `json:"error,omitempty"`
-	EffectivePassword    string `json:"effectivePassword,omitempty"`
-	KeyPasswordGenerated bool   `json:"keyPasswordGenerated,omitempty"`
+	Message                  string `json:"message"`
+	Error                    string `json:"error,omitempty"`
+	EffectivePassword        string `json:"effectivePassword,omitempty"`
+	KeyPasswordGenerated     bool   `json:"keyPasswordGenerated,omitempty"`
+	ArchivePath              string `json:"archivePath,omitempty"`
+	ArchivePassword          string `json:"archivePassword,omitempty"`
+	ArchivePasswordGenerated bool   `json:"archivePasswordGenerated,omitempty"`
 }
 
 // KeyFileInfo holds metadata and validation status of a .depmap key container.

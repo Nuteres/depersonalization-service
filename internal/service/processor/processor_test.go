@@ -946,3 +946,82 @@ func TestProcessor_ShuffleRows_IgnoredForTextFormats(t *testing.T) {
 		t.Errorf("expected [ФИО_ token in output, got: %s", outText)
 	}
 }
+
+func TestProcessor_CreateArchive(t *testing.T) {
+	km := keymanager.New()
+	insp := inspector.New()
+	proc := processor.New(km, insp)
+
+	tmpDir := t.TempDir()
+	inPath := filepath.Join(tmpDir, "records.csv")
+	outPath := filepath.Join(tmpDir, "records_anonymized.csv")
+
+	content := "ФИО,Телефон\nИванов Иван,+79991234567\nПетров Петр,+79997654321\n"
+	if err := os.WriteFile(inPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write input file: %v", err)
+	}
+
+	opts := domain.ProcessOptions{
+		InputPath:       inPath,
+		OutputPath:      outPath,
+		Salt:            "test-salt",
+		Mode:            domain.ModeReplace,
+		Strategy:        domain.StrategySemanticTokens,
+		CreateArchive:   true,
+		ArchivePassword: "ArchivePass123",
+	}
+
+	res, err := proc.Process(context.Background(), opts, func(p, total, pct int) {})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	if !res.Success {
+		t.Fatalf("expected success, got false: %s", res.Error)
+	}
+
+	// 1. Both files must exist on disk
+	if _, err := os.Stat(outPath); err != nil {
+		t.Errorf("expected uncompressed output file to exist: %v", err)
+	}
+	expectedZipPath := filepath.Join(tmpDir, "records_anonymized.zip")
+	if _, err := os.Stat(expectedZipPath); err != nil {
+		t.Errorf("expected zip archive to exist: %v", err)
+	}
+
+	// 2. Result fields must be populated
+	if res.ArchivePath != expectedZipPath {
+		t.Errorf("expected ArchivePath %q, got %q", expectedZipPath, res.ArchivePath)
+	}
+	if res.ArchivePassword != "ArchivePass123" {
+		t.Errorf("expected ArchivePassword ArchivePass123, got %q", res.ArchivePassword)
+	}
+	if res.ArchivePasswordGenerated {
+		t.Errorf("expected ArchivePasswordGenerated to be false for manual password")
+	}
+
+	// 3. Test auto-generation when password is empty
+	outPath2 := filepath.Join(tmpDir, "records2_anonymized.csv")
+	optsAuto := domain.ProcessOptions{
+		InputPath:     inPath,
+		OutputPath:    outPath2,
+		Salt:          "test-salt",
+		Mode:          domain.ModeReplace,
+		Strategy:      domain.StrategySemanticTokens,
+		CreateArchive: true,
+	}
+	resAuto, err := proc.Process(context.Background(), optsAuto, func(p, total, pct int) {})
+	if err != nil {
+		t.Fatalf("Process with auto password failed: %v", err)
+	}
+	if len(resAuto.ArchivePassword) != 16 {
+		t.Errorf("expected 16-char auto generated password, got %q", resAuto.ArchivePassword)
+	}
+	if !resAuto.ArchivePasswordGenerated {
+		t.Errorf("expected ArchivePasswordGenerated to be true")
+	}
+	if _, err := os.Stat(resAuto.ArchivePath); err != nil {
+		t.Errorf("expected auto archive to exist: %v", err)
+	}
+}
+

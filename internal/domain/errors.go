@@ -11,4 +11,8 @@ var (
 
 	// ErrOperationCanceled is returned when an operation is cancelled via context.
 	ErrOperationCanceled = errors.New("operation canceled")
+
+	// ErrFileTooLarge is returned when a file exceeds memory safety limits.
+	ErrFileTooLarge = errors.New("file too large")
 )
+

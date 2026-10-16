@@ -40,6 +40,9 @@ type ProcessOptions struct {
 	KeyPassword       string                `json:"keyPassword"`
 	KeyPath           string                `json:"keyPath"`
 	ShuffleRows       bool                  `json:"shuffleRows"`
+	CreateArchive     bool                  `json:"createArchive"`
+	ArchivePassword   string                `json:"archivePassword"`
+	ArchivePath       string                `json:"archivePath,omitempty"`
 	PDFRedactionBoxes []PDFRedactionBox     `json:"pdfRedactionBoxes,omitempty"`
 	PDFRedactTerms    []string              `json:"pdfRedactTerms,omitempty"`
 }
