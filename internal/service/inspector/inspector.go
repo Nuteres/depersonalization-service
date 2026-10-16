@@ -70,15 +70,14 @@ func (i *Inspector) Inspect(ctx context.Context, path string) (*domain.FileInfo,
 	if stat.IsDir() {
 		return nil, fmt.Errorf("%w: path is a directory", domain.ErrUnsupportedFormat)
 	}
-	if stat.Size() > domain.MaxInteractiveFileSize {
-		return nil, fmt.Errorf("%w: размер файла (%s) превышает допустимый лимит безопасности %s во избежание переполнения оперативной памяти",
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".pdf" && stat.Size() > domain.MaxPDFInteractiveFileSize {
+		return nil, fmt.Errorf("%w: размер PDF документа (%s) превышает допустимый лимит безопасности %s во избежание переполнения оперативной памяти при рендеринге",
 			domain.ErrFileTooLarge,
 			formatBytes(stat.Size()),
-			formatBytes(domain.MaxInteractiveFileSize),
+			formatBytes(domain.MaxPDFInteractiveFileSize),
 		)
 	}
-
-	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".csv", ".tsv":
 		return inspectCSV(ctx, path)
@@ -275,7 +274,7 @@ func inspectCSV(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Extension:              strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."),
 		FileType:               "table",
 		Format:                 "csv",
-		SupportedExportFormats: []string{"csv", "xlsx"},
+		SupportedExportFormats: []string{"csv"},
 		Size:                   stat.Size(),
 		RowCount:               rowCount,
 		PageCount:              1,
@@ -478,7 +477,7 @@ func inspectXLSX(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Extension:              strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."),
 		FileType:               "table",
 		Format:                 "xlsx",
-		SupportedExportFormats: []string{"xlsx", "csv"},
+		SupportedExportFormats: []string{"xlsx"},
 		Size:                   stat.Size(),
 		RowCount:               primarySheet.RowCount,
 		PageCount:              len(sheets),
@@ -609,7 +608,7 @@ func inspectODS(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Extension:              "ods",
 		FileType:               "table",
 		Format:                 "ods",
-		SupportedExportFormats: []string{"ods", "xlsx", "csv"},
+		SupportedExportFormats: []string{"ods", "xlsx"},
 		Size:                   stat.Size(),
 		RowCount:               primarySheet.RowCount,
 		PageCount:              len(allSheets),
@@ -830,7 +829,7 @@ func inspectDOCX(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Extension:              "docx",
 		FileType:               "text",
 		Format:                 "docx",
-		SupportedExportFormats: []string{"docx", "odt"},
+		SupportedExportFormats: []string{"docx"},
 		Size:                   stat.Size(),
 		RowCount:               paramCount,
 		ParagraphCount:         paramCount,
@@ -884,7 +883,7 @@ func inspectODT(ctx context.Context, path string) (*domain.FileInfo, error) {
 		Extension:              "odt",
 		FileType:               "text",
 		Format:                 "odt",
-		SupportedExportFormats: []string{"odt", "docx"},
+		SupportedExportFormats: []string{"odt"},
 		Size:                   stat.Size(),
 		RowCount:               paramCount,
 		ParagraphCount:         paramCount,

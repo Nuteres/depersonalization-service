@@ -1025,3 +1025,88 @@ func TestProcessor_CreateArchive(t *testing.T) {
 	}
 }
 
+func TestProcessor_ValidTargetExtensions(t *testing.T) {
+	tests := []struct {
+		ext      string
+		expected []string
+	}{
+		{".csv", []string{".csv", ".tsv"}},
+		{".tsv", []string{".csv", ".tsv"}},
+		{".xlsx", []string{".xlsx", ".xlsm", ".xltx", ".xltm"}},
+		{".ods", []string{".ods", ".xlsx"}},
+		{".xlsb", []string{".xlsx"}},
+		{".xls", []string{".xlsx"}},
+		{".docx", []string{".docx"}},
+		{".odt", []string{".odt"}},
+		{".txt", []string{".txt"}},
+		{".pdf", []string{".pdf"}},
+		{".unknown", nil},
+	}
+
+	for _, tt := range tests {
+		got := processor.ValidTargetExtensions(tt.ext)
+		if len(got) != len(tt.expected) {
+			t.Errorf("ValidTargetExtensions(%q): got %v, want %v", tt.ext, got, tt.expected)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.expected[i] {
+				t.Errorf("ValidTargetExtensions(%q)[%d]: got %q, want %q", tt.ext, i, got[i], tt.expected[i])
+			}
+		}
+	}
+}
+
+func TestProcessor_EnforceTargetExtension_XLSX_Not_CSV(t *testing.T) {
+	km := keymanager.New()
+	proc := processor.New(km)
+	tmpDir := t.TempDir()
+
+	// 1. Create a minimal XLSX file
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	_ = f.SetCellValue(sheet, "A1", "ФИО")
+	_ = f.SetCellValue(sheet, "A2", "Иванов Иван Иванович")
+	inPath := filepath.Join(tmpDir, "test.xlsx")
+	if err := f.SaveAs(inPath); err != nil {
+		t.Fatalf("failed to save test.xlsx: %v", err)
+	}
+
+	// 2. Specify OutputPath ending in .csv (which was the bug causing fake CSV)
+	badOutPath := filepath.Join(tmpDir, "output_anonymized.csv")
+	opts := domain.ProcessOptions{
+		InputPath:  inPath,
+		OutputPath: badOutPath,
+		Salt:       "test-salt-123",
+		Mode:       domain.ModeReplace,
+		Strategy:   domain.StrategySemanticTokens,
+		CreateKey:  true,
+	}
+
+	res, err := proc.Process(context.Background(), opts, nil)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	// 3. OutputPath must have been corrected to .xlsx
+	if !strings.HasSuffix(res.OutputPath, ".xlsx") {
+		t.Errorf("expected OutputPath to end in .xlsx, got %q", res.OutputPath)
+	}
+
+	// 4. Must be openable by excelize without error
+	outF, err := excelize.OpenFile(res.OutputPath)
+	if err != nil {
+		t.Fatalf("failed to open output as excel: %v", err)
+	}
+	defer outF.Close()
+
+	// 5. Verify the cell was anonymized
+	val, err := outF.GetCellValue(sheet, "A2")
+	if err != nil {
+		t.Fatalf("failed to get cell value: %v", err)
+	}
+	if val == "Иванов Иван Иванович" || val == "" {
+		t.Errorf("expected anonymized value in A2, got %q", val)
+	}
+}
+

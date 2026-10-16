@@ -464,47 +464,40 @@
 {#if fileInfo && fileInfo.fileType === 'pdf'}
   <div
     id="pdf-inspection-box"
-    class="bg-white border border-[#E8E7E3] shadow-sm flex flex-col select-text"
+    class="bg-white border border-[#E8E7E3] rounded-lg shadow-2xs hover-sheen flex flex-col select-text overflow-hidden"
   >
     <!-- Compact Header Toolbar (Sticky) -->
+    <!-- Header Toolbar (Single Row) -->
     <div
-      class="px-5 py-3 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5] sticky top-0 z-40"
+      class="px-5 py-2.5 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5] sticky top-0 z-40"
     >
-      <!-- Title & Document Stats -->
+      <!-- Title -->
       <div class="flex items-center space-x-2">
-        <span class="w-2 h-2 rounded-none bg-emerald-500"></span>
-        <span
-          class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono"
-        >
-          Предпросмотр документа (PDF)
-        </span>
-        <span class="text-xs text-[#78716C] font-mono">
-          ▪ {pagesData.length > 0 ? pagesData.length : (fileInfo.pageCount || 1)} стр. ▪ {allDetectedEntities.length} фрагментов ПДн
+        <span class="text-xs font-semibold text-[#1C1917]">
+          Предпросмотр
         </span>
       </div>
 
       <!-- Controls Right: Before/After Toggle -->
-      <div class="flex items-center space-x-3">
-        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium shadow-2xs">
+      <div class="flex items-center gap-2.5">
+        <div class="inline-flex border border-[#E8E7E3] bg-[#F0EFEB] rounded-md p-0.5 text-xs font-medium">
           <button
             type="button"
             onclick={() => (isBefore = false)}
-            class="flex items-center space-x-1.5 px-3 py-1 {!isBefore
-              ? 'bg-emerald-700 text-white font-semibold shadow-xs'
+            class="px-3 py-1 rounded pressable {!isBefore
+              ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            <span class="w-1.5 h-1.5 rounded-none {!isBefore ? 'bg-emerald-300' : 'bg-emerald-500'}"></span>
-            <span>Обезличенный вид</span>
+            Очищенные данные
           </button>
           <button
             type="button"
             onclick={() => (isBefore = true)}
-            class="flex items-center space-x-1.5 px-3 py-1 {isBefore
-              ? 'bg-amber-700 text-white font-semibold shadow-xs'
+            class="px-3 py-1 rounded pressable {isBefore
+              ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
-            <span class="w-1.5 h-1.5 rounded-none {isBefore ? 'bg-amber-300' : 'bg-amber-500'}"></span>
-            <span>Исходный вид</span>
+            Исходные с ПДн
           </button>
         </div>
       </div>

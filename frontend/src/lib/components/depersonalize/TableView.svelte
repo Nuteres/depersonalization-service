@@ -289,40 +289,25 @@
 
 {#if appState.currentFileInfo && appState.currentFileInfo.fileType === 'table'}
   <!-- Main Data Inspection Box -->
-  <div id="table-inspection-box" class="bg-white border border-[#E8E7E3] shadow-sm flex flex-col">
+  <div id="table-inspection-box" class="bg-white border border-[#E8E7E3] rounded-lg shadow-2xs hover-sheen flex flex-col overflow-hidden">
     <!-- Table Header Toolbar -->
     <div
-      class="p-4 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]"
+      class="px-5 py-2.5 border-b border-[#E8E7E3] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F5]"
     >
       <div class="flex items-center space-x-2">
-        <span class="text-xs font-bold text-[#1C1917] uppercase tracking-wider font-mono">
-          Предпросмотр таблицы
-        </span>
-        <span id="preview-count-label" class="text-xs text-[#78716C] font-mono">
-          {sheetName ? `[Лист: ${sheetName}] ` : ''}▪ Показано {Math.min(10, tableState.previewRows.length)} из {totalRowCount.toLocaleString('ru-RU')} строк
+        <span class="text-xs font-semibold text-[#1C1917]">
+          Предпросмотр
         </span>
       </div>
 
-      <div class="flex items-center space-x-3">
-        <!-- Expand Button -->
-        <button
-          id="btn-expand-preview"
-          type="button"
-          onclick={() => tableState.setIsFullscreen(true)}
-          class="px-3 py-1 bg-white hover:bg-[#F5F5F4] border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold flex items-center space-x-1.5 transition cursor-pointer shadow-xs active:scale-[0.99]"
-          title="Раскрыть окно предпросмотра таблицы"
-        >
-          <span>⤢</span>
-          <span>Раскрыть предпросмотр</span>
-        </button>
-
+      <div class="flex items-center gap-2.5">
         <!-- Toggle: Before vs After -->
-        <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
+        <div class="inline-flex border border-[#E8E7E3] bg-[#F0EFEB] rounded-md p-0.5 text-xs font-medium">
           <button
             type="button"
             onclick={() => tableState.setIsBefore(false)}
-            class="px-3 py-1 {!tableState.isBefore
-              ? 'bg-[#1C1917] text-white font-semibold'
+            class="px-3 py-1 rounded pressable {!tableState.isBefore
+              ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
             Очищенные данные
@@ -330,13 +315,27 @@
           <button
             type="button"
             onclick={() => tableState.setIsBefore(true)}
-            class="px-3 py-1 {tableState.isBefore
-              ? 'bg-[#1C1917] text-white font-semibold'
+            class="px-3 py-1 rounded pressable {tableState.isBefore
+              ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
             Исходные с ПДн
           </button>
         </div>
+
+        <!-- Expand Button with clean SVG -->
+        <button
+          id="btn-expand-preview"
+          type="button"
+          onclick={() => tableState.setIsFullscreen(true)}
+          class="px-3 py-1 bg-white hover:bg-[#F5F5F4] border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md flex items-center gap-1.5 transition cursor-pointer shadow-xs pressable"
+          title="Раскрыть окно предпросмотра таблицы"
+        >
+          <svg class="w-3.5 h-3.5 text-stone-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          </svg>
+          <span>Раскрыть</span>
+        </button>
       </div>
     </div>
 
@@ -489,7 +488,7 @@
       aria-label="Полный предпросмотр таблицы"
     >
       <div
-        class="bg-white border border-[#E8E7E3] shadow-2xl w-full h-full max-h-full max-w-full flex flex-col overflow-hidden overscroll-contain"
+        class="bg-white border border-[#E8E7E3] rounded-lg shadow-2xl w-full h-full max-h-full max-w-full flex flex-col overflow-hidden overscroll-contain animate-surface-enter"
       >
         <!-- Modal Header -->
         <div
@@ -500,24 +499,24 @@
               Полный предпросмотр таблицы
             </span>
             <span
-              class="text-xs font-mono font-semibold text-[#1C1917] bg-[#E8E7E3] px-2 py-0.5 max-w-[160px] sm:max-w-xs md:max-w-md truncate"
+              class="text-xs font-mono font-semibold text-[#1C1917] bg-[#E8E7E3] px-2 py-0.5 rounded max-w-[160px] sm:max-w-xs md:max-w-md truncate"
               title={appState.currentFileInfo.name}
             >
               {appState.currentFileInfo.name}
             </span>
             <span class="text-xs text-[#78716C] font-mono whitespace-nowrap">
-              {sheetName ? `[Лист: ${sheetName}] ` : ''}(показано {tableState.previewRows.length.toLocaleString('ru-RU')} из {totalRowCount.toLocaleString('ru-RU')} строк)
+              {sheetName ? `Лист: ${sheetName} ▪ ` : ''}Показано {tableState.previewRows.length.toLocaleString('ru-RU')} из {totalRowCount.toLocaleString('ru-RU')} строк
             </span>
           </div>
 
           <div class="flex items-center space-x-2 sm:space-x-3 shrink-0 ml-auto">
             <!-- Modal Zoom Controls -->
-            <div class="flex items-center bg-white text-xs font-medium border border-[#E8E7E3]" id="modal-zoom-controls">
+            <div class="flex items-center bg-white text-xs font-medium border border-[#E8E7E3] rounded-md overflow-hidden shadow-2xs" id="modal-zoom-controls">
               <button
                 type="button"
                 onclick={() => zoomState.zoomOut()}
                 disabled={zoomState.currentZoom <= zoomState.minZoom}
-                class="px-2 py-1 hover:bg-[#FAF9F5] text-[#78716C] hover:text-[#1C1917] transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+                class="px-2 py-1 hover:bg-[#FAF9F5] text-[#78716C] hover:text-[#1C1917] pressable cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed font-bold"
                 title="Уменьшить масштаб (Ctrl + -)"
               >
                 –
@@ -525,7 +524,7 @@
               <button
                 type="button"
                 onclick={() => zoomState.resetZoom()}
-                class="px-2 py-1 font-mono text-[11px] font-semibold text-[#1C1917] hover:bg-[#FAF9F5] transition cursor-pointer min-w-[44px] text-center"
+                class="px-2 py-1 font-mono text-[11px] font-semibold text-[#1C1917] border-x border-[#E8E7E3] hover:bg-[#FAF9F5] pressable cursor-pointer min-w-[44px] text-center"
                 title="Сбросить масштаб к 100% (Ctrl + 0)"
               >
                 {Math.round(zoomState.currentZoom * 100)}%
@@ -534,7 +533,7 @@
                 type="button"
                 onclick={() => zoomState.zoomIn()}
                 disabled={zoomState.currentZoom >= zoomState.maxZoom}
-                class="px-2 py-1 hover:bg-[#FAF9F5] text-[#78716C] hover:text-[#1C1917] transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+                class="px-2 py-1 hover:bg-[#FAF9F5] text-[#78716C] hover:text-[#1C1917] pressable cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed font-bold"
                 title="Увеличить масштаб (Ctrl + +)"
               >
                 +
@@ -542,12 +541,12 @@
             </div>
 
             <!-- Toggle Before vs After inside Modal -->
-            <div class="inline-flex border border-[#E8E7E3] bg-white p-0.5 text-xs font-medium">
+            <div class="inline-flex border border-[#E8E7E3] bg-[#F0EFEB] rounded-md p-0.5 text-xs font-medium">
               <button
                 type="button"
                 onclick={() => tableState.setIsBefore(false)}
-                class="px-2.5 sm:px-3 py-1 {!tableState.isBefore
-                  ? 'bg-[#1C1917] text-white font-semibold'
+                class="px-2.5 sm:px-3 py-1 rounded pressable {!tableState.isBefore
+                  ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
                   : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer text-xs"
               >
                 Очищенные данные
@@ -555,8 +554,8 @@
               <button
                 type="button"
                 onclick={() => tableState.setIsBefore(true)}
-                class="px-2.5 sm:px-3 py-1 {tableState.isBefore
-                  ? 'bg-[#1C1917] text-white font-semibold'
+                class="px-2.5 sm:px-3 py-1 rounded pressable {tableState.isBefore
+                  ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
                   : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer text-xs"
               >
                 Исходные с ПДн
@@ -567,10 +566,10 @@
             <button
               type="button"
               onclick={() => tableState.setIsFullscreen(false)}
-              class="px-3 py-1.5 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold shadow-xs transition flex items-center space-x-1 cursor-pointer shrink-0"
+              class="px-3 py-1.5 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold rounded-md shadow-xs pressable flex items-center space-x-1 cursor-pointer shrink-0"
             >
               <span>✕ Свернуть</span>
-              <span class="text-[10px] text-[#A8A29E] font-mono ml-1">[Esc]</span>
+              <kbd class="text-[10px] text-[#A8A29E] font-mono ml-1 bg-[#292524] px-1 py-0.2 rounded border border-stone-700">Esc</kbd>
             </button>
           </div>
         </div>

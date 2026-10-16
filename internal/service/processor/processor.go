@@ -60,6 +60,30 @@ func (p *Processor) AuditLogger() *audit.AuditLogger {
 	return p.audit
 }
 
+// ValidTargetExtensions returns the allowed target extensions for a given input file extension.
+func ValidTargetExtensions(inputExt string) []string {
+	switch strings.ToLower(inputExt) {
+	case ".csv", ".tsv":
+		return []string{".csv", ".tsv"}
+	case ".xlsx", ".xlsm", ".xltx", ".xltm":
+		return []string{".xlsx", ".xlsm", ".xltx", ".xltm"}
+	case ".ods", ".xods":
+		return []string{".ods", ".xlsx"}
+	case ".xlsb", ".xls":
+		return []string{".xlsx"}
+	case ".docx":
+		return []string{".docx"}
+	case ".odt":
+		return []string{".odt"}
+	case ".txt":
+		return []string{".txt"}
+	case ".pdf":
+		return []string{".pdf"}
+	default:
+		return nil
+	}
+}
+
 // Process processes the input file according to options and reports progress via reporter.
 // It supports streaming anonymization, graceful context cancellation, Windows-safe cleanup,
 // and optional .depmap key container generation.
@@ -130,31 +154,39 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	if stat.IsDir() {
 		return nil, fmt.Errorf("%w: path is a directory, not a file: %s", domain.ErrUnsupportedFormat, opts.InputPath)
 	}
-	if stat.Size() > domain.MaxInteractiveFileSize {
-		return nil, fmt.Errorf("%w: размер файла (%s) превышает допустимый лимит безопасности %s",
+	ext := strings.ToLower(filepath.Ext(opts.InputPath))
+	if ext == ".pdf" && stat.Size() > domain.MaxPDFInteractiveFileSize {
+		return nil, fmt.Errorf("%w: размер PDF документа (%s) превышает допустимый лимит безопасности %s",
 			domain.ErrFileTooLarge,
 			formatBytes(stat.Size()),
-			formatBytes(domain.MaxInteractiveFileSize),
+			formatBytes(domain.MaxPDFInteractiveFileSize),
 		)
 	}
 
-	ext := strings.ToLower(filepath.Ext(opts.InputPath))
-	targetExt := ext
-	if ext == ".xls" || ext == ".xlsb" {
-		targetExt = ".xlsx"
-	}
-
-	switch ext {
-	case ".csv", ".tsv", ".xlsx", ".xlsm", ".xltx", ".xltm", ".ods", ".xods", ".xlsb", ".xls", ".docx", ".odt", ".pdf", ".txt":
-		// Supported format
-	default:
+	validExts := ValidTargetExtensions(ext)
+	if len(validExts) == 0 {
 		return nil, fmt.Errorf("%w: %s", domain.ErrUnsupportedFormat, ext)
 	}
+
+	defaultTargetExt := validExts[0]
 
 	if strings.TrimSpace(outPath) == "" {
 		dir := filepath.Dir(opts.InputPath)
 		base := strings.TrimSuffix(filepath.Base(opts.InputPath), filepath.Ext(opts.InputPath))
-		outPath = filepath.Join(dir, base+"_anonymized"+targetExt)
+		outPath = filepath.Join(dir, base+"_anonymized"+defaultTargetExt)
+	} else {
+		outExt := strings.ToLower(filepath.Ext(outPath))
+		hasValidExt := false
+		for _, v := range validExts {
+			if outExt == v {
+				hasValidExt = true
+				break
+			}
+		}
+		if !hasValidExt {
+			// Enforce authentic target extension to guarantee file structure integrity
+			outPath = strings.TrimSuffix(outPath, filepath.Ext(outPath)) + defaultTargetExt
+		}
 	}
 
 	if filepath.Clean(opts.InputPath) == filepath.Clean(outPath) {

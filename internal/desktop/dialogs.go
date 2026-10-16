@@ -74,12 +74,10 @@ func (a *DesktopApp) SaveFileDialog(defaultName string) (string, error) {
 		case ".docx":
 			filters = []runtime.FileFilter{
 				{DisplayName: "Документ Word (*.docx)", Pattern: "*.docx"},
-				{DisplayName: "Документ OpenDocument Text (*.odt)", Pattern: "*.odt"},
 			}
 		case ".odt":
 			filters = []runtime.FileFilter{
 				{DisplayName: "Документ OpenDocument Text (*.odt)", Pattern: "*.odt"},
-				{DisplayName: "Документ Word (*.docx)", Pattern: "*.docx"},
 			}
 		case ".txt":
 			filters = []runtime.FileFilter{
@@ -89,10 +87,13 @@ func (a *DesktopApp) SaveFileDialog(defaultName string) (string, error) {
 			filters = []runtime.FileFilter{
 				{DisplayName: "Документ PDF (*.pdf)", Pattern: "*.pdf"},
 			}
-		default:
+		case ".csv", ".tsv":
 			filters = []runtime.FileFilter{
 				{DisplayName: "Таблица CSV (*.csv)", Pattern: "*.csv"},
-				{DisplayName: "Таблица Excel (*.xlsx)", Pattern: "*.xlsx"},
+			}
+		default:
+			filters = []runtime.FileFilter{
+				{DisplayName: "Все файлы (*.*)", Pattern: "*.*"},
 			}
 		}
 	}

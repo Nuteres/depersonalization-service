@@ -53,12 +53,16 @@ type FileInfo struct {
 }
 
 const (
-	// MaxInteractiveFileSize is the maximum file size (100 MB) permitted for in-memory document parsing and inspection.
-	// Files exceeding this limit are safely rejected to prevent out-of-memory crashes on user systems.
-	MaxInteractiveFileSize = 100 * 1024 * 1024 // 100 MB
+	// MaxPDFInteractiveFileSize is the maximum file size (100 MB) permitted for PDF documents.
+	// PDF files exceeding this limit are safely restricted to prevent out-of-memory crashes during browser canvas/base64 rendering.
+	// Streaming formats (CSV, TSV, XLSX, XLSB, ODS, XLS, DOCX, ODT, TXT) are not subject to this restriction.
+	MaxPDFInteractiveFileSize = 100 * 1024 * 1024 // 100 MB
+
+	// MaxInteractiveFileSize is maintained for backward compatibility and applies to PDF documents.
+	MaxInteractiveFileSize = MaxPDFInteractiveFileSize
 
 	// MaxBase64PreviewFileSize is the maximum file size (100 MB) permitted for base64 encoding over IPC.
-	MaxBase64PreviewFileSize = 100 * 1024 * 1024 // 100 MB
+	MaxBase64PreviewFileSize = MaxPDFInteractiveFileSize
 )
 
 // DocxTextSnippet represents a single detected entity snippet.

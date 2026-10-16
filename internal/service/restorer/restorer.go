@@ -1,9 +1,11 @@
 package restorer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -156,6 +158,31 @@ func (r *Restorer) Restore(ctx context.Context, opts domain.RestoreOptions, repo
 	}
 
 	startTime := time.Now()
+
+	// Detect magic bytes to prevent misrouting if file has an incorrect extension
+	var header [4]byte
+	if f, err := os.Open(inputPath); err == nil {
+		_, _ = io.ReadFull(f, header[:])
+		_ = f.Close()
+	}
+	isZip := bytes.Equal(header[:], []byte{'P', 'K', 0x03, 0x04})
+	if (ext == ".csv" || ext == ".tsv" || ext == ".txt") && isZip {
+		// File was saved with a text extension but contains a ZIP package (XLSX, ODS, or DOCX)
+		origExt := strings.ToLower(filepath.Ext(dm.OriginalFileName))
+		if origExt == ".xlsx" || origExt == ".xlsm" || origExt == ".xls" || origExt == ".xlsb" || origExt == "" {
+			ext = ".xlsx"
+		} else if origExt == ".ods" {
+			ext = ".ods"
+		} else if origExt == ".docx" {
+			ext = ".docx"
+		} else {
+			ext = ".xlsx"
+		}
+		// Adjust destPath extension if needed
+		if filepath.Ext(destPath) != ext {
+			destPath = strings.TrimSuffix(destPath, filepath.Ext(destPath)) + ext
+		}
+	}
 
 	switch ext {
 	case ".csv", ".tsv":
