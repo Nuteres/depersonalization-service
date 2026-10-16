@@ -5,9 +5,6 @@
 
   let copiedPassword = $state(false);
   let copiedArchivePassword = $state(false);
-  let copiedFolder = $state(false);
-  let showArchivePassword = $state(true);
-  let showKeyPassword = $state(true);
 
   function getDirectory(filePath: string): string {
     if (!filePath) return '';
@@ -52,18 +49,6 @@
   const keyFileName = $derived.by(() => {
     return getFileName(appState.successResult?.keyPath || '');
   });
-
-  async function copyFolder() {
-    if (!savedDir) return;
-    const ok = await copyToClipboard(savedDir);
-    if (ok) {
-      copiedFolder = true;
-      setTimeout(() => { copiedFolder = false; }, 2000);
-      appState.showToast('Путь к папке скопирован!', 'success');
-    } else {
-      appState.showToast('Не удалось скопировать путь к папке', 'error');
-    }
-  }
 
   async function copyArchivePassword() {
     const pwd = appState.successResult?.archivePassword;
@@ -175,27 +160,17 @@
 
       <!-- Compact Files & Location Card -->
       <div class="border border-[#E8E7E3] bg-[#FAF9F5] p-3.5 space-y-2">
-        <div class="flex items-center justify-between text-xs font-mono text-[#57534E]">
-          <div class="flex items-center gap-1.5 min-w-0 pr-2">
-            <span class="text-stone-500 shrink-0">📁</span>
-            <span class="text-[#78716C] shrink-0">Папка:</span>
-            <span class="font-semibold text-[#1C1917] truncate select-all" title={savedDir}>
-              {savedDir}
-            </span>
-          </div>
-          <button
-            type="button"
-            onclick={copyFolder}
-            class="text-[11px] text-[#1C1917] hover:underline font-mono font-semibold cursor-pointer shrink-0"
-            title="Скопировать путь к папке"
-          >
-            {copiedFolder ? '✔ Скопировано' : '📋 Копировать'}
-          </button>
+        <div class="flex items-center gap-1.5 min-w-0 text-xs font-mono text-[#57534E]">
+          <span class="text-stone-500 shrink-0">📁</span>
+          <span class="text-[#78716C] shrink-0">Папка:</span>
+          <span class="font-semibold text-[#1C1917] truncate select-all" title={savedDir}>
+            {savedDir}
+          </span>
         </div>
 
         <div class="space-y-1 pt-2 border-t border-[#E8E7E3]">
           {#if appState.successResult.outputPath}
-            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-1 px-1">
+            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-0.5 px-1">
               <span class="shrink-0 text-stone-500">📄</span>
               <span class="truncate font-medium select-all" title={appState.successResult.outputPath}>
                 {outputFileName}
@@ -204,7 +179,7 @@
           {/if}
 
           {#if !isRestore && appState.successResult.archivePath}
-            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-1 px-1">
+            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-0.5 px-1">
               <span class="shrink-0 text-stone-500">📦</span>
               <span class="truncate font-medium select-all" title={appState.successResult.archivePath}>
                 {archiveFileName}
@@ -213,7 +188,7 @@
           {/if}
 
           {#if !isRestore && appState.successResult.keyPath}
-            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-1 px-1">
+            <div class="flex items-center gap-2 text-xs font-mono text-[#1C1917] py-0.5 px-1">
               <span class="shrink-0 text-stone-500">🔑</span>
               <span class="truncate font-medium select-all" title={appState.successResult.keyPath}>
                 {keyFileName}
@@ -231,26 +206,16 @@
               <span>📦</span>
               <span>Пароль архива:</span>
             </span>
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                onclick={() => showArchivePassword = !showArchivePassword}
-                class="text-[11px] text-[#78716C] hover:text-[#1C1917] font-mono cursor-pointer"
-                title={showArchivePassword ? 'Скрыть пароль' : 'Показать пароль'}
-              >
-                {showArchivePassword ? 'Скрыть' : 'Показать'}
-              </button>
-              <button
-                type="button"
-                onclick={copyArchivePassword}
-                class="text-[11px] text-[#1C1917] hover:underline font-mono font-semibold cursor-pointer shrink-0"
-              >
-                {copiedArchivePassword ? '✔ Скопировано' : '📋 Скопировать'}
-              </button>
-            </div>
+            <button
+              type="button"
+              onclick={copyArchivePassword}
+              class="text-[11px] text-[#1C1917] hover:underline font-mono font-semibold cursor-pointer shrink-0"
+            >
+              {copiedArchivePassword ? '✔ Скопировано' : '📋 Скопировать'}
+            </button>
           </div>
           <div class="text-xs font-mono font-bold text-[#1C1917] select-all leading-relaxed bg-white p-2 border border-[#E8E7E3] tracking-wider">
-            <code>{showArchivePassword ? appState.successResult.archivePassword : '••••••••••••••••'}</code>
+            <code>{appState.successResult.archivePassword}</code>
           </div>
         </div>
       {/if}
@@ -263,29 +228,19 @@
               <span>🔑</span>
               <span>Пароль ключа:</span>
             </span>
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                onclick={() => showKeyPassword = !showKeyPassword}
-                class="text-[11px] text-[#78716C] hover:text-[#1C1917] font-mono cursor-pointer"
-                title={showKeyPassword ? 'Скрыть пароль' : 'Показать пароль'}
-              >
-                {showKeyPassword ? 'Скрыть' : 'Показать'}
-              </button>
-              <button
-                id="copy-key-password"
-                type="button"
-                onclick={copyPassword}
-                class="text-[11px] text-[#1C1917] hover:underline font-mono font-semibold cursor-pointer shrink-0"
-              >
-                {copiedPassword ? '✔ Скопировано' : '📋 Скопировать'}
-              </button>
-            </div>
+            <button
+              id="copy-key-password"
+              type="button"
+              onclick={copyPassword}
+              class="text-[11px] text-[#1C1917] hover:underline font-mono font-semibold cursor-pointer shrink-0"
+            >
+              {copiedPassword ? '✔ Скопировано' : '📋 Скопировать'}
+            </button>
           </div>
           <div
             class="text-xs font-mono font-bold text-[#1C1917] select-all leading-relaxed bg-white p-2 border border-[#E8E7E3] tracking-wider"
           >
-            <code>{showKeyPassword ? appState.successResult.effectivePassword : '••••••••••••••••'}</code>
+            <code>{appState.successResult.effectivePassword}</code>
           </div>
           <div class="text-[11px] text-[#78716C] leading-normal font-sans">
             Сохраните пароль и файл-ключ в безопасном месте для восстановления данных.
