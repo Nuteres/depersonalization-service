@@ -14,6 +14,7 @@
   } from '../../api/wails';
   import { copyToClipboard } from '../../services/clipboard';
   import type { PasswordValidationResult } from '../../types/domain';
+  import { getDefaultOutputPath } from '../../utils/path';
 
   interface Props {
     isOpen: boolean;
@@ -183,28 +184,26 @@
 
   async function handleSelectOutputPath() {
     const ext = selectedExportFormat;
-    const baseName = appState.currentFileInfo?.name.replace(/\.[^/.]+$/, '') || 'data';
-    const defaultName = `${baseName}_anonymized.${ext}`;
-    const chosen = await SaveFileDialog(defaultName);
+    const defaultPath = getDefaultOutputPath(appState.currentFilePath || '', ext);
+    const chosen = await SaveFileDialog(defaultPath);
     if (chosen) {
       outputPath = chosen;
     }
   }
 
   async function handleSelectKeyPath() {
-    const baseName = appState.currentFileInfo?.name.replace(/\.[^/.]+$/, '') || 'data';
-    const defaultName = `${baseName}_anonymized.depmap`;
-    const chosen = await SaveKeyFileDialog(defaultName);
+    const baseSource = outputPath.trim() || appState.currentFilePath || '';
+    const defaultPath = getDefaultOutputPath(baseSource, 'depmap');
+    const chosen = await SaveKeyFileDialog(defaultPath);
     if (chosen) {
       keyPath = chosen;
     }
   }
 
   async function handleSelectArchivePath() {
-    const ext = selectedExportFormat;
-    const baseName = appState.currentFileInfo?.name.replace(/\.[^/.]+$/, '') || 'data';
-    const defaultName = `${baseName}_anonymized.zip`;
-    const chosen = await SaveArchiveFileDialog(defaultName);
+    const baseSource = outputPath.trim() || appState.currentFilePath || '';
+    const defaultPath = getDefaultOutputPath(baseSource, 'zip');
+    const chosen = await SaveArchiveFileDialog(defaultPath);
     if (chosen) {
       archivePath = chosen;
     }
@@ -240,14 +239,7 @@
         destPath = `${destPath.replace(/\.[^/.]+$/, '')}.${selectedExportFormat}`;
       }
     } else {
-      const ext = selectedExportFormat;
-      const baseName = appState.currentFileInfo.name.replace(/\.[^/.]+$/, '');
-      const defaultName = `${baseName}_anonymized.${ext}`;
-      destPath = await SaveFileDialog(defaultName);
-      if (!destPath) {
-        // User cancelled file dialog
-        return;
-      }
+      destPath = getDefaultOutputPath(appState.currentFilePath, selectedExportFormat);
     }
 
     // Save chosen salt to appState
@@ -286,7 +278,12 @@
       const isPdf = appState.currentFileInfo.fileType === 'pdf';
       const effectiveCreateKey = isPdf ? false : createKey;
       const effectiveKeyPassword = effectiveCreateKey ? keyPassword : '';
-      const effectiveKeyPath = effectiveCreateKey ? keyPath : '';
+      const effectiveKeyPath = effectiveCreateKey
+        ? (keyPath.trim() || getDefaultOutputPath(destPath, 'depmap'))
+        : '';
+      const effectiveArchivePath = createArchive
+        ? (archivePath.trim() || getDefaultOutputPath(destPath, 'zip'))
+        : '';
 
       let result;
       if (createArchive) {
@@ -304,7 +301,7 @@
           shuffleRows: effectiveShuffle,
           createArchive: true,
           archivePassword: archivePassword.trim(),
-          archivePath: archivePath.trim(),
+          archivePath: effectiveArchivePath,
           pdfRedactionBoxes: isPdf ? (appState.pdfRedactionBoxes || []) : undefined,
           pdfRedactTerms: isPdf ? (appState.pdfRedactTerms || []) : undefined,
         });
@@ -639,34 +636,84 @@
                       <div class="font-medium text-[#44403C] mb-1.5 text-[10.5px]">Требования к паролю:</div>
                       <div class="grid grid-cols-2 gap-x-2 gap-y-1">
                         <div class="flex items-center space-x-1.5 {passwordValidation.minLength ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                          <span>{passwordValidation.minLength ? '✓' : '▪'}</span>
+                          <span class="w-3.5 h-3.5 flex items-center justify-center shrink-0">
+                            {#if passwordValidation.minLength}
+                              <svg class="w-3 h-3 text-[#16A34A]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                              </svg>
+                            {:else}
+                              <span class="w-1 h-1 rounded-full bg-stone-400"></span>
+                            {/if}
+                          </span>
                           <span>12+ символов</span>
                         </div>
                         <div class="flex items-center space-x-1.5 {passwordValidation.onlyLatin ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                          <span>{passwordValidation.onlyLatin ? '✓' : '▪'}</span>
+                          <span class="w-3.5 h-3.5 flex items-center justify-center shrink-0">
+                            {#if passwordValidation.onlyLatin}
+                              <svg class="w-3 h-3 text-[#16A34A]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                              </svg>
+                            {:else}
+                              <span class="w-1 h-1 rounded-full bg-stone-400"></span>
+                            {/if}
+                          </span>
                           <span>Только латиница</span>
                         </div>
                         <div class="flex items-center space-x-1.5 {passwordValidation.hasUppercase ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                          <span>{passwordValidation.hasUppercase ? '✓' : '▪'}</span>
+                          <span class="w-3.5 h-3.5 flex items-center justify-center shrink-0">
+                            {#if passwordValidation.hasUppercase}
+                              <svg class="w-3 h-3 text-[#16A34A]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                              </svg>
+                            {:else}
+                              <span class="w-1 h-1 rounded-full bg-stone-400"></span>
+                            {/if}
+                          </span>
                           <span>Заглавные буквы</span>
                         </div>
                         <div class="flex items-center space-x-1.5 {passwordValidation.hasLowercase ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                          <span>{passwordValidation.hasLowercase ? '✓' : '▪'}</span>
+                          <span class="w-3.5 h-3.5 flex items-center justify-center shrink-0">
+                            {#if passwordValidation.hasLowercase}
+                              <svg class="w-3 h-3 text-[#16A34A]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                              </svg>
+                            {:else}
+                              <span class="w-1 h-1 rounded-full bg-stone-400"></span>
+                            {/if}
+                          </span>
                           <span>Строчные буквы</span>
                         </div>
                         <div class="flex items-center space-x-1.5 {passwordValidation.hasDigit ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                          <span>{passwordValidation.hasDigit ? '✓' : '▪'}</span>
+                          <span class="w-3.5 h-3.5 flex items-center justify-center shrink-0">
+                            {#if passwordValidation.hasDigit}
+                              <svg class="w-3 h-3 text-[#16A34A]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                              </svg>
+                            {:else}
+                              <span class="w-1 h-1 rounded-full bg-stone-400"></span>
+                            {/if}
+                          </span>
                           <span>Цифры 0-9</span>
                         </div>
                         <div class="flex items-center space-x-1.5 {passwordValidation.hasSpecial ? 'text-[#16A34A] font-medium' : 'text-[#78716C]'}">
-                          <span>{passwordValidation.hasSpecial ? '✓' : '▪'}</span>
+                          <span class="w-3.5 h-3.5 flex items-center justify-center shrink-0">
+                            {#if passwordValidation.hasSpecial}
+                              <svg class="w-3 h-3 text-[#16A34A]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                              </svg>
+                            {:else}
+                              <span class="w-1 h-1 rounded-full bg-stone-400"></span>
+                            {/if}
+                          </span>
                           <span>Спецсимволы</span>
                         </div>
                       </div>
 
                       {#if keyPassword.trim() && !passwordValidation.onlyLatin}
-                        <div class="mt-2 pt-1.5 border-t border-[#E8E7E3] text-[10.5px] text-[#DC2626] font-medium flex items-center space-x-1">
-                          <span>⚠</span>
+                        <div class="mt-2 pt-1.5 border-t border-[#E8E7E3] text-[10.5px] text-[#DC2626] font-medium flex items-center space-x-1.5">
+                          <svg class="w-3.5 h-3.5 text-[#DC2626] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
                           <span>Кириллица и пробелы запрещены — используйте только латиницу</span>
                         </div>
                       {/if}
@@ -810,8 +857,10 @@
                 </div>
 
                 {#if archivePasswordError}
-                  <div class="text-[10.5px] text-[#DC2626] font-medium flex items-center space-x-1 mt-1">
-                    <span>⚠</span>
+                  <div class="text-[10.5px] text-[#DC2626] font-medium flex items-center space-x-1.5 mt-1">
+                    <svg class="w-3.5 h-3.5 text-[#DC2626] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
                     <span>{archivePasswordError}</span>
                   </div>
                 {:else}
@@ -830,7 +879,7 @@
         <button
           type="button"
           onclick={onClose}
-          class="px-4 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md pressable cursor-pointer"
+          class="h-8 px-4 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md pressable cursor-pointer flex items-center justify-center"
         >
           Отмена
         </button>
@@ -838,9 +887,9 @@
           type="button"
           onclick={handleStart}
           disabled={!isFormValid}
-          class="px-5 py-2 text-xs font-semibold rounded-md transition flex items-center gap-1.5 shadow-sm pressable {isFormValid ? 'bg-[#1C1917] hover:bg-[#292524] text-white cursor-pointer' : 'bg-[#E7E5E4] text-[#A8A29E] cursor-not-allowed border border-[#D6D3D1]'}"
+          class="h-8 px-5 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 shadow-sm pressable {isFormValid ? 'bg-[#1C1917] hover:bg-[#292524] text-white cursor-pointer' : 'bg-[#E7E5E4] text-[#A8A29E] cursor-not-allowed border border-[#D6D3D1]'}"
         >
-          <svg class="w-3.5 h-3.5 text-stone-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg class="w-3.5 h-3.5 text-stone-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>
           <span>{appState.processingMode === 'delete' ? 'Начать удаление' : 'Начать обезличивание'}</span>

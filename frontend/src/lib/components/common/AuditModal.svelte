@@ -107,23 +107,27 @@
             {records.length}
           </span>
         </div>
-        <div class="flex items-center space-x-2">
+        <div class="flex items-center space-x-1.5">
           <button
             type="button"
             onclick={loadRecords}
             disabled={isLoading}
-            class="text-[#78716C] hover:text-[#1C1917] text-xs font-mono px-2 py-1 border border-[#E8E7E3] hover:border-[#1C1917] bg-[#FAF9F5] transition cursor-pointer disabled:opacity-50"
+            class="h-7 w-7 flex items-center justify-center text-[#78716C] hover:text-[#1C1917] border border-[#E8E7E3] hover:border-[#1C1917] bg-[#FAF9F5] rounded transition cursor-pointer disabled:opacity-50 pressable"
             title="Обновить"
           >
-            ↻
+            <svg class="w-3.5 h-3.5 {isLoading ? 'animate-spin' : ''} shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
           </button>
           <button
             type="button"
             onclick={() => appState.closeAuditModal()}
-            class="text-stone-400 hover:text-stone-700 text-sm font-bold cursor-pointer ml-1"
+            class="h-7 w-7 flex items-center justify-center text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded transition pressable cursor-pointer"
             title="Закрыть"
           >
-            ✕
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
       </div>
@@ -204,7 +208,7 @@
           type="button"
           onclick={handleExport}
           disabled={isExporting || records.length === 0}
-          class="px-3.5 py-2 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md transition cursor-pointer flex items-center gap-1.5 shadow-2xs pressable disabled:opacity-50"
+          class="h-8 px-3.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs pressable disabled:opacity-50"
         >
           <span>Экспорт</span>
         </button>
@@ -212,7 +216,7 @@
         <button
           type="button"
           onclick={() => appState.closeAuditModal()}
-          class="px-4 py-2 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold rounded-md transition cursor-pointer shadow-sm pressable"
+          class="h-8 px-4 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold rounded-md transition cursor-pointer shadow-sm pressable flex items-center justify-center"
         >
           Закрыть
         </button>

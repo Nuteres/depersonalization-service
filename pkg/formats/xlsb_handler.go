@@ -195,7 +195,15 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 			origFileName = fn
 		}
 	}
-	mode := getProcessingMode(options)
+	strategy := getProcessingStrategy(options)
+	salt := ""
+	if options != nil {
+		if s, ok := options["salt"].(string); ok {
+			salt = s
+		}
+	}
+	ts := anonymizer.NewTokenSession(salt)
+
 	var dm *depmap.DepMap
 	if d, ok := options["depmap"].(*depmap.DepMap); ok {
 		dm = d
@@ -205,7 +213,7 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 	if dm == nil {
 		dm = depmap.New(origFileName)
 	}
-	dm.Mode = string(mode)
+	dm.Mode = string(strategy)
 
 	outFile := excelize.NewFile()
 	defer outFile.Close()
@@ -217,6 +225,12 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 		if cb, ok := options["progress_callback"].(func(int)); ok {
 			progressFn = cb
 		}
+	}
+
+	shouldShuffle := isShuffleRows(options)
+	type pendingXlsbRow struct {
+		dataCells []interface{}
+		origCells []string
 	}
 
 	totalProcessedRows := 0
@@ -272,6 +286,8 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 		// Build map of disabled columns (1-based index)
 		disabledMap := BuildDisabledMap(sheetName, options)
 
+		var pendingDataRows []pendingXlsbRow
+
 		rowNum := 1
 		for row := range sheet.Rows(false) {
 			select {
@@ -317,33 +333,40 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 					if i < len(colTypes) && !disabledMap[col1Based] {
 						colType = colTypes[i]
 					}
-					anonVal := ProcessCell(h.Anon, colType, v, mode, dateRange)
-					dataCells[i] = anonVal
+					newVal := ProcessCellWithStrategy(h.Anon, ts, colType, v, strategy, dateRange)
+					dataCells[i] = newVal
 
-					if colType != ColUnknown && anonVal != v && strings.TrimSpace(v) != "" {
+					if colType != ColUnknown && strings.TrimSpace(v) != "" && dm != nil {
 						var headerName string
 						if i < len(headers) {
 							headerName = headers[i]
 						}
 						dm.AddTargetHeader(headerName)
-						if mode == domain.ModeDelete {
-							dm.PutCell(sheetName, headerName, rowNum, v)
-						} else {
-							dm.Put(anonVal, v)
-							if strings.TrimSpace(anonVal) != anonVal {
-								dm.Put(strings.TrimSpace(anonVal), v)
+						if strategy == domain.StrategyDelete {
+							if !shouldShuffle {
+								dm.PutCell(sheetName, headerName, rowNum, v)
 							}
+						} else {
+							dm.Put(newVal, v)
 						}
 					}
 				}
-				if err := sw.SetRow(cellCoordinate, dataCells); err != nil {
-					return nil, fmt.Errorf("failed to write data row %d in sheet %s: %w", rowNum, sheetName, err)
+				if shouldShuffle {
+					pendingDataRows = append(pendingDataRows, pendingXlsbRow{dataCells: dataCells, origCells: colValues})
+				} else {
+					if err := sw.SetRow(cellCoordinate, dataCells); err != nil {
+						return nil, fmt.Errorf("failed to write data row %d in sheet %s: %w", rowNum, sheetName, err)
+					}
 				}
 			}
 
-			totalProcessedRows++
-			if progressFn != nil && totalProcessedRows%50 == 0 {
-				progressFn(totalProcessedRows)
+			if rowNum <= headerRowIndex+1 {
+				totalProcessedRows++
+			} else if !shouldShuffle {
+				totalProcessedRows++
+				if progressFn != nil && totalProcessedRows%50 == 0 {
+					progressFn(totalProcessedRows)
+				}
 			}
 
 			rowNum++
@@ -351,6 +374,45 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 
 		if sheet.Err != nil {
 			return nil, fmt.Errorf("error reading sheet %s: %w", sheetName, sheet.Err)
+		}
+
+		if shouldShuffle && len(pendingDataRows) > 0 {
+			ShuffleRows(h.Anon, pendingDataRows)
+			for i, pr := range pendingDataRows {
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				default:
+				}
+				targetRowNum := headerRowIndex + 2 + i
+				cellCoordinate, err := excelize.CoordinatesToCellName(1, targetRowNum)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get cell coordinate for row %d: %w", targetRowNum, err)
+				}
+				if err := sw.SetRow(cellCoordinate, pr.dataCells); err != nil {
+					return nil, fmt.Errorf("failed to write shuffled data row %d in sheet %s: %w", targetRowNum, sheetName, err)
+				}
+				if dm != nil && strategy == domain.StrategyDelete {
+					for colIdx, v := range pr.origCells {
+						var colType ColumnType
+						col1Based := colIdx + 1
+						if colIdx < len(colTypes) && !disabledMap[col1Based] {
+							colType = colTypes[colIdx]
+						}
+						if colType != ColUnknown && strings.TrimSpace(v) != "" {
+							var headerName string
+							if colIdx < len(headers) {
+								headerName = headers[colIdx]
+							}
+							dm.PutCell(sheetName, headerName, targetRowNum, v)
+						}
+					}
+				}
+				totalProcessedRows++
+				if progressFn != nil && totalProcessedRows%50 == 0 {
+					progressFn(totalProcessedRows)
+				}
+			}
 		}
 
 		if err := sw.Flush(); err != nil {

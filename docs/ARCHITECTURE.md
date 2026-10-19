@@ -206,7 +206,7 @@ graph TD
 
 #### Перемешивание строк (`shuffle.go`)
 - Реализация алгоритма тасования Фишера-Йетса с использованием криптографически стойкого источника случайных чисел (`crypto/rand`).
-- Применяется при экспорте электронных таблиц (`.xlsx`, `.ods`, `.csv`) при включении опции `shuffleRows` (строка заголовков сохраняется на первой позиции).
+- Применяется при экспорте электронных таблиц (`.xlsx`, `.xls`, `.xlsb`, `.ods`, `.csv`) при включении опции `shuffleRows` (строка заголовков сохраняется на первой позиции).
 - Для нетабличных форматов (`.docx`, `.odt`, `.txt`, `.pdf`) опция принудительно отключена в UI и игнорируется в сервисном процессоре во избежание нарушения связности разделов документа.
 - Соответствует п. 13 Приказа Роскомнадзора от 19.06.2025 № 140 для противодействия косвенной деанонимизации по исходному порядку следования записей.
 
@@ -214,9 +214,10 @@ graph TD
 - Функция `DetectColumnTypeWithSamples(header, sampleValues)` комбинирует анализ заголовка с проверкой фактических значений ячеек регулярными выражениями:
   - Выявление email-адресов в произвольных колонках (`Логин`, `Учетная запись` и др.).
   - Разделение столбцов на `ColLastName`, `ColFirstName`, `ColPatronymic` при индивидуальных заголовках.
-- Функция `ProcessCell(anon, colType, val, mode, dateRange)` осуществляет маршрутизацию:
-  - При `mode == domain.ModeDelete`: подставляет `DeletionMarker` (`"[УДАЛЕНО]"`).
-  - При `mode == domain.ModeReplace`: обращается к детерминированному синтезу `AnonymizeCell`.
+- Функция `ProcessCellWithStrategy(anon, ts, colType, val, strategy, dateRange)` осуществляет маршрутизацию:
+  - При `strategy == domain.StrategyDelete`: подставляет `DeletionMarker` (`"[УДАЛЕНО]"`).
+  - При `strategy == domain.StrategySemanticTokens`: генерирует детерминированные семантические токены (`[ФИО_0001]`, `[Паспорт_0001]` и др.) через `TokenSession`.
+  - При `strategy == domain.StrategySynthetic`: обращается к синтезу значений `AnonymizeCell`.
 
 #### Мультиформатный предпросмотр (`internal/service/preview/preview.go`)
 - Унифицированный интерфейс постраничной выборки `GetSheetRows`:
@@ -393,7 +394,7 @@ make build-windows
   ```go
   package version
 
-  const Version = "1.13.4"
+  const Version = "1.13.5"
   ```
 - Метод `GetAppInfo()` возвращает `v + version.Version`, отображаемый в шапке `Header.svelte`.
 - Версия синхронизирована с `frontend/package.json` и `Makefile`.

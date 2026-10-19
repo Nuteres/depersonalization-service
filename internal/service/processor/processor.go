@@ -287,6 +287,7 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 	options := map[string]interface{}{
 		"mode":                      opts.Mode,
 		"strategy":                  opts.Strategy,
+		"columns":                   opts.Columns,
 		"disabled_columns":          opts.DisabledCols,
 		"disabled_columns_by_sheet": opts.DisabledBySheet,
 		"progress_callback":         progressCallback,
@@ -389,7 +390,11 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 
 	if opts.CreateKey {
 		directDepMap = depmap.New(filepath.Base(opts.InputPath))
-		directDepMap.Mode = string(opts.Mode)
+		if opts.Strategy != "" {
+			directDepMap.Mode = string(opts.Strategy)
+		} else {
+			directDepMap.Mode = string(opts.Mode)
+		}
 		options["depmap"] = directDepMap
 	}
 

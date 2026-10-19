@@ -2,6 +2,7 @@
   import { restoreState } from '../../stores/restoreState.svelte';
   import { appState } from '../../stores/appState.svelte';
   import { SaveFileDialog, RestoreFileTo } from '../../api/wails';
+  import { getDefaultRestoredPath } from '../../utils/path';
 
   const dataFileName = $derived(
     restoreState.dataPath.split('/').pop()?.split('\\').pop() || 'data.xlsx'
@@ -90,15 +91,10 @@
     }
 
     const ext = restoreState.dataPath.split('.').pop() || 'xlsx';
-    let baseName = restoreState.dataPath.split('/').pop()?.split('\\').pop() || 'data';
-    baseName = baseName.replace(/\.[^/.]+$/, '');
-    if (baseName.endsWith('_anonymized')) {
-      baseName = baseName.replace(/_anonymized$/, '');
-    }
-    const defaultName = `${baseName}_restored.${ext}`;
+    const defaultPath = getDefaultRestoredPath(restoreState.dataPath, ext);
 
     try {
-      const destPath = await SaveFileDialog(defaultName);
+      const destPath = await SaveFileDialog(defaultPath);
       if (!destPath) {
         // User cancelled dialog
         return;
@@ -248,7 +244,7 @@
           <button
             type="button"
             onclick={() => restoreState.selectDataFile()}
-            class="px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md shadow-2xs pressable cursor-pointer"
+            class="h-7 px-3 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md shadow-2xs pressable flex items-center justify-center cursor-pointer"
           >
             Сменить
           </button>
@@ -256,7 +252,7 @@
             type="button"
             id="btn-remove-data-file"
             onclick={() => restoreState.clearDataFile()}
-            class="px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-rose-300 hover:text-rose-600 text-[#78716C] text-xs font-semibold rounded-md shadow-2xs pressable cursor-pointer"
+            class="h-7 px-3 bg-white border border-[#E8E7E3] hover:border-rose-300 hover:text-rose-600 text-[#78716C] text-xs font-semibold rounded-md shadow-2xs pressable flex items-center justify-center cursor-pointer"
           >
             Удалить
           </button>
@@ -349,7 +345,7 @@
             type="button"
             id="btn-reselect-key"
             onclick={() => restoreState.selectKeyFile()}
-            class="px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md shadow-2xs pressable cursor-pointer"
+            class="h-7 px-3 bg-white border border-[#E8E7E3] hover:border-[#1C1917] text-[#1C1917] text-xs font-semibold rounded-md shadow-2xs pressable flex items-center justify-center cursor-pointer"
           >
             Сменить
           </button>
@@ -357,7 +353,7 @@
             type="button"
             id="btn-remove-key-file"
             onclick={() => restoreState.clearKeyFile()}
-            class="px-3 py-1.5 bg-white border border-[#E8E7E3] hover:border-rose-300 hover:text-rose-600 text-[#78716C] text-xs font-semibold rounded-md shadow-2xs pressable cursor-pointer"
+            class="h-7 px-3 bg-white border border-[#E8E7E3] hover:border-rose-300 hover:text-rose-600 text-[#78716C] text-xs font-semibold rounded-md shadow-2xs pressable flex items-center justify-center cursor-pointer"
           >
             Удалить
           </button>
@@ -436,7 +432,6 @@
           class="w-full bg-[#1C1917] disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed hover:bg-[#292524] text-white text-xs font-semibold py-2.5 rounded-md shadow-xs pressable flex items-center justify-center gap-1.5 cursor-pointer font-sans"
         >
           <span>Восстановить данные</span>
-          <span>&rarr;</span>
         </button>
       </div>
     </div>

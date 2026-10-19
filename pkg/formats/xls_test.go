@@ -11,7 +11,9 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
+	"dep_service/pkg/depmap"
 )
 
 func getTestXLSPath(t *testing.T) string {
@@ -270,3 +272,116 @@ func TestXLSHandler_MissingSheetError(t *testing.T) {
 		t.Fatalf("expected sheet not found error, got: %v", err)
 	}
 }
+
+func TestXLSHandler_StrategySemanticTokens(t *testing.T) {
+	path := getTestXLSPath(t)
+	anon := anonymizer.New("test-salt")
+	h := NewXLSHandler(anon)
+
+	outBuf := new(bytes.Buffer)
+	dm := depmap.New("Table.xls")
+	opts := map[string]interface{}{
+		"columns": map[string]string{
+			"Name": "FIO",
+		},
+		"strategy": domain.StrategySemanticTokens,
+		"salt":     "test-salt",
+		"depmap":   dm,
+	}
+
+	resDm, err := h.ProcessToXLSX(context.Background(), path, outBuf, opts)
+	if err != nil {
+		t.Fatalf("ProcessToXLSX failed: %v", err)
+	}
+
+	if resDm.Mode != string(domain.StrategySemanticTokens) {
+		t.Errorf("expected depmap mode to be %q, got %q", domain.StrategySemanticTokens, resDm.Mode)
+	}
+
+	outXl, err := excelize.OpenReader(bytes.NewReader(outBuf.Bytes()))
+	if err != nil {
+		t.Fatalf("failed to open output XLSX: %v", err)
+	}
+	defer outXl.Close()
+
+	outRows, err := outXl.GetRows("Table")
+	if err != nil {
+		t.Fatalf("failed to get rows from sheet 'Table': %v", err)
+	}
+
+	if len(outRows) < 2 {
+		t.Fatalf("expected at least 2 rows in output XLSX, got %d", len(outRows))
+	}
+
+	// First data row (row index 1), Name column (column index 1)
+	expectedToken := "[ФИО_0001]"
+	if outRows[1][1] != expectedToken {
+		t.Errorf("expected semantic token %q in Name column, got %q", expectedToken, outRows[1][1])
+	}
+}
+
+func TestXLSHandler_ShuffleRows(t *testing.T) {
+	path := getTestXLSPath(t)
+	anon := anonymizer.New("salt-for-shuffle")
+	h := NewXLSHandler(anon)
+
+	outBuf := new(bytes.Buffer)
+	opts := map[string]interface{}{
+		"shuffle_rows": true,
+	}
+
+	_, err := h.ProcessToXLSX(context.Background(), path, outBuf, opts)
+	if err != nil {
+		t.Fatalf("ProcessToXLSX failed: %v", err)
+	}
+
+	outXl, err := excelize.OpenReader(bytes.NewReader(outBuf.Bytes()))
+	if err != nil {
+		t.Fatalf("failed to open output XLSX: %v", err)
+	}
+	defer outXl.Close()
+
+	outRows, err := outXl.GetRows("Table")
+	if err != nil {
+		t.Fatalf("failed to get rows from sheet 'Table': %v", err)
+	}
+
+	if len(outRows) != 12 {
+		t.Fatalf("expected 12 rows (1 header + 11 data), got %d", len(outRows))
+	}
+
+	// Header row intact
+	if outRows[0][0] != "Code" || outRows[0][1] != "Name" || outRows[0][2] != "Description" {
+		t.Errorf("unexpected headers: %v", outRows[0])
+	}
+
+	// Verify data rows are shuffled
+	shuffledCodes := make([]string, 11)
+	for i := 1; i <= 11; i++ {
+		shuffledCodes[i-1] = outRows[i][0]
+	}
+	originalCodes := []string{"code1", "code2", "code3", "code4", "code5", "code6", "code7", "code8", "code9", "code10", "code11"}
+
+	isSameOrder := true
+	for i := range originalCodes {
+		if shuffledCodes[i] != originalCodes[i] {
+			isSameOrder = false
+			break
+		}
+	}
+	if isSameOrder {
+		t.Errorf("expected codes to be shuffled, but they are in sequential order: %v", shuffledCodes)
+	}
+
+	// Multiset check
+	counts := make(map[string]int)
+	for _, c := range shuffledCodes {
+		counts[c]++
+	}
+	for _, c := range originalCodes {
+		if counts[c] != 1 {
+			t.Errorf("expected code %q to appear exactly once, got %d", c, counts[c])
+		}
+	}
+}
+
