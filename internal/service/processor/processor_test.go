@@ -2,6 +2,7 @@ package processor_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -1109,4 +1110,78 @@ func TestProcessor_EnforceTargetExtension_XLSX_Not_CSV(t *testing.T) {
 		t.Errorf("expected anonymized value in A2, got %q", val)
 	}
 }
+
+func TestProcess_XLS_SemanticTokens(t *testing.T) {
+	tmpDir := t.TempDir()
+	inPath := filepath.Join(tmpDir, "table.xls")
+	outPath := filepath.Join(tmpDir, "table_anonymized.xlsx")
+
+	fixturePath := filepath.Join("..", "..", "..", "pkg", "formats", "xls_fixture_test.go")
+	fixtureContent, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatalf("failed to read fixture file: %v", err)
+	}
+
+	lines := strings.Split(string(fixtureContent), "\n")
+	var b64 string
+	for _, l := range lines {
+		if strings.HasPrefix(l, "const TestXLSBase64 = \"") {
+			b64 = strings.TrimPrefix(l, "const TestXLSBase64 = \"")
+			b64 = strings.TrimSuffix(b64, "\"")
+			break
+		}
+	}
+	if b64 == "" {
+		t.Fatalf("failed to find TestXLSBase64 in fixture file")
+	}
+
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		t.Fatalf("failed to decode base64: %v", err)
+	}
+
+	if err := os.WriteFile(inPath, raw, 0644); err != nil {
+		t.Fatalf("failed to write test xls file: %v", err)
+	}
+
+	proc := processor.New(nil)
+	opts := domain.ProcessOptions{
+		InputPath:  inPath,
+		OutputPath: outPath,
+		Salt:       "test-salt-123",
+		Mode:       domain.ModeReplace,
+		Strategy:   domain.StrategySemanticTokens,
+		Columns: map[string]string{
+			"Name": "FIO",
+		},
+		CreateKey: true,
+	}
+
+	res, err := proc.Process(context.Background(), opts, nil)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	if !strings.HasSuffix(res.OutputPath, ".xlsx") {
+		t.Errorf("expected OutputPath to end in .xlsx, got %q", res.OutputPath)
+	}
+
+	outF, err := excelize.OpenFile(res.OutputPath)
+	if err != nil {
+		t.Fatalf("failed to open output as excel: %v", err)
+	}
+	defer outF.Close()
+
+	// In Table.xls, row 1 is header ("Code", "Name", "Description").
+	// Row 2 has ("code1", "name1", "description1").
+	// Column B (Name) is anonymized with semantic token "[ФИО_0001]".
+	val, err := outF.GetCellValue("Table", "B2")
+	if err != nil {
+		t.Fatalf("failed to get cell value B2: %v", err)
+	}
+	if val != "[ФИО_0001]" {
+		t.Errorf("expected semantic token [ФИО_0001] in B2, got %q", val)
+	}
+}
+
 

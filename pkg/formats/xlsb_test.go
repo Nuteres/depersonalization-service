@@ -12,7 +12,9 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"dep_service/internal/domain"
 	"dep_service/pkg/anonymizer"
+	"dep_service/pkg/depmap"
 )
 
 func biff12WriteID(buf *bytes.Buffer, id int) {
@@ -491,5 +493,62 @@ func TestXLSBHandler_MissingSheetError(t *testing.T) {
 	_, err := h.ProcessToXLSX(context.Background(), path, outBuf, opts)
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected sheet not found error, got: %v", err)
+	}
+}
+
+func TestXLSBHandler_StrategySemanticTokens(t *testing.T) {
+	headers := []string{"ФИО", "Паспорт"}
+	rows := [][]string{{"Иванов Иван Иванович", "4508 123456"}}
+	raw := createTestXLSB(t, "Лист1", headers, rows)
+	path := writeTempXLSB(t, raw)
+
+	anon := anonymizer.New("test-salt")
+	h := NewXLSBHandler(anon)
+
+	outBuf := new(bytes.Buffer)
+	dm := depmap.New("test.xlsb")
+	opts := map[string]interface{}{
+		"strategy": domain.StrategySemanticTokens,
+		"salt":     "test-salt",
+		"depmap":   dm,
+	}
+
+	resDm, err := h.ProcessToXLSX(context.Background(), path, outBuf, opts)
+	if err != nil {
+		t.Fatalf("ProcessToXLSX failed: %v", err)
+	}
+
+	if resDm.Mode != string(domain.StrategySemanticTokens) {
+		t.Errorf("expected depmap mode to be %q, got %q", domain.StrategySemanticTokens, resDm.Mode)
+	}
+
+	outXl, err := excelize.OpenReader(bytes.NewReader(outBuf.Bytes()))
+	if err != nil {
+		t.Fatalf("failed to open output XLSX: %v", err)
+	}
+	defer outXl.Close()
+
+	outRows, err := outXl.GetRows("Лист1")
+	if err != nil {
+		t.Fatalf("failed to get rows from sheet 'Лист1': %v", err)
+	}
+
+	if len(outRows) < 2 {
+		t.Fatalf("expected at least 2 rows in output XLSX, got %d", len(outRows))
+	}
+
+	// Headers intact
+	if outRows[0][0] != "ФИО" || outRows[0][1] != "Паспорт" {
+		t.Errorf("unexpected headers: %v", outRows[0])
+	}
+
+	// Row 1 tokens
+	expectedFIO := "[ФИО_0001]"
+	if outRows[1][0] != expectedFIO {
+		t.Errorf("expected semantic token %q in FIO column, got %q", expectedFIO, outRows[1][0])
+	}
+	expectedPass := "[Паспорт_0001]"
+	if outRows[1][1] != expectedPass {
+		t.Errorf("expected semantic token %q in Passport column, got %q", expectedPass, outRows[1][1])
 	}
 }

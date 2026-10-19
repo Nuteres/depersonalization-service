@@ -25,14 +25,14 @@
 
   <!-- Controls: Tabs + Audit Log Button + Zoom -->
   <div class="flex items-center gap-2 self-start sm:self-center flex-wrap">
-    <div class="flex items-center bg-[#F0EFEB] p-0.5 rounded-md text-xs font-medium border border-[#E8E7E3]">
+    <div class="h-7 flex items-center bg-[#F0EFEB] p-0.5 rounded-md text-xs font-medium border border-[#E8E7E3]">
       <button
         id="mode-tab-depersonalize"
         type="button"
         onclick={() => appState.setMode('depersonalize')}
         class={appState.currentAppMode === 'depersonalize'
-          ? 'px-3 py-1 bg-white text-[#1C1917] rounded shadow-xs font-semibold pressable flex items-center space-x-1.5 cursor-pointer'
-          : 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] rounded pressable flex items-center space-x-1.5 cursor-pointer'}
+          ? 'h-full px-3 bg-white text-[#1C1917] rounded shadow-xs font-semibold pressable flex items-center space-x-1.5 cursor-pointer'
+          : 'h-full px-3 text-[#78716C] hover:text-[#1C1917] rounded pressable flex items-center space-x-1.5 cursor-pointer'}
       >
         <span class="w-1.5 h-1.5 rounded-full {appState.currentAppMode === 'depersonalize' ? 'bg-emerald-500' : 'bg-stone-300'}"></span>
         <span>Деперсонализация</span>
@@ -42,8 +42,8 @@
         type="button"
         onclick={() => appState.setMode('restore')}
         class={appState.currentAppMode === 'restore'
-          ? 'px-3 py-1 bg-white text-[#1C1917] rounded shadow-xs font-semibold pressable flex items-center space-x-1.5 cursor-pointer'
-          : 'px-3 py-1 text-[#78716C] hover:text-[#1C1917] rounded pressable flex items-center space-x-1.5 cursor-pointer'}
+          ? 'h-full px-3 bg-white text-[#1C1917] rounded shadow-xs font-semibold pressable flex items-center space-x-1.5 cursor-pointer'
+          : 'h-full px-3 text-[#78716C] hover:text-[#1C1917] rounded pressable flex items-center space-x-1.5 cursor-pointer'}
       >
         <span class="w-1.5 h-1.5 rounded-full {appState.currentAppMode === 'restore' ? 'bg-emerald-500' : 'bg-stone-300'}"></span>
         <span>Восстановление</span>
@@ -54,7 +54,7 @@
       id="btn-open-audit"
       type="button"
       onclick={() => appState.openAuditModal()}
-      class="px-3 py-1 bg-white hover:bg-[#FAF9F5] text-[#1C1917] border border-[#E8E7E3] rounded-md text-xs font-medium shadow-2xs pressable flex items-center gap-1.5 cursor-pointer"
+      class="h-7 px-3 bg-white hover:bg-[#FAF9F5] text-[#1C1917] border border-[#E8E7E3] rounded-md text-xs font-medium shadow-2xs pressable flex items-center gap-1.5 cursor-pointer"
       title="Журнал операций"
     >
       <svg class="w-3.5 h-3.5 text-stone-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -64,35 +64,39 @@
     </button>
 
     <!-- Zoom Controls -->
-    <div class="flex items-center bg-white rounded-md text-xs font-medium border border-[#E8E7E3] overflow-hidden shadow-2xs" id="zoom-controls">
+    <div class="h-7 flex items-center bg-white rounded-md text-xs font-medium border border-[#E8E7E3] overflow-hidden shadow-2xs" id="zoom-controls">
       <button
         id="btn-zoom-out"
         type="button"
         onclick={() => zoomState.zoomOut()}
         disabled={zoomState.currentZoom <= zoomState.minZoom}
-        class="px-2 py-1 hover:bg-[#F0EFEB] text-[#78716C] hover:text-[#1C1917] pressable cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+        class="h-full w-7 flex items-center justify-center hover:bg-[#F0EFEB] text-[#78716C] hover:text-[#1C1917] pressable cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         title="Уменьшить масштаб"
       >
-        –
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
+        </svg>
       </button>
       <button
         id="btn-zoom-reset"
         type="button"
         onclick={() => zoomState.resetZoom()}
-        class="px-2 py-1 font-mono text-[11px] font-semibold text-[#1C1917] border-x border-[#E8E7E3] hover:bg-[#F0EFEB] pressable cursor-pointer min-w-[44px] text-center"
+        class="h-full px-2 flex items-center justify-center font-mono text-[11px] font-semibold text-[#1C1917] border-x border-[#E8E7E3] hover:bg-[#F0EFEB] pressable cursor-pointer min-w-[44px] text-center"
         title="Сбросить масштаб"
       >
-        {Math.round(zoomState.currentZoom * 100)}%
+        <span>{Math.round(zoomState.currentZoom * 100)}%</span>
       </button>
       <button
         id="btn-zoom-in"
         type="button"
         onclick={() => zoomState.zoomIn()}
         disabled={zoomState.currentZoom >= zoomState.maxZoom}
-        class="px-2 py-1 hover:bg-[#F0EFEB] text-[#78716C] hover:text-[#1C1917] pressable cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed font-bold"
+        class="h-full w-7 flex items-center justify-center hover:bg-[#F0EFEB] text-[#78716C] hover:text-[#1C1917] pressable cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         title="Увеличить масштаб"
       >
-        +
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
       </button>
     </div>
   </div>

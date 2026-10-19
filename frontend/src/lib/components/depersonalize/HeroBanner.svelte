@@ -169,7 +169,7 @@
         id="btn-change-file-hero"
         type="button"
         onclick={handleSelectFile}
-        class="px-3 py-1 bg-white hover:bg-[#FAF9F5] text-[#1C1917] border border-[#E8E7E3] rounded-md text-xs font-semibold shadow-2xs pressable flex items-center gap-1.5 cursor-pointer"
+        class="h-7 px-3 bg-white hover:bg-[#FAF9F5] text-[#1C1917] border border-[#E8E7E3] rounded-md text-xs font-semibold shadow-2xs pressable flex items-center justify-center cursor-pointer"
         title="Выбрать другой файл"
       >
         <span>Сменить</span>
@@ -179,7 +179,7 @@
         id="btn-close-file-hero"
         type="button"
         onclick={clearCurrentFile}
-        class="px-3 py-1 bg-white hover:bg-rose-50 hover:text-rose-600 text-[#78716C] border border-[#E8E7E3] hover:border-rose-300 rounded-md text-xs font-semibold shadow-2xs pressable flex items-center gap-1.5 cursor-pointer"
+        class="h-7 px-3 bg-white hover:bg-rose-50 hover:text-rose-600 text-[#78716C] border border-[#E8E7E3] hover:border-rose-300 rounded-md text-xs font-semibold shadow-2xs pressable flex items-center justify-center cursor-pointer"
         title="Удалить прикрепленный файл"
       >
         <span>Удалить</span>
@@ -189,11 +189,10 @@
         id="btn-save"
         type="button"
         onclick={onOpenSaveModal}
-        class="bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold px-4 py-1 rounded-md shadow-xs pressable flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
+        class="h-7 px-3.5 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold rounded-md shadow-xs pressable flex items-center justify-center cursor-pointer"
+        title="Сохранить и обезличить файл"
       >
         <span>Сохранить</span>
-        <span class="font-mono text-[10px] text-stone-400 uppercase tracking-wider">{fileExtBadge.replace('.', '')}</span>
-        <span>&rarr;</span>
       </button>
     </div>
   </div>

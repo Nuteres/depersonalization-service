@@ -51,6 +51,30 @@ func (a *DesktopApp) SelectFile() (string, error) {
 	return selected, nil
 }
 
+// parseSavePath extracts the directory and base filename from a path or filename string.
+// If inputPath contains path separators (/ or \), it returns the directory and filename separately.
+// Otherwise, it returns empty dir and inputPath as the filename.
+func parseSavePath(inputPath string) (dir, file string) {
+	trimmed := strings.TrimSpace(inputPath)
+	if trimmed == "" {
+		return "", ""
+	}
+	lastSlash := strings.LastIndex(trimmed, "/")
+	lastBackslash := strings.LastIndex(trimmed, "\\")
+	lastSep := lastSlash
+	if lastBackslash > lastSep {
+		lastSep = lastBackslash
+	}
+	if lastSep != -1 {
+		dir := trimmed[:lastSep]
+		if dir == "" || (lastSep == 2 && len(trimmed) > 1 && trimmed[1] == ':') {
+			dir = trimmed[:lastSep+1]
+		}
+		return dir, trimmed[lastSep+1:]
+	}
+	return "", trimmed
+}
+
 // SaveFileDialog opens a native system file save dialog with defaultFilename
 // and returns the user-selected destination path.
 func (a *DesktopApp) SaveFileDialog(defaultName string) (string, error) {
@@ -98,10 +122,13 @@ func (a *DesktopApp) SaveFileDialog(defaultName string) (string, error) {
 		}
 	}
 
+	defaultDir, defaultFile := parseSavePath(defaultName)
+
 	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "Сохранить обработанный файл",
-		DefaultFilename: defaultName,
-		Filters:         filters,
+		Title:            "Сохранить обработанный файл",
+		DefaultDirectory: defaultDir,
+		DefaultFilename:  defaultFile,
+		Filters:          filters,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to open save dialog: %w", err)
@@ -148,10 +175,13 @@ func (a *DesktopApp) SaveKeyFileDialog(defaultName string) (string, error) {
 		}
 	}
 
+	defaultDir, defaultFile := parseSavePath(defaultName)
+
 	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "Сохранить ключ восстановления (.depmap)",
-		DefaultFilename: defaultName,
-		Filters:         filters,
+		Title:            "Сохранить ключ восстановления (.depmap)",
+		DefaultDirectory: defaultDir,
+		DefaultFilename:  defaultFile,
+		Filters:          filters,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to open save dialog: %w", err)
@@ -177,10 +207,13 @@ func (a *DesktopApp) SaveAuditFileDialog(defaultName string) (string, error) {
 		}
 	}
 
+	defaultDir, defaultFile := parseSavePath(defaultName)
+
 	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "Экспорт журнала аудита",
-		DefaultFilename: defaultName,
-		Filters:         filters,
+		Title:            "Экспорт журнала аудита",
+		DefaultDirectory: defaultDir,
+		DefaultFilename:  defaultFile,
+		Filters:          filters,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to open audit save dialog: %w", err)
@@ -202,10 +235,13 @@ func (a *DesktopApp) SaveArchiveFileDialog(defaultName string) (string, error) {
 		}
 	}
 
+	defaultDir, defaultFile := parseSavePath(defaultName)
+
 	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "Сохранить защищённый ZIP-архив",
-		DefaultFilename: defaultName,
-		Filters:         filters,
+		Title:            "Сохранить защищённый ZIP-архив",
+		DefaultDirectory: defaultDir,
+		DefaultFilename:  defaultFile,
+		Filters:          filters,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to open archive save dialog: %w", err)

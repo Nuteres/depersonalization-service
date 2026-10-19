@@ -34,6 +34,7 @@ type ProcessOptions struct {
 	Mode              ProcessingMode        `json:"mode"`
 	Strategy          AnonymizationStrategy `json:"strategy,omitempty"`
 	Salt              string                `json:"salt"`
+	Columns           map[string]string     `json:"columns,omitempty"`
 	DisabledCols      []int                 `json:"disabledCols"`
 	DisabledBySheet   map[string][]int      `json:"disabledBySheet"`
 	CreateKey         bool                  `json:"createKey"`

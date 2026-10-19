@@ -480,11 +480,11 @@
 
       <!-- Controls Right: Before/After Toggle -->
       <div class="flex items-center gap-2.5">
-        <div class="inline-flex border border-[#E8E7E3] bg-[#F0EFEB] rounded-md p-0.5 text-xs font-medium">
+        <div class="h-7 inline-flex items-center border border-[#E8E7E3] bg-[#F0EFEB] rounded-md p-0.5 text-xs font-medium">
           <button
             type="button"
             onclick={() => (isBefore = false)}
-            class="px-3 py-1 rounded pressable {!isBefore
+            class="h-full px-3 rounded pressable flex items-center {!isBefore
               ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
@@ -493,7 +493,7 @@
           <button
             type="button"
             onclick={() => (isBefore = true)}
-            class="px-3 py-1 rounded pressable {isBefore
+            class="h-full px-3 rounded pressable flex items-center {isBefore
               ? 'bg-white text-[#1C1917] font-semibold shadow-xs'
               : 'text-[#78716C] hover:text-[#1C1917]'} transition cursor-pointer"
           >
@@ -623,8 +623,11 @@
             </div>
           </div>
 
-          <div class="mt-2.5 pt-2 border-t border-stone-800 text-[10px] text-stone-400 font-mono flex items-center justify-between">
-            <span>💡 Кликните для {hoveredEntity.isDisabled ? 'включения' : 'отключения'} сокрытия</span>
+          <div class="mt-2.5 pt-2 border-t border-stone-800 text-[10px] text-stone-400 font-mono flex items-center gap-1.5">
+            <svg class="w-3 h-3 text-stone-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Кликните для {hoveredEntity.isDisabled ? 'включения' : 'отключения'} сокрытия</span>
           </div>
         </div>
       {/if}

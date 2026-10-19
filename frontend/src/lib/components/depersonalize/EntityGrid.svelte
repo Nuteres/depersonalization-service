@@ -61,9 +61,12 @@
 {#if appState.currentFileInfo}
   <div>
     {#if entities.length === 0}
-      <!-- Zero PII Entities Found -->
       <div class="bg-white border border-[#E8E7E3] rounded-lg p-5 text-xs text-[#78716C] flex items-center space-x-3 shadow-2xs">
-        <span class="text-base text-emerald-600 font-bold shrink-0">✔</span>
+        <div class="w-7 h-7 rounded-full bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600 shrink-0">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </div>
         <div>
           <div class="font-semibold text-[#1C1917] text-sm">В файле не обнаружено персональных данных</div>
           <div class="text-xs text-[#78716C] mt-0.5 leading-relaxed">
