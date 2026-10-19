@@ -66,7 +66,11 @@ func parseSavePath(inputPath string) (dir, file string) {
 		lastSep = lastBackslash
 	}
 	if lastSep != -1 {
-		return trimmed[:lastSep], trimmed[lastSep+1:]
+		dir := trimmed[:lastSep]
+		if dir == "" || (lastSep == 2 && len(trimmed) > 1 && trimmed[1] == ':') {
+			dir = trimmed[:lastSep+1]
+		}
+		return dir, trimmed[lastSep+1:]
 	}
 	return "", trimmed
 }

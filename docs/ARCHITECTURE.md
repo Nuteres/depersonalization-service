@@ -394,7 +394,7 @@ make build-windows
   ```go
   package version
 
-  const Version = "1.13.5"
+  const Version = "1.13.6"
   ```
 - Метод `GetAppInfo()` возвращает `v + version.Version`, отображаемый в шапке `Header.svelte`.
 - Версия синхронизирована с `frontend/package.json` и `Makefile`.

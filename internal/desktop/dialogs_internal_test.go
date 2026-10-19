@@ -35,6 +35,21 @@ func TestParseSavePath(t *testing.T) {
 			expectedDir:  "C:/Users/User/Documents",
 			expectedFile: "report_anonymized.xlsx",
 		},
+		{
+			input:        "/file.xlsx",
+			expectedDir:  "/",
+			expectedFile: "file.xlsx",
+		},
+		{
+			input:        `C:\source.xlsx`,
+			expectedDir:  `C:\`,
+			expectedFile: "source.xlsx",
+		},
+		{
+			input:        "D:/data.csv",
+			expectedDir:  "D:/",
+			expectedFile: "data.csv",
+		},
 	}
 
 	for _, tt := range tests {

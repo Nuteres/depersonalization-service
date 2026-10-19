@@ -1179,8 +1179,8 @@ func TestProcess_XLS_SemanticTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get cell value B2: %v", err)
 	}
-	if !strings.HasPrefix(val, "[") || !strings.HasSuffix(val, "]") {
-		t.Errorf("expected semantic token in B2, got %q", val)
+	if val != "[ФИО_0001]" {
+		t.Errorf("expected semantic token [ФИО_0001] in B2, got %q", val)
 	}
 }
 

@@ -11,8 +11,19 @@ export interface PathParts {
 }
 
 /**
+ * Helper to join a directory and filename, avoiding redundant separators for root paths.
+ */
+function joinPath(dir: string, sep: string, filename: string): string {
+  if (!dir) return filename;
+  if (dir.endsWith('/') || dir.endsWith('\\')) {
+    return `${dir}${filename}`;
+  }
+  return `${dir}${sep}${filename}`;
+}
+
+/**
  * Splits a file path into directory, filename, baseName (without ext), extension, and directory separator.
- * Correctly handles both Windows backslashes (\) and POSIX forward slashes (/).
+ * Correctly handles both Windows backslashes (\) and POSIX forward slashes (/), including root paths.
  */
 export function splitPath(filePath: string): PathParts {
   const trimmed = filePath.trim();
@@ -29,6 +40,10 @@ export function splitPath(filePath: string): PathParts {
   let filename = trimmed;
   if (lastSep !== -1) {
     dir = trimmed.slice(0, lastSep);
+    // Preserve root separator for Unix root (/) or Windows drive root (e.g. C:\)
+    if (dir === '' || (lastSep === 2 && trimmed[1] === ':')) {
+      dir = trimmed.slice(0, lastSep + 1);
+    }
     filename = trimmed.slice(lastSep + 1);
   }
 
@@ -58,7 +73,7 @@ export function getDefaultOutputPath(
   }
 
   const newFilename = `${effectiveBase}.${cleanExt}`;
-  return dir ? `${dir}${sep}${newFilename}` : newFilename;
+  return joinPath(dir, sep, newFilename);
 }
 
 /**
@@ -80,5 +95,5 @@ export function getDefaultRestoredPath(
   effectiveBase = `${effectiveBase}_restored`;
 
   const newFilename = `${effectiveBase}.${cleanExt}`;
-  return dir ? `${dir}${sep}${newFilename}` : newFilename;
+  return joinPath(dir, sep, newFilename);
 }

@@ -336,7 +336,7 @@ func (h *XLSBHandler) ProcessToXLSX(ctx context.Context, path string, w io.Write
 					newVal := ProcessCellWithStrategy(h.Anon, ts, colType, v, strategy, dateRange)
 					dataCells[i] = newVal
 
-					if colType != ColUnknown && strings.TrimSpace(v) != "" && dm != nil {
+					if colType != ColUnknown && strings.TrimSpace(v) != "" && dm != nil && newVal != v {
 						var headerName string
 						if i < len(headers) {
 							headerName = headers[i]
