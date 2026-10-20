@@ -1,0 +1,26 @@
+version: 1
+
+reviews:
+  enabled: true
+  ignore:
+    pr_labels:
+      - 'skip-review'
+      - 'wip'
+      - 'WIP'
+      - 'docs'
+    pr_titles:
+      - 'WIP:*'
+      - 'Draft:*'
+      - 'docs:*'
+      - 'chore(docs):*'
+    files:
+      - 'docs/**'
+      - '*.md'
+      - 'CHANGELOG.md'
+      - 'LICENSE'
+      - 'vendor/**'
+      - 'bin/**'
+      - 'build/bin/**'
+      - 'frontend/dist/**'
+      - 'frontend/package-lock.json'
+      - 'go.sum'
