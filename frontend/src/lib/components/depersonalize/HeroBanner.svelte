@@ -189,7 +189,8 @@
         id="btn-save"
         type="button"
         onclick={onOpenSaveModal}
-        class="h-7 px-3.5 bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold rounded-md shadow-xs pressable flex items-center justify-center cursor-pointer"
+        disabled={appState.isProcessing}
+        class="h-7 px-3.5 bg-[#1C1917] hover:bg-[#292524] disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md shadow-xs pressable flex items-center justify-center cursor-pointer"
         title="Сохранить и обезличить файл"
       >
         <span>Сохранить</span>

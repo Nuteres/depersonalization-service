@@ -233,7 +233,7 @@ graph TD
 
 ## 6. Версионирование (Semantic Versioning)
 
-- **Единый источник правды**: константа `Version` в `internal/version/version.go` (`const Version = "1.13.6"`).
+- **Единый источник правды**: константа `Version` в `internal/version/version.go` (`const Version = "1.14.1"`).
 - Метод `GetAppInfo()` возвращает версию для отображения в шапке окна.
 - Версия синхронизирована с `frontend/package.json` и `Makefile`.
 - История релизов фиксируется в `CHANGELOG.md` в соответствии с регламентом [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).

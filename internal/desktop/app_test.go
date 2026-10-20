@@ -209,6 +209,26 @@ func TestDesktopApp_Cancellation(t *testing.T) {
 	}
 }
 
+func TestDesktopApp_ConcurrentOperationRejected(t *testing.T) {
+	app := newTestApp()
+	app.SetRunningForTest(true)
+	defer app.SetRunningForTest(false)
+
+	_, err := app.RestoreFileTo("in.xlsx", "key.depmap", "pass", "out.xlsx")
+	if err == nil || !strings.Contains(err.Error(), "операция уже выполняется") {
+		t.Errorf("expected 'операция уже выполняется' error, got %v", err)
+	}
+
+	_, err = app.ProcessFileWithOptions(domain.ProcessOptions{InputPath: "in.xlsx"})
+	if err == nil || !strings.Contains(err.Error(), "операция уже выполняется") {
+		t.Errorf("expected 'операция уже выполняется' error, got %v", err)
+	}
+
+	if !app.IsOperationRunning() {
+		t.Errorf("expected IsOperationRunning to be true")
+	}
+}
+
 func TestDesktopApp_Dialogs_NilContext(t *testing.T) {
 	app := newTestApp()
 

@@ -46,6 +46,12 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 	}
 	defer xl.Close()
 
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	default:
+	}
+
 	sheetList := xl.GetSheetList()
 	if len(sheetList) == 0 {
 		return 0, nil
@@ -54,6 +60,11 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 	// Calculate total rows across all sheets for progress tracking
 	totalRows := 0
 	for _, sheet := range sheetList {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		default:
+		}
 		counted := false
 		dim, err := xl.GetSheetDimension(sheet)
 		if err == nil && strings.Contains(dim, ":") {
@@ -72,6 +83,12 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 			if err == nil {
 				sheetRows := 0
 				for rIter.Next() {
+					select {
+					case <-ctx.Done():
+						_ = rIter.Close()
+						return 0, ctx.Err()
+					default:
+					}
 					sheetRows++
 				}
 				_ = rIter.Close()
@@ -157,6 +174,12 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 		var sample [][]string
 		sampleLimit := 40
 		for sampleRows.Next() && len(sample) < sampleLimit {
+			select {
+			case <-ctx.Done():
+				_ = sampleRows.Close()
+				return restoredCount, ctx.Err()
+			default:
+			}
 			cols, err := sampleRows.Columns()
 			if err != nil {
 				break
@@ -290,6 +313,12 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 			for _, m := range srcMerges {
 				_ = sw.MergeCell(m.GetStartAxis(), m.GetEndAxis())
 			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return restoredCount, ctx.Err()
+		default:
 		}
 
 		if err := sw.Flush(); err != nil {

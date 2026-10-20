@@ -229,7 +229,7 @@
   }
 
   async function handleStart() {
-    if (!appState.currentFileInfo || !appState.currentFilePath) return;
+    if (!appState.currentFileInfo || !appState.currentFilePath || appState.isProcessing) return;
     if (!isFormValid) return;
 
     let destPath = outputPath.trim();
@@ -340,18 +340,18 @@
           'success'
         );
       } else {
-        appState.finishProgress();
         appState.showToast(result?.error || 'Ошибка при деперсонализации', 'error');
       }
     } catch (err: any) {
       console.error('Error during depersonalization:', err);
-      appState.finishProgress();
       const errStr = String(err);
       if (errStr.includes('context canceled') || errStr.includes('canceled') || errStr.includes('отменена')) {
-        appState.showToast('Операция отменена', 'info');
+        appState.showToast('Операция отменена пользователем', 'info');
       } else {
         appState.showToast(`Ошибка деперсонализации: ${err}`, 'error');
       }
+    } finally {
+      appState.finishProgress();
     }
   }
 
@@ -886,8 +886,8 @@
         <button
           type="button"
           onclick={handleStart}
-          disabled={!isFormValid}
-          class="h-8 px-5 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 shadow-sm pressable {isFormValid ? 'bg-[#1C1917] hover:bg-[#292524] text-white cursor-pointer' : 'bg-[#E7E5E4] text-[#A8A29E] cursor-not-allowed border border-[#D6D3D1]'}"
+          disabled={!isFormValid || appState.isProcessing}
+          class="h-8 px-5 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 shadow-sm pressable {isFormValid && !appState.isProcessing ? 'bg-[#1C1917] hover:bg-[#292524] text-white cursor-pointer' : 'bg-[#E7E5E4] text-[#A8A29E] cursor-not-allowed border border-[#D6D3D1]'}"
         >
           <svg class="w-3.5 h-3.5 text-stone-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />

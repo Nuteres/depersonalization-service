@@ -1,5 +1,5 @@
 APP_NAME = depersonalizer
-VERSION = 1.14.0
+VERSION = 1.14.1
 
 .PHONY: all build-all build-frontend build-altlinux build-windows build-macos test clean
 

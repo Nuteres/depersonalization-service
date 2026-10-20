@@ -51,6 +51,12 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 	}
 	defer srcFile.Close()
 
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	sheetList := srcFile.GetSheetList()
 	if len(sheetList) == 0 {
 		return nil
@@ -122,6 +128,12 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 		}
 		var sample [][]string
 		for sampleIter.Next() && len(sample) < 40 {
+			select {
+			case <-ctx.Done():
+				_ = sampleIter.Close()
+				return ctx.Err()
+			default:
+			}
 			cols, err := sampleIter.Columns()
 			if err != nil {
 				break
@@ -336,9 +348,21 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 			_ = sw.MergeCell(m.GetStartAxis(), m.GetEndAxis())
 		}
 
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if err := sw.Flush(); err != nil {
 			return fmt.Errorf("failed to flush stream writer for sheet %s: %w", sheetName, err)
 		}
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	outFile.SetActiveSheet(0)
