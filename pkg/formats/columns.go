@@ -2,6 +2,7 @@ package formats
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -13,11 +14,12 @@ import (
 var (
 	reEmailPattern    = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	rePhonePattern    = regexp.MustCompile(`^(?:\+7|8)?[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}$`)
-	reDatePattern     = regexp.MustCompile(`^\d{2}[./-]\d{2}[./-]\d{4}$|^\d{4}[./-]\d{2}[./-]\d{2}$`)
+	reDatePattern     = regexp.MustCompile(`^\d{2}[./-]\d{2}[./-]\d{4}(?:[\sT]\d{2}:\d{2}(?::\d{2})?)?$|^\d{4}[./-]\d{2}[./-]\d{2}(?:[\sT]\d{2}:\d{2}(?::\d{2})?)?$`)
 	reSNILSPattern    = regexp.MustCompile(`^\d{3}[-\s]\d{3}[-\s]\d{3}[-\s]\d{2}$|^\d{11}$`)
 	rePassportPattern = regexp.MustCompile(`^\d{4}\s+\d{6}$|^\d{10}$`)
 	rePostalPattern   = regexp.MustCompile(`\b\d{6}\b`)
 	reFIOPattern      = regexp.MustCompile(`^[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:ович|евич|ич|овна|евна|ична|оглы|кызы)$`)
+	reMockFIOPattern  = regexp.MustCompile(`^(?i:фио|fio)\s*\d+$`)
 )
 
 // ColumnType defines the detected or specified PII type for a column.
@@ -59,8 +61,67 @@ func isNonPerson(h string) bool {
 	return false
 }
 
+func hasWord(s, word string) bool {
+	fields := strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	for _, f := range fields {
+		if f == word {
+			return true
+		}
+	}
+	return false
+}
+
+func isCompetencySentence(h string) bool {
+	if len(h) > 30 {
+		markers := []string{
+			"выявляет", "проявляет", "предлагает", "переосмысляет", "мотивирует",
+			"поддерживает", "создает", "создаёт", "планирует", "определяет",
+			"учитывает", "принимает", "сотрудничает", "развивает", "работает",
+			"внедряет", "использует", "мыслит", "управляет", "лидирует", "решает",
+			"влияет", "адаптирует", "достигает", "оценивает", "изучает", "выстраивает",
+			"информирует", "структурирует", "приводит",
+		}
+		lower := strings.ToLower(h)
+		for _, m := range markers {
+			if strings.Contains(lower, m) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isNumericScoreOrRating(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return false
+	}
+	if score, err := strconv.ParseFloat(strings.ReplaceAll(trimmed, ",", "."), 64); err == nil {
+		return score >= 0 && score <= 100
+	}
+	return false
+}
+
 // DetectColumnType analyzes a column header string and returns the identified PII type.
 func DetectColumnType(header string) ColumnType {
+	ct := detectColumnTypeExact(header)
+	if ct != ColUnknown {
+		return ct
+	}
+	// If hierarchical header (e.g. "Группа / Имя" or "Категория / СНИЛС"),
+	// fallback to evaluating the leaf column name so parent categories do not suppress entity detection.
+	if idx := strings.LastIndex(header, " / "); idx != -1 {
+		leaf := strings.TrimSpace(header[idx+3:])
+		if leaf != "" {
+			return detectColumnTypeExact(leaf)
+		}
+	}
+	return ColUnknown
+}
+
+func detectColumnTypeExact(header string) ColumnType {
 	h := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(header, "\ufeff")))
 	if h == "" {
 		return ColUnknown
@@ -68,11 +129,19 @@ func DetectColumnType(header string) ColumnType {
 
 	// 1. Date / Period / Validity term (checked first so that composite headers like
 	// "Дата выдачи паспорта", "Срок действия карты", "Период" are classified as dates).
-	if strings.Contains(h, "дата") || strings.Contains(h, "date") ||
-		strings.Contains(h, "срок") || strings.Contains(h, "период") ||
-		strings.Contains(h, "рожден") || strings.Contains(h, "рожд") ||
-		strings.Contains(h, "д/р") {
-		return ColDate
+	if !isCompetencySentence(h) {
+		if strings.Contains(h, "дата") || strings.Contains(h, "date") ||
+			strings.Contains(h, "рожден") || strings.Contains(h, "рожд") ||
+			strings.Contains(h, "д/р") || strings.Contains(h, "период") ||
+			strings.Contains(h, "срок действия") || strings.Contains(h, "срок годности") ||
+			strings.Contains(h, "сроки действия") ||
+			strings.Contains(h, "окончание заполнения") || strings.Contains(h, "время заполнения") ||
+			strings.Contains(h, "время прохождения") || strings.Contains(h, "время завершения") ||
+			strings.Contains(h, "дата и время") || strings.Contains(h, "дата/время") ||
+			hasWord(h, "timestamp") || hasWord(h, "datetime") ||
+			(hasWord(h, "срок") && !strings.Contains(h, "сроки")) {
+			return ColDate
+		}
 	}
 
 	// 2. SNILS
@@ -80,8 +149,12 @@ func DetectColumnType(header string) ColumnType {
 		return ColSNILS
 	}
 
-	// 3. INN
-	if strings.Contains(h, "инн") || strings.Contains(h, "inn") {
+	// 3. INN (Taxpayer Identification Number - matched as distinct word or phrase, never substring in words like 'инновации')
+	if hasWord(h, "инн") || hasWord(h, "inn") ||
+		strings.Contains(h, "идентификационный номер налогоплательщика") ||
+		strings.Contains(h, "номер инн") || strings.Contains(h, "код инн") ||
+		strings.Contains(h, "инн физлица") || strings.Contains(h, "инн сотрудника") ||
+		strings.Contains(h, "инн клиента") || strings.Contains(h, "инн организации") {
 		return ColINN
 	}
 
@@ -172,15 +245,31 @@ func DetectColumnType(header string) ColumnType {
 		return ColFirstName
 	}
 
-	// Role/Person nouns: check they are not job titles, statuses, departments, IDs, or categories
-	if strings.Contains(h, "клиент") || strings.Contains(h, "сотрудник") ||
-		strings.Contains(h, "пациент") || strings.Contains(h, "работник") ||
-		strings.Contains(h, "физлицо") || strings.Contains(h, "физ. лицо") ||
-		strings.Contains(h, "учащ") || strings.Contains(h, "пользовател") ||
-		strings.Contains(h, "автор") || strings.Contains(h, "создател") ||
-		strings.Contains(h, "куратор") || strings.Contains(h, "инициатор") ||
-		strings.Contains(h, "владелец") {
-		if !isNonPerson(h) || strings.Contains(h, "автор") || strings.Contains(h, "создател") || strings.Contains(h, "куратор") || strings.Contains(h, "инициатор") || strings.Contains(h, "владелец") {
+	// Role/Person nouns: check they are not job titles, statuses, departments, IDs, categories, or competency sentences
+	leaf := h
+	if idx := strings.LastIndex(h, " / "); idx >= 0 {
+		leaf = strings.TrimSpace(h[idx+3:])
+	}
+
+	if strings.Contains(leaf, "клиент") || strings.Contains(leaf, "сотрудник") ||
+		strings.Contains(leaf, "пациент") || strings.Contains(leaf, "работник") ||
+		strings.Contains(leaf, "физлицо") || strings.Contains(leaf, "физ. лицо") ||
+		strings.Contains(leaf, "учащ") || strings.Contains(leaf, "пользовател") ||
+		strings.Contains(leaf, "автор") || strings.Contains(leaf, "создател") ||
+		strings.Contains(leaf, "куратор") || strings.Contains(leaf, "инициатор") ||
+		strings.Contains(leaf, "владелец") || strings.Contains(leaf, "участник") ||
+		strings.Contains(leaf, "участниц") || strings.Contains(leaf, "кандидат") ||
+		strings.Contains(leaf, "респондент") || strings.Contains(leaf, "тестируем") ||
+		strings.Contains(leaf, "обучающ") || strings.Contains(leaf, "слушател") ||
+		((hasWord(leaf, "персона") || hasWord(leaf, "персоны")) && !strings.Contains(leaf, "персонал") && !strings.Contains(leaf, "персональн")) {
+		if !isNonPerson(leaf) && !isCompetencySentence(leaf) {
+			return ColFIO
+		}
+		if (strings.Contains(leaf, "автор") || strings.Contains(leaf, "создател")) &&
+			!strings.Contains(leaf, "номер") && !strings.Contains(leaf, "статус") &&
+			!strings.Contains(leaf, "код") && !strings.Contains(leaf, "id") &&
+			!strings.Contains(leaf, "дата") && !strings.Contains(leaf, "тип") &&
+			!strings.Contains(leaf, "вид") && !isCompetencySentence(leaf) {
 			return ColFIO
 		}
 	}
@@ -224,11 +313,62 @@ func ParseColumnType(s string) ColumnType {
 	}
 }
 
+// String returns the string representation of a ColumnType.
+func (c ColumnType) String() string {
+	switch c {
+	case ColFIO:
+		return "FIO"
+	case ColLastName:
+		return "LAST_NAME"
+	case ColFirstName:
+		return "FIRST_NAME"
+	case ColPatronymic:
+		return "PATRONYMIC"
+	case ColSNILS:
+		return "SNILS"
+	case ColINN:
+		return "INN"
+	case ColPassport:
+		return "PASSPORT"
+	case ColPhone:
+		return "PHONE"
+	case ColCard:
+		return "BANK_CARD"
+	case ColDate:
+		return "DATE"
+	case ColEmail:
+		return "EMAIL"
+	case ColAddress:
+		return "ADDRESS"
+	case ColGrade:
+		return "GRADE"
+	case ColEmployeeID:
+		return "EMPLOYEE_ID"
+	default:
+		return "UNKNOWN"
+	}
+}
+
 func isSampleObviouslyNotPersonName(s string) bool {
 	trimmed := strings.TrimSpace(s)
 	if trimmed == "" {
 		return false
 	}
+	// Pure numeric or decimal score is never a person name
+	isNum := true
+	hasDigits := false
+	for _, r := range trimmed {
+		if unicode.IsDigit(r) {
+			hasDigits = true
+		} else if r != '.' && r != ',' && r != '%' && r != '-' && !unicode.IsSpace(r) {
+			isNum = false
+			break
+		}
+	}
+	if hasDigits && isNum {
+		return true
+	}
+
 	// Check for path or hierarchy characters
 	if strings.ContainsAny(trimmed, `\/|>{}[]`) {
 		return true
@@ -241,6 +381,12 @@ func isSampleObviouslyNotPersonName(s string) bool {
 		"штатн", "должност", "руководитель", "специалист", "инженер", "менеджер", "директор",
 	}
 	for _, m := range orgMarkers {
+		if strings.Contains(lower, m) {
+			return true
+		}
+	}
+	statusMarkers := []string{"действует", "активен", "закрыт", "завершен", "согласован", "отклонен", "черновик", "архив", "аннулирован", "расторгнут"}
+	for _, m := range statusMarkers {
 		if strings.Contains(lower, m) {
 			return true
 		}
@@ -323,7 +469,7 @@ func DetectColumnTypeWithSamples(header string, samples []string) ColumnType {
 			if detector.ValidateINN12(v) {
 				innCount++
 			}
-			if reFIOPattern.MatchString(v) {
+			if reFIOPattern.MatchString(v) || reMockFIOPattern.MatchString(v) {
 				fioCount++
 			}
 			if isAddressSample(v) {
@@ -379,6 +525,50 @@ func DetectColumnTypeWithSamples(header string, samples []string) ColumnType {
 			}
 		}
 		if nonEmpty > 0 && invalidCount > 0 {
+			ct = ColUnknown
+		}
+	}
+
+	// Disqualify false positive INN if samples are present and non-empty,
+	// but none of them are 10-12 digit numbers (e.g. single-digit test scores "8", "4", "9").
+	if ct == ColINN && len(samples) > 0 {
+		nonEmpty := 0
+		validINNCount := 0
+		for _, s := range samples {
+			v := strings.TrimSpace(s)
+			if v == "" {
+				continue
+			}
+			nonEmpty++
+			digits := cleanDigits(v)
+			if (len(digits) == 10 || len(digits) == 12) && (detector.ValidateINN12(v) || len(digits) == 10) {
+				validINNCount++
+			}
+		}
+		if nonEmpty > 0 && validINNCount == 0 {
+			ct = ColUnknown
+		}
+	}
+
+	// Disqualify false positive Date if samples are present and non-empty,
+	// but all non-empty samples are short numeric scores (e.g. "2.5", "1", "3.5") or text that fails date parsing.
+	if ct == ColDate && len(samples) > 0 {
+		nonEmpty := 0
+		numericScoreCount := 0
+		validDateCount := 0
+		for _, s := range samples {
+			v := strings.TrimSpace(s)
+			if v == "" {
+				continue
+			}
+			nonEmpty++
+			if reDatePattern.MatchString(v) {
+				validDateCount++
+			} else if isNumericScoreOrRating(v) {
+				numericScoreCount++
+			}
+		}
+		if nonEmpty > 0 && validDateCount == 0 && numericScoreCount == nonEmpty {
 			ct = ColUnknown
 		}
 	}

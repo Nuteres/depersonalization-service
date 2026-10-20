@@ -12,12 +12,18 @@
   });
 
   const statusText = $derived.by(() => {
+    if (isCanceling) {
+      return 'Отмена операции...';
+    }
     return appState.currentAppMode === 'restore'
       ? 'Расшифровка ключа и восстановление данных...'
       : 'Потоковая обработка строк...';
   });
 
   const countText = $derived.by(() => {
+    if (isCanceling) {
+      return 'Остановка...';
+    }
     if (appState.progress.total > 0) {
       return `${appState.progress.processed.toLocaleString('ru-RU')} / ${appState.progress.total.toLocaleString('ru-RU')} строк`;
     }
@@ -32,15 +38,24 @@
     isCanceling = true;
     try {
       await CancelCurrentOperation();
-      appState.finishProgress();
-      appState.showToast('Операция отменена пользователем', 'warning');
+      setTimeout(() => {
+        if (appState.showProgressModal && isCanceling) {
+          appState.finishProgress();
+          isCanceling = false;
+        }
+      }, 5000);
     } catch (err) {
       console.error('Failed to cancel operation:', err);
       appState.showToast('Ошибка при отмене операции', 'error');
-    } finally {
       isCanceling = false;
     }
   }
+
+  $effect(() => {
+    if (!appState.showProgressModal) {
+      isCanceling = false;
+    }
+  });
 </script>
 
 {#if appState.showProgressModal}

@@ -62,7 +62,11 @@ class AppState {
   private _toastCounter = 0;
 
   setMode(mode: AppMode): void {
-    this.currentAppMode = mode;
+    if (this.currentAppMode !== mode) {
+      this.currentAppMode = mode;
+      this.successResult = null;
+      this.showSuccessModal = false;
+    }
   }
 
   setStrategy(strategy: AnonymizationStrategy): void {
@@ -145,6 +149,8 @@ class AppState {
   startProgress(title: string): void {
     this.isProcessing = true;
     this.showProgressModal = true;
+    this.successResult = null;
+    this.showSuccessModal = false;
     this.progress = {
       percent: 0,
       processed: 0,
@@ -177,6 +183,7 @@ class AppState {
 
   closeSuccessModal(): void {
     this.showSuccessModal = false;
+    this.successResult = null;
   }
 
   openAuditModal(): void {

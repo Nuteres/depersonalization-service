@@ -46,6 +46,12 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 	}
 	defer xl.Close()
 
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	default:
+	}
+
 	sheetList := xl.GetSheetList()
 	if len(sheetList) == 0 {
 		return 0, nil
@@ -54,6 +60,11 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 	// Calculate total rows across all sheets for progress tracking
 	totalRows := 0
 	for _, sheet := range sheetList {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		default:
+		}
 		counted := false
 		dim, err := xl.GetSheetDimension(sheet)
 		if err == nil && strings.Contains(dim, ":") {
@@ -72,6 +83,12 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 			if err == nil {
 				sheetRows := 0
 				for rIter.Next() {
+					select {
+					case <-ctx.Done():
+						_ = rIter.Close()
+						return 0, ctx.Err()
+					default:
+					}
 					sheetRows++
 				}
 				_ = rIter.Close()
@@ -157,6 +174,12 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 		var sample [][]string
 		sampleLimit := 40
 		for sampleRows.Next() && len(sample) < sampleLimit {
+			select {
+			case <-ctx.Done():
+				_ = sampleRows.Close()
+				return restoredCount, ctx.Err()
+			default:
+			}
 			cols, err := sampleRows.Columns()
 			if err != nil {
 				break
@@ -165,10 +188,12 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 		}
 		_ = sampleRows.Close()
 
-		headerRowIndex := -1
+		headerBounds := HeaderBounds{HeaderStartIdx: 0, LeafHeaderIdx: 0, DataStartIdx: 1}
 		var headers []string
 		if len(sample) > 0 {
-			headerRowIndex, headers = FindHeaderRow(sample)
+			merges := ExtractMergeRanges(xl, sheetName)
+			headerBounds = DetectHeaderBounds(sample, merges)
+			headers = BuildHierarchicalHeaders(sample, headerBounds.LeafHeaderIdx, merges)
 		}
 
 		rows, err := xl.Rows(sheetName)
@@ -201,7 +226,7 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 				return restoredCount, fmt.Errorf("failed to get cell coordinate for row %d: %w", rowNum, err)
 			}
 
-			if hasHeaderAwareness && len(sample) > 1 && headerRowIndex >= 0 && rowNum <= headerRowIndex+1 {
+			if hasHeaderAwareness && len(sample) > 1 && rowNum < headerBounds.DataStartIdx+1 {
 				headerCells := make([]interface{}, len(cols))
 				for i, v := range cols {
 					headerCells[i] = v
@@ -227,7 +252,16 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 				}
 
 				if restoredVal, ok := RestoreCellString(val, dm); ok {
-					if len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName] || strings.Contains(val, "[") {
+					isTarget := len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName] || strings.Contains(val, "[")
+					if !isTarget && strings.Contains(headerName, " / ") {
+						parts := strings.Split(headerName, " / ")
+						leaf := strings.TrimSpace(parts[len(parts)-1])
+						if idx := strings.LastIndex(leaf, " ("); idx != -1 && strings.HasSuffix(leaf, ")") {
+							leaf = strings.TrimSpace(leaf[:idx])
+						}
+						isTarget = targetHeadersMap[leaf]
+					}
+					if isTarget {
 						rowCells[colIdx] = restoredVal
 						restoredCount++
 						continue
@@ -235,7 +269,16 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 				}
 
 				if isDeleteMode {
-					if orig, ok := dm.GetCell(sheetName, headerName, rowNum); ok {
+					orig, ok := dm.GetCell(sheetName, headerName, rowNum)
+					if !ok && strings.Contains(headerName, " / ") {
+						parts := strings.Split(headerName, " / ")
+						leaf := strings.TrimSpace(parts[len(parts)-1])
+						if idx := strings.LastIndex(leaf, " ("); idx != -1 && strings.HasSuffix(leaf, ")") {
+							leaf = strings.TrimSpace(leaf[:idx])
+						}
+						orig, ok = dm.GetCell(sheetName, leaf, rowNum)
+					}
+					if ok {
 						trimmed := strings.TrimSpace(strings.TrimPrefix(val, "\ufeff"))
 						if trimmed == DeletionMarker {
 							rowCells[colIdx] = orig
@@ -263,6 +306,19 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 
 		if err := rows.Close(); err != nil {
 			return restoredCount, fmt.Errorf("failed to close rows in sheet %s: %w", sheetName, err)
+		}
+
+		// Preserve merged cells from input file
+		if srcMerges, err := xl.GetMergeCells(sheetName); err == nil {
+			for _, m := range srcMerges {
+				_ = sw.MergeCell(m.GetStartAxis(), m.GetEndAxis())
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return restoredCount, ctx.Err()
+		default:
 		}
 
 		if err := sw.Flush(); err != nil {

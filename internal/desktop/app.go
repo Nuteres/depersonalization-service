@@ -33,9 +33,11 @@ type DesktopApp struct {
 	proc     *processor.Processor
 	rest     *restorer.Restorer
 	km       *keymanager.KeyManager
-	audit    *audit.AuditLogger
-	cancelMu sync.Mutex
-	cancel   context.CancelFunc
+	audit       *audit.AuditLogger
+	cancelMu    sync.Mutex
+	cancel      context.CancelFunc
+	isRunning   bool
+	isCanceling bool
 }
 
 // New creates a new DesktopApp instance wired with the provided services.
@@ -201,12 +203,21 @@ func (a *DesktopApp) ProcessFileWithSheets(
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	opCtx, cancel := context.WithCancel(ctx)
+
 	a.cancelMu.Lock()
+	if a.isRunning {
+		a.cancelMu.Unlock()
+		return nil, fmt.Errorf("операция уже выполняется, дождитесь завершения или отмените её")
+	}
+	a.isRunning = true
+	a.isCanceling = false
+	opCtx, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
 	a.cancelMu.Unlock()
 	defer func() {
 		a.cancelMu.Lock()
+		a.isRunning = false
+		a.isCanceling = false
 		a.cancel = nil
 		a.cancelMu.Unlock()
 		cancel()
@@ -257,12 +268,21 @@ func (a *DesktopApp) ProcessFileWithOptions(opts domain.ProcessOptions) (*domain
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	opCtx, cancel := context.WithCancel(ctx)
+
 	a.cancelMu.Lock()
+	if a.isRunning {
+		a.cancelMu.Unlock()
+		return nil, fmt.Errorf("операция уже выполняется, дождитесь завершения или отмените её")
+	}
+	a.isRunning = true
+	a.isCanceling = false
+	opCtx, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
 	a.cancelMu.Unlock()
 	defer func() {
 		a.cancelMu.Lock()
+		a.isRunning = false
+		a.isCanceling = false
 		a.cancel = nil
 		a.cancelMu.Unlock()
 		cancel()
@@ -287,9 +307,16 @@ func (a *DesktopApp) CancelCurrentOperation() {
 	a.cancelMu.Lock()
 	defer a.cancelMu.Unlock()
 	if a.cancel != nil {
+		a.isCanceling = true
 		a.cancel()
-		a.cancel = nil
 	}
+}
+
+// IsOperationRunning returns whether an operation is currently in progress.
+func (a *DesktopApp) IsOperationRunning() bool {
+	a.cancelMu.Lock()
+	defer a.cancelMu.Unlock()
+	return a.isRunning
 }
 
 // InspectKeyFile inspects a .depmap key file, validates its header, and tests password if provided.
@@ -315,12 +342,21 @@ func (a *DesktopApp) RestoreFileTo(inputPath, keyPath, password, destPath string
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	opCtx, cancel := context.WithCancel(ctx)
+
 	a.cancelMu.Lock()
+	if a.isRunning {
+		a.cancelMu.Unlock()
+		return nil, fmt.Errorf("операция уже выполняется, дождитесь завершения или отмените её")
+	}
+	a.isRunning = true
+	a.isCanceling = false
+	opCtx, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
 	a.cancelMu.Unlock()
 	defer func() {
 		a.cancelMu.Lock()
+		a.isRunning = false
+		a.isCanceling = false
 		a.cancel = nil
 		a.cancelMu.Unlock()
 		cancel()

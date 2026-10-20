@@ -1,9 +1,385 @@
 package formats
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/xuri/excelize/v2"
 )
+
+// ExcelMergeRange represents a merged cell range and its string value for hierarchical header resolution.
+type ExcelMergeRange struct {
+	StartCol int
+	StartRow int
+	EndCol   int
+	EndRow   int
+	Value    string
+}
+
+// HeaderBounds represents the vertical boundaries of a tabular dataset's header structure.
+type HeaderBounds struct {
+	HeaderStartIdx int // 0-based index of the top-most category or header row
+	LeafHeaderIdx  int // 0-based index of the bottom-most leaf header row
+	DataStartIdx   int // 0-based index of the first actual data row
+}
+
+// isColumnNumberingRow detects sequential integer column numbering (e.g. 1, 2, 3... 27)
+// commonly generated in Russian GOST 2.105, 1C:Enterprise, SAP Russian localization, and ERP exports.
+func isColumnNumberingRow(row []string) bool {
+	if len(row) < 3 {
+		return false
+	}
+	sequential := 0
+	nonEmpty := 0
+	for i, c := range row {
+		trimmed := strings.TrimSpace(c)
+		if trimmed == "" {
+			continue
+		}
+		nonEmpty++
+		if n, err := strconv.Atoi(trimmed); err == nil {
+			if n == i+1 || n == nonEmpty {
+				sequential++
+			}
+		}
+	}
+	return nonEmpty >= 3 && float64(sequential)/float64(nonEmpty) >= 0.8
+}
+
+// DetectHeaderBounds accurately locates the start, leaf header, and data start rows
+// across simple tables, multi-tier hierarchical headers with vertical/horizontal merges,
+// and tables containing sequential column numbering rows (GOST / 1C / SAP standard).
+func DetectHeaderBounds(rows [][]string, merges []ExcelMergeRange) HeaderBounds {
+	if len(rows) == 0 {
+		return HeaderBounds{HeaderStartIdx: 0, LeafHeaderIdx: 0, DataStartIdx: 0}
+	}
+	if len(rows) == 1 {
+		return HeaderBounds{HeaderStartIdx: 0, LeafHeaderIdx: 0, DataStartIdx: 1}
+	}
+
+	pivotIdx, _ := FindHeaderRow(rows)
+	if pivotIdx < 0 || pivotIdx >= len(rows) {
+		pivotIdx = 0
+	}
+
+	// Downward scan from pivotIdx: check if rows below pivotIdx are continuation of multi-tier header.
+	// In spreadsheet formats, a multi-tier header row is ALWAYS governed by merged cells:
+	// either vertical merges spanning across the row from above, or sub-headers directly beneath
+	// horizontal category merges from the row above.
+	leafIdx := pivotIdx
+	limit := len(rows)
+	if limit > pivotIdx+10 {
+		limit = pivotIdx + 10
+	}
+
+	for r := leafIdx + 1; r < limit; r++ {
+		// Stop immediately if row is an obvious column numbering row (1, 2, 3...)
+		if isColumnNumberingRow(rows[r]) {
+			break
+		}
+
+		r1Based := r + 1
+		hasVertMerge := false
+		for _, m := range merges {
+			if m.StartRow <= pivotIdx+1 && m.EndRow >= r1Based && m.EndRow > m.StartRow {
+				hasVertMerge = true
+				break
+			}
+		}
+
+		// Check if the row immediately above had horizontal category merges
+		hasHMergeAbove := false
+		prevR1Based := r // 1-based for r-1
+		for _, m := range merges {
+			if m.StartRow <= prevR1Based && prevR1Based <= m.EndRow && m.EndCol > m.StartCol {
+				hasHMergeAbove = true
+				break
+			}
+		}
+
+		// Downward expansion REQUIRES a merge relation (vertical merge or horizontal category above)
+		if !hasVertMerge && !hasHMergeAbove {
+			break
+		}
+
+		// Verify row r is NOT an obvious data row (e.g. contains mock names, emails, or pure data values)
+		isDataRow := false
+		nonEmpty := 0
+		hasText := false
+		for _, c := range rows[r] {
+			v := strings.TrimSpace(c)
+			if v == "" {
+				continue
+			}
+			nonEmpty++
+			if reFIOPattern.MatchString(v) || reMockFIOPattern.MatchString(v) || reEmailPattern.MatchString(v) {
+				isDataRow = true
+				break
+			}
+			if _, err := strconv.ParseFloat(strings.ReplaceAll(v, ",", "."), 64); err == nil {
+				// numeric cell
+			} else {
+				hasText = true
+			}
+		}
+
+		if isDataRow || nonEmpty == 0 || (!hasVertMerge && !hasText) {
+			break
+		}
+
+		leafIdx = r
+	}
+
+	// Upward scan from leafIdx to find headerStartIdx
+	numCols := len(rows[leafIdx])
+	for r := 0; r <= leafIdx; r++ {
+		if len(rows[r]) > numCols {
+			numCols = len(rows[r])
+		}
+	}
+	for _, m := range merges {
+		if m.EndCol > numCols && m.StartRow <= leafIdx+2 {
+			numCols = m.EndCol
+		}
+	}
+
+	headerStartIdx := leafIdx
+	for r := leafIdx - 1; r >= 0; r-- {
+		if countNonEmpty(rows[r]) == 0 {
+			break
+		}
+
+		hasCategoryMerge := false
+		r1Based := r + 1
+		for _, m := range merges {
+			if m.StartRow <= r1Based && r1Based <= m.EndRow && m.EndCol > m.StartCol && m.Value != "" {
+				span := m.EndCol - m.StartCol + 1
+				if numCols >= 4 && span >= int(float64(numCols)*0.8) {
+					continue
+				}
+				hasCategoryMerge = true
+				break
+			}
+		}
+
+		nonEmpty := countNonEmpty(rows[r])
+		if hasCategoryMerge || (nonEmpty >= 2 && !isPreambleRow(rows[r])) {
+			headerStartIdx = r
+		} else {
+			break
+		}
+	}
+
+	// Determine dataStartIdx: check if the row immediately following leafIdx is a column numbering row
+	dataStartIdx := leafIdx + 1
+	if dataStartIdx < len(rows) && isColumnNumberingRow(rows[dataStartIdx]) {
+		dataStartIdx++
+	}
+
+	return HeaderBounds{
+		HeaderStartIdx: headerStartIdx,
+		LeafHeaderIdx:  leafIdx,
+		DataStartIdx:   dataStartIdx,
+	}
+}
+
+// ExtractMergeRanges extracts merge cell coordinates and their top-left values from an Excel worksheet.
+func ExtractMergeRanges(xl *excelize.File, sheetName string) []ExcelMergeRange {
+	if xl == nil {
+		return nil
+	}
+	rawMerges, err := xl.GetMergeCells(sheetName)
+	if err != nil || len(rawMerges) == 0 {
+		return nil
+	}
+	ranges := make([]ExcelMergeRange, 0, len(rawMerges))
+	for _, m := range rawMerges {
+		sCol, sRow, err1 := excelize.CellNameToCoordinates(m.GetStartAxis())
+		eCol, eRow, err2 := excelize.CellNameToCoordinates(m.GetEndAxis())
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		val, _ := xl.GetCellValue(sheetName, m.GetStartAxis())
+		ranges = append(ranges, ExcelMergeRange{
+			StartCol: sCol,
+			StartRow: sRow,
+			EndCol:   eCol,
+			EndRow:   eRow,
+			Value:    strings.TrimSpace(val),
+		})
+	}
+	return ranges
+}
+
+// BuildHierarchicalHeaders constructs unified column headers for multi-level/hierarchical
+// table headers (spanning headerStartRow to headerEndRow), taking into account merged cells
+// or multi-tier category rows above the primary leaf header row.
+func BuildHierarchicalHeaders(rows [][]string, leafHeaderIdx int, merges []ExcelMergeRange) []string {
+	if len(rows) == 0 {
+		return nil
+	}
+	if leafHeaderIdx < 0 || leafHeaderIdx >= len(rows) {
+		leafHeaderIdx = 0
+	}
+
+	leafRow := rows[leafHeaderIdx]
+	numCols := len(leafRow)
+	for r := 0; r <= leafHeaderIdx; r++ {
+		if len(rows[r]) > numCols {
+			numCols = len(rows[r])
+		}
+	}
+	for _, m := range merges {
+		if m.EndCol > numCols && m.StartRow <= leafHeaderIdx+2 {
+			numCols = m.EndCol
+		}
+	}
+	if leafHeaderIdx+1 < len(rows) && len(rows[leafHeaderIdx+1]) > numCols {
+		numCols = len(rows[leafHeaderIdx+1])
+	}
+	if leafHeaderIdx+2 < len(rows) && len(rows[leafHeaderIdx+2]) > numCols {
+		numCols = len(rows[leafHeaderIdx+2])
+	}
+	if numCols == 0 {
+		return nil
+	}
+
+	// If leafHeaderIdx is 0 and no merges exist, return standard row 0 headers
+	if leafHeaderIdx == 0 && len(merges) == 0 {
+		res := make([]string, len(leafRow))
+		copy(res, leafRow)
+		return res
+	}
+
+	// Determine headerStartIdx by scanning upward from leafHeaderIdx - 1
+	headerStartIdx := leafHeaderIdx
+	for r := leafHeaderIdx - 1; r >= 0; r-- {
+		// If row is completely empty, stop (blank row separates metadata from header)
+		if countNonEmpty(rows[r]) == 0 {
+			break
+		}
+
+		// Check if row r contains category merges that group columns (not a full-width title banner)
+		hasCategoryMerge := false
+		r1Based := r + 1
+		for _, m := range merges {
+			if m.StartRow <= r1Based && r1Based <= m.EndRow && m.EndCol > m.StartCol && m.Value != "" {
+				// If the merge spans the entire or almost entire table (>= 80% cols and numCols >= 4), it's a report title banner
+				span := m.EndCol - m.StartCol + 1
+				if numCols >= 4 && span >= int(float64(numCols)*0.8) {
+					continue
+				}
+				hasCategoryMerge = true
+				break
+			}
+		}
+
+		// A row is part of header block if it has column category merges,
+		// or if it has multiple non-empty cells that don't look like document preamble titles
+		nonEmpty := countNonEmpty(rows[r])
+		if hasCategoryMerge || (nonEmpty >= 2 && !isPreambleRow(rows[r])) {
+			headerStartIdx = r
+		} else {
+			// Single non-empty cell or preamble title row terminates header scanning upward
+			break
+		}
+	}
+
+	// Build a coordinate lookup for merges: key "col:row" (1-based)
+	// Intersect merge ranges with header bounds [headerStartIdx+1, leafHeaderIdx+1] and [1, numCols]
+	// to avoid materializing huge non-header ranges in memory.
+	mergeMap := make(map[string]string)
+	minHRow1 := headerStartIdx + 1
+	maxHRow1 := leafHeaderIdx + 1
+	for _, m := range merges {
+		if m.Value == "" {
+			continue
+		}
+		startR := m.StartRow
+		if startR < minHRow1 {
+			startR = minHRow1
+		}
+		endR := m.EndRow
+		if endR > maxHRow1 {
+			endR = maxHRow1
+		}
+		startC := m.StartCol
+		if startC < 1 {
+			startC = 1
+		}
+		endC := m.EndCol
+		if endC > numCols {
+			endC = numCols
+		}
+		if startR > endR || startC > endC {
+			continue
+		}
+
+		for r := startR; r <= endR; r++ {
+			for c := startC; c <= endC; c++ {
+				key := fmt.Sprintf("%d:%d", c, r)
+				mergeMap[key] = m.Value
+			}
+		}
+	}
+
+	combined := make([]string, numCols)
+	for c := 0; c < numCols; c++ {
+		c1Based := c + 1
+		var parts []string
+		for r := headerStartIdx; r <= leafHeaderIdx; r++ {
+			r1Based := r + 1
+			key := fmt.Sprintf("%d:%d", c1Based, r1Based)
+			val := ""
+			if mv, ok := mergeMap[key]; ok && mv != "" {
+				val = mv
+			} else if r < len(rows) && c < len(rows[r]) {
+				val = strings.TrimSpace(rows[r][c])
+			}
+
+			if val != "" {
+				// Deduplicate consecutive identical segments
+				if len(parts) == 0 || parts[len(parts)-1] != val {
+					parts = append(parts, val)
+				}
+			}
+		}
+
+		if len(parts) == 0 {
+			if c < len(leafRow) && strings.TrimSpace(leafRow[c]) != "" {
+				combined[c] = strings.TrimSpace(leafRow[c])
+			} else {
+				combined[c] = fmt.Sprintf("Колонка %d", c+1)
+			}
+		} else {
+			combined[c] = strings.Join(parts, " / ")
+		}
+	}
+
+	// Disambiguate identical paths (e.g. repeated leaf names under identical parents)
+	seen := make(map[string]int, len(combined))
+	for i, name := range combined {
+		seen[name]++
+		if count := seen[name]; count > 1 {
+			combined[i] = fmt.Sprintf("%s (%d)", name, count)
+		}
+	}
+
+	return combined
+}
+
+func isPreambleRow(row []string) bool {
+	joined := strings.ToLower(strings.Join(row, " "))
+	preambleMarkers := []string{"отчёт", "отчет", "реестр", "ведомость", "выгрузка", "сформирован", "период:", "организация:", "структурное подразделение"}
+	for _, m := range preambleMarkers {
+		if strings.Contains(joined, m) && countNonEmpty(row) <= 3 {
+			return true
+		}
+	}
+	return false
+}
 
 // FindHeaderRow examines sampled leading rows from a spreadsheet or tabular dataset
 // and identifies the index of the primary table header row (0-based) along with its column headers.
@@ -65,6 +441,7 @@ func FindHeaderRow(rows [][]string) (int, []string) {
 			"фио", "сотрудник", "организация", "должность", "дата", "номер", "почта", "статус",
 			"курс", "клиент", "паспорт", "снилс", "инн", "телефон", "карта", "id", "name",
 			"код", "наименование", "сумма", "результат", "подразделение",
+			"участник", "кандидат", "респондент", "пользователь", "mail", "время",
 		}
 		for _, kw := range keywords {
 			if strings.Contains(joined, kw) {

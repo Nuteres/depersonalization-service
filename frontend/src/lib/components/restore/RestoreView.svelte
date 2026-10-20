@@ -17,6 +17,7 @@
   );
 
   let showPassword = $state(false);
+  let isRestoring = $state(false);
 
   const isPasswordError = $derived(
     !!(restoreState.keyPath && restoreState.keyInfo && !restoreState.keyInfo.valid && restoreState.password)
@@ -77,6 +78,7 @@
   });
 
   async function executeRestore() {
+    if (isRestoring || appState.isProcessing) return;
     if (
       !restoreState.dataPath ||
       !restoreState.keyPath ||
@@ -99,6 +101,8 @@
         // User cancelled dialog
         return;
       }
+
+      isRestoring = true;
 
       let totalRows = restoreState.dataInfo?.rowCount || 0;
       if (restoreState.dataInfo?.sheets && restoreState.dataInfo.sheets.length > 1) {
@@ -124,18 +128,19 @@
         appState.showSuccess(res);
       } else {
         const errMsg = res?.error || 'Неизвестная ошибка восстановления';
-        appState.finishProgress();
         appState.showToast(`Ошибка при восстановлении данных: ${errMsg}`, 'error');
       }
     } catch (err: any) {
       console.error('Failed to restore file:', err);
-      appState.finishProgress();
       const errStr = String(err);
       if (errStr.includes('context canceled') || errStr.includes('canceled') || errStr.includes('отменена')) {
         appState.showToast('Операция отменена', 'info');
       } else {
         appState.showToast(`Ошибка восстановления: ${err}`, 'error');
       }
+    } finally {
+      isRestoring = false;
+      appState.finishProgress();
     }
   }
 </script>
@@ -428,7 +433,7 @@
           id="btn-restore-start"
           type="button"
           onclick={executeRestore}
-          disabled={!isReady}
+          disabled={!isReady || isRestoring || appState.isProcessing}
           class="w-full bg-[#1C1917] disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed hover:bg-[#292524] text-white text-xs font-semibold py-2.5 rounded-md shadow-xs pressable flex items-center justify-center gap-1.5 cursor-pointer font-sans"
         >
           <span>Восстановить данные</span>
