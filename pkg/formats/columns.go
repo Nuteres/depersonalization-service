@@ -98,14 +98,30 @@ func isNumericScoreOrRating(s string) bool {
 	if trimmed == "" {
 		return false
 	}
-	if _, err := strconv.ParseFloat(strings.ReplaceAll(trimmed, ",", "."), 64); err == nil {
-		return true
+	if score, err := strconv.ParseFloat(strings.ReplaceAll(trimmed, ",", "."), 64); err == nil {
+		return score >= 0 && score <= 100
 	}
 	return false
 }
 
 // DetectColumnType analyzes a column header string and returns the identified PII type.
 func DetectColumnType(header string) ColumnType {
+	ct := detectColumnTypeExact(header)
+	if ct != ColUnknown {
+		return ct
+	}
+	// If hierarchical header (e.g. "Группа / Имя" or "Категория / СНИЛС"),
+	// fallback to evaluating the leaf column name so parent categories do not suppress entity detection.
+	if idx := strings.LastIndex(header, " / "); idx != -1 {
+		leaf := strings.TrimSpace(header[idx+3:])
+		if leaf != "" {
+			return detectColumnTypeExact(leaf)
+		}
+	}
+	return ColUnknown
+}
+
+func detectColumnTypeExact(header string) ColumnType {
 	h := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(header, "\ufeff")))
 	if h == "" {
 		return ColUnknown
@@ -240,7 +256,7 @@ func DetectColumnType(header string) ColumnType {
 		strings.Contains(h, "участниц") || strings.Contains(h, "кандидат") ||
 		strings.Contains(h, "респондент") || strings.Contains(h, "тестируем") ||
 		strings.Contains(h, "обучающ") || strings.Contains(h, "слушател") ||
-		strings.Contains(h, "персона") {
+		((hasWord(h, "персона") || hasWord(h, "персоны")) && !strings.Contains(h, "персонал") && !strings.Contains(h, "персональн")) {
 		if (!isNonPerson(h) || strings.Contains(h, "автор") || strings.Contains(h, "создател") || strings.Contains(h, "куратор") || strings.Contains(h, "инициатор") || strings.Contains(h, "владелец")) && !isCompetencySentence(h) {
 			return ColFIO
 		}

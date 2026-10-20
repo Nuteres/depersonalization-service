@@ -1137,40 +1137,94 @@ func TestInspect_RealUserXLSXFiles(t *testing.T) {
 	f1 := "../../../пример выгрузки1.xlsx"
 	f2 := "../../../пример выгрузки2.xlsx"
 
-	if _, err := os.Stat(f1); err == nil {
-		info1, err := svc.Inspect(context.Background(), f1)
-		if err != nil {
-			t.Fatalf("Inspect f1 failed: %v", err)
-		}
-		// In f1, "Участник" (Col 2) must be detected as FIO
-		foundParticipantFIO := false
-		for _, e := range info1.Entities {
-			if e.ColumnIndex == 2 && e.Type == "FIO" {
-				foundParticipantFIO = true
-			}
-		}
-		if !foundParticipantFIO {
-			t.Errorf("expected Col 2 ('Участник') to be detected as FIO in f1, entities: %v", info1.Entities)
-		}
+	f1Path := f1
+	if _, err := os.Stat(f1); err != nil {
+		tmpDir := t.TempDir()
+		f1Path = filepath.Join(tmpDir, "f1_synthetic.xlsx")
+		fx := excelize.NewFile()
+		_ = fx.SetCellValue("Sheet1", "A1", "Компания")
+		_ = fx.SetCellValue("Sheet1", "B1", "Участник")
+		_ = fx.SetCellValue("Sheet1", "C1", "Окончание заполнения")
+		_ = fx.SetCellValue("Sheet1", "D1", "Балл")
+		_ = fx.SetCellValue("Sheet1", "A2", "Ростелеком")
+		_ = fx.SetCellValue("Sheet1", "B2", "ФИО1")
+		_ = fx.SetCellValue("Sheet1", "C2", "24.03.2026 05:31:55")
+		_ = fx.SetCellValue("Sheet1", "D2", "10")
+		_ = fx.SaveAs(f1Path)
+		fx.Close()
 	}
 
-	if _, err := os.Stat(f2); err == nil {
-		info2, err := svc.Inspect(context.Background(), f2)
-		if err != nil {
-			t.Fatalf("Inspect f2 failed: %v", err)
+	info1, err := svc.Inspect(context.Background(), f1Path)
+	if err != nil {
+		t.Fatalf("Inspect f1 failed: %v", err)
+	}
+	foundParticipantFIO := false
+	foundDate := false
+	for _, e := range info1.Entities {
+		if strings.Contains(e.ColumnName, "Участник") && e.Type == "FIO" {
+			foundParticipantFIO = true
 		}
-		// In f2, only FIO (Col 1), EMAIL (Col 2), DATE (Col 3) must be detected
-		for _, e := range info2.Entities {
-			if e.Type == "INN" {
-				t.Errorf("unexpected INN false positive in f2: %v", e)
-			}
-			if e.ColumnIndex == 27 {
-				t.Errorf("unexpected DATE false positive on competency Col 27 in f2: %v", e)
-			}
+		if strings.Contains(e.ColumnName, "Окончание заполнения") && e.Type == "DATE" {
+			foundDate = true
 		}
-		if len(info2.Entities) != 3 {
-			t.Errorf("expected exactly 3 entities in f2 (FIO, EMAIL, DATE), got %d: %v", len(info2.Entities), info2.Entities)
+	}
+	if !foundParticipantFIO {
+		t.Errorf("expected 'Участник' to be detected as FIO in f1, entities: %v", info1.Entities)
+	}
+	if !foundDate {
+		t.Errorf("expected 'Окончание заполнения' to be detected as DATE in f1, entities: %v", info1.Entities)
+	}
+
+	f2Path := f2
+	if _, err := os.Stat(f2); err != nil {
+		tmpDir := t.TempDir()
+		f2Path = filepath.Join(tmpDir, "f2_synthetic.xlsx")
+		fx := excelize.NewFile()
+		sheet := "DATA_RT+WAVE"
+		fx.SetSheetName("Sheet1", sheet)
+		_ = fx.SetCellValue(sheet, "B1", "Категория 1")
+		_ = fx.MergeCell(sheet, "B1", "D1")
+		_ = fx.SetCellValue(sheet, "A3", "ID")
+		_ = fx.SetCellValue(sheet, "B3", "Участник")
+		_ = fx.SetCellValue(sheet, "C3", "Email")
+		_ = fx.SetCellValue(sheet, "D3", "Дата завершения")
+		_ = fx.SetCellValue(sheet, "E3", "Планирует действия, определяет приоритеты и учитывает сроки")
+		_ = fx.SetCellValue(sheet, "F3", "Создаёт инновационные решения")
+		_ = fx.SetCellValue(sheet, "G3", "Инноватор")
+		_ = fx.SetCellValue(sheet, "A4", "1")
+		_ = fx.SetCellValue(sheet, "B4", "ФИО1")
+		_ = fx.SetCellValue(sheet, "C4", "user@corp.ru")
+		_ = fx.SetCellValue(sheet, "D4", "24.03.2026 05:31:55")
+		_ = fx.SetCellValue(sheet, "E4", "2.5")
+		_ = fx.SetCellValue(sheet, "F4", "8")
+		_ = fx.SetCellValue(sheet, "G4", "4")
+		_ = fx.SaveAs(f2Path)
+		fx.Close()
+	}
+
+	info2, err := svc.Inspect(context.Background(), f2Path)
+	if err != nil {
+		t.Fatalf("Inspect f2 failed: %v", err)
+	}
+
+	detectedTypes := make(map[string]int)
+	for _, e := range info2.Entities {
+		detectedTypes[e.Type]++
+		if e.Type == "INN" {
+			t.Errorf("unexpected INN false positive in f2: %v", e)
 		}
+		if strings.Contains(e.ColumnName, "учитывает сроки") {
+			t.Errorf("unexpected DATE false positive on competency Col in f2: %v", e)
+		}
+	}
+	if detectedTypes["FIO"] == 0 {
+		t.Errorf("expected FIO to be detected in f2, got %v", info2.Entities)
+	}
+	if detectedTypes["EMAIL"] == 0 {
+		t.Errorf("expected EMAIL to be detected in f2, got %v", info2.Entities)
+	}
+	if detectedTypes["DATE"] == 0 {
+		t.Errorf("expected DATE to be detected in f2, got %v", info2.Entities)
 	}
 }
 

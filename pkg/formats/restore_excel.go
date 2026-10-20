@@ -229,7 +229,16 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 				}
 
 				if restoredVal, ok := RestoreCellString(val, dm); ok {
-					if len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName] || strings.Contains(val, "[") {
+					isTarget := len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName] || strings.Contains(val, "[")
+					if !isTarget && strings.Contains(headerName, " / ") {
+						parts := strings.Split(headerName, " / ")
+						leaf := strings.TrimSpace(parts[len(parts)-1])
+						if idx := strings.LastIndex(leaf, " ("); idx != -1 && strings.HasSuffix(leaf, ")") {
+							leaf = strings.TrimSpace(leaf[:idx])
+						}
+						isTarget = targetHeadersMap[leaf]
+					}
+					if isTarget {
 						rowCells[colIdx] = restoredVal
 						restoredCount++
 						continue
@@ -237,7 +246,16 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 				}
 
 				if isDeleteMode {
-					if orig, ok := dm.GetCell(sheetName, headerName, rowNum); ok {
+					orig, ok := dm.GetCell(sheetName, headerName, rowNum)
+					if !ok && strings.Contains(headerName, " / ") {
+						parts := strings.Split(headerName, " / ")
+						leaf := strings.TrimSpace(parts[len(parts)-1])
+						if idx := strings.LastIndex(leaf, " ("); idx != -1 && strings.HasSuffix(leaf, ")") {
+							leaf = strings.TrimSpace(leaf[:idx])
+						}
+						orig, ok = dm.GetCell(sheetName, leaf, rowNum)
+					}
+					if ok {
 						trimmed := strings.TrimSpace(strings.TrimPrefix(val, "\ufeff"))
 						if trimmed == DeletionMarker {
 							rowCells[colIdx] = orig

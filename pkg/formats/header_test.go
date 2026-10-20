@@ -118,3 +118,42 @@ func TestBuildHierarchicalHeaders_WithPreambleExcluded(t *testing.T) {
 		t.Fatalf("expected headers %v, got %v", expected, headers)
 	}
 }
+
+func TestBuildHierarchicalHeaders_DuplicatePathsDisambiguated(t *testing.T) {
+	rows := [][]string{
+		{"Оценка", "Оценка"},
+		{"Балл", "Балл"},
+		{"10", "15"},
+	}
+	merges := []ExcelMergeRange{
+		{StartCol: 1, StartRow: 1, EndCol: 2, EndRow: 1, Value: "Оценка"},
+	}
+	headers := BuildHierarchicalHeaders(rows, 1, merges)
+	expected := []string{"Оценка / Балл", "Оценка / Балл (2)"}
+	if !reflect.DeepEqual(headers, expected) {
+		t.Fatalf("expected disambiguated headers %v, got %v", expected, headers)
+	}
+}
+
+func TestBuildHierarchicalHeaders_TitleBannerExcluded(t *testing.T) {
+	rows := [][]string{
+		{"Общий отчет по оценке персонала компании за 2026 год", "", "", ""},
+		{"Личные данные", "", "Результаты", ""},
+		{"ФИО", "Email", "Тест", "Балл"},
+	}
+	merges := []ExcelMergeRange{
+		{StartCol: 1, StartRow: 1, EndCol: 4, EndRow: 1, Value: "Общий отчет по оценке персонала компании за 2026 год"},
+		{StartCol: 1, StartRow: 2, EndCol: 2, EndRow: 2, Value: "Личные данные"},
+		{StartCol: 3, StartRow: 2, EndCol: 4, EndRow: 2, Value: "Результаты"},
+	}
+	headers := BuildHierarchicalHeaders(rows, 2, merges)
+	expected := []string{
+		"Личные данные / ФИО",
+		"Личные данные / Email",
+		"Результаты / Тест",
+		"Результаты / Балл",
+	}
+	if !reflect.DeepEqual(headers, expected) {
+		t.Fatalf("expected banner excluded %v, got %v", expected, headers)
+	}
+}

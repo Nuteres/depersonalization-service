@@ -313,6 +313,30 @@ func TestDetectColumnType_ParticipantAndCompetencies(t *testing.T) {
 	if got := DetectColumnTypeWithSamples("Окончание заполнения", []string{"24.03.2026 05:31:55", "24.03.2026 06:43:23"}); got != ColDate {
 		t.Errorf("expected ColDate for 'Окончание заполнения' with timestamps, got %v", got)
 	}
+
+	// 6. Hierarchical parent categories should not suppress leaf PII
+	if got := DetectColumnType("Группа / Имя"); got != ColFirstName {
+		t.Errorf("expected ColFirstName for 'Группа / Имя', got %v", got)
+	}
+	if got := DetectColumnType("Отдел / Сотрудник"); got != ColFIO {
+		t.Errorf("expected ColFIO for 'Отдел / Сотрудник', got %v", got)
+	}
+
+	// 7. Generic "Персонал" and "Персональные данные" must NOT be ColFIO
+	if got := DetectColumnType("Персонал"); got == ColFIO {
+		t.Errorf("expected NOT ColFIO for 'Персонал', got %v", got)
+	}
+	if got := DetectColumnType("Персональные данные"); got == ColFIO {
+		t.Errorf("expected NOT ColFIO for 'Персональные данные', got %v", got)
+	}
+	if got := DetectColumnType("Персона"); got != ColFIO {
+		t.Errorf("expected ColFIO for standalone 'Персона', got %v", got)
+	}
+
+	// 8. Date with unformatted Excel serials (e.g. 45292) must not be disqualified as numeric score
+	if got := DetectColumnTypeWithSamples("Дата рождения", []string{"45292", "45293"}); got != ColDate {
+		t.Errorf("expected ColDate for date header with serials, got %v", got)
+	}
 }
 
 

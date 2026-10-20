@@ -813,6 +813,57 @@ func TestRestoreExcel_MultiTierHeaderAndMergesPreserved(t *testing.T) {
 	}
 }
 
+func TestRestoreExcel_DeleteMode_LegacyLeafHeaderFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	inPath := filepath.Join(tmpDir, "input_del.xlsx")
+	outPath := filepath.Join(tmpDir, "output_del.xlsx")
+
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+
+	// Merged category header in row 1
+	_ = f.SetCellValue(sheet, "A1", "Личные данные")
+	_ = f.SetCellValue(sheet, "B1", "Личные данные")
+	_ = f.MergeCell(sheet, "A1", "B1")
+
+	// Leaf headers in row 2
+	_ = f.SetCellValue(sheet, "A2", "Участник")
+	_ = f.SetCellValue(sheet, "B2", "Город")
+
+	// Data in row 3
+	_ = f.SetCellValue(sheet, "A3", formats.DeletionMarker)
+	_ = f.SetCellValue(sheet, "B3", "Москва")
+
+	if err := f.SaveAs(inPath); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	// Depmap with legacy leaf header "Участник" instead of "Личные данные / Участник"
+	dm := depmap.New(inPath)
+	dm.Mode = "delete"
+	dm.PutCell(sheet, "Участник", 3, "Иванов Иван Иванович")
+
+	restored, err := formats.RestoreExcel(context.Background(), inPath, outPath, dm, nil)
+	if err != nil {
+		t.Fatalf("RestoreExcel failed: %v", err)
+	}
+	if restored != 1 {
+		t.Errorf("expected 1 restored cell, got %d", restored)
+	}
+
+	resFile, err := excelize.OpenFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resFile.Close()
+
+	valA3, _ := resFile.GetCellValue(sheet, "A3")
+	if valA3 != "Иванов Иван Иванович" {
+		t.Errorf("expected restored FIO from legacy leaf header, got %q", valA3)
+	}
+}
+
 
 
 

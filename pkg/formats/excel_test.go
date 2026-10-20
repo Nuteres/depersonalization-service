@@ -680,14 +680,38 @@ func TestExcelHandler_RealUserFiles(t *testing.T) {
 	handler := formats.NewExcelHandler(anon)
 
 	f2Path := "../../пример выгрузки2.xlsx"
-	data, err := os.ReadFile(f2Path)
-	if err != nil {
-		t.Skip("user file 2 not found, skipping")
+	var data []byte
+	isRealFile := false
+	if d, err := os.ReadFile(f2Path); err == nil {
+		data = d
+		isRealFile = true
+	} else {
+		// Generate synthetic multi-tier fixture for CI when real user file is not tracked
+		fx := excelize.NewFile()
+		sheet := "DATA_RT+WAVE"
+		fx.SetSheetName("Sheet1", sheet)
+		_ = fx.SetCellValue(sheet, "B1", "Категория 1")
+		_ = fx.MergeCell(sheet, "B1", "C1")
+		_ = fx.SetCellValue(sheet, "D1", "Категория 2")
+		_ = fx.MergeCell(sheet, "D1", "E1")
+		_ = fx.SetCellValue(sheet, "A3", "Участник")
+		_ = fx.SetCellValue(sheet, "B3", "Email")
+		_ = fx.SetCellValue(sheet, "C3", "Дата завершения")
+		_ = fx.SetCellValue(sheet, "D3", "Создаёт инновационные решения")
+		_ = fx.SetCellValue(sheet, "E3", "Инноватор")
+		_ = fx.SetCellValue(sheet, "A4", "ФИО1")
+		_ = fx.SetCellValue(sheet, "B4", "user1@corp.ru")
+		_ = fx.SetCellValue(sheet, "C4", "24.03.2026 05:31:55")
+		_ = fx.SetCellValue(sheet, "D4", "8")
+		_ = fx.SetCellValue(sheet, "E4", "4")
+		buf, _ := fx.WriteToBuffer()
+		data = buf.Bytes()
+		fx.Close()
 	}
 
 	dm := depmap.New("test-salt-real-files")
 	var out bytes.Buffer
-	err = handler.Process(context.Background(), bytes.NewReader(data), &out, map[string]interface{}{
+	err := handler.Process(context.Background(), bytes.NewReader(data), &out, map[string]interface{}{
 		"depmap": dm,
 	})
 	if err != nil {
@@ -705,22 +729,36 @@ func TestExcelHandler_RealUserFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(merges) != 43 {
-		t.Errorf("expected all 43 merged cells to be preserved, got %d", len(merges))
-	}
 
-	// Verify row 4 test scores untouched
-	valBF4, _ := resFile.GetCellValue(sheet, "BF4")
-	if valBF4 != "8" {
-		t.Errorf("expected competency score '8' in BF4 untouched, got %q", valBF4)
-	}
-	valDE4, _ := resFile.GetCellValue(sheet, "DE4")
-	if valDE4 != "4" {
-		t.Errorf("expected competency score '4' in DE4 untouched, got %q", valDE4)
-	}
-	valDP4, _ := resFile.GetCellValue(sheet, "DP4")
-	if valDP4 != "9" {
-		t.Errorf("expected competency score '9' in DP4 untouched, got %q", valDP4)
+	if isRealFile {
+		if len(merges) != 43 {
+			t.Errorf("expected all 43 merged cells to be preserved, got %d", len(merges))
+		}
+		// Verify row 4 test scores untouched
+		valBF4, _ := resFile.GetCellValue(sheet, "BF4")
+		if valBF4 != "8" {
+			t.Errorf("expected competency score '8' in BF4 untouched, got %q", valBF4)
+		}
+		valDE4, _ := resFile.GetCellValue(sheet, "DE4")
+		if valDE4 != "4" {
+			t.Errorf("expected competency score '4' in DE4 untouched, got %q", valDE4)
+		}
+		valDP4, _ := resFile.GetCellValue(sheet, "DP4")
+		if valDP4 != "9" {
+			t.Errorf("expected competency score '9' in DP4 untouched, got %q", valDP4)
+		}
+	} else {
+		if len(merges) != 2 {
+			t.Errorf("expected 2 merged cells to be preserved in fixture, got %d", len(merges))
+		}
+		valD4, _ := resFile.GetCellValue(sheet, "D4")
+		if valD4 != "8" {
+			t.Errorf("expected competency score '8' in D4 untouched, got %q", valD4)
+		}
+		valE4, _ := resFile.GetCellValue(sheet, "E4")
+		if valE4 != "4" {
+			t.Errorf("expected competency score '4' in E4 untouched, got %q", valE4)
+		}
 	}
 
 	// Verify FIO in A4 anonymized

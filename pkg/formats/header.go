@@ -82,33 +82,64 @@ func BuildHierarchicalHeaders(rows [][]string, leafHeaderIdx int, merges []Excel
 			break
 		}
 
-		// Check if row r contains merges that span multiple columns
-		hasMultiColMerge := false
+		// Check if row r contains category merges that group columns (not a full-width title banner)
+		hasCategoryMerge := false
 		r1Based := r + 1
 		for _, m := range merges {
 			if m.StartRow <= r1Based && r1Based <= m.EndRow && m.EndCol > m.StartCol && m.Value != "" {
-				hasMultiColMerge = true
+				// If the merge spans the entire or almost entire table (>= 80% cols and numCols >= 4), it's a report title banner
+				span := m.EndCol - m.StartCol + 1
+				if numCols >= 4 && span >= int(float64(numCols)*0.8) {
+					continue
+				}
+				hasCategoryMerge = true
 				break
 			}
 		}
 
-		// A row with multiple non-empty cells or column-spanning merges is part of the header block
-		if hasMultiColMerge || countNonEmpty(rows[r]) >= 2 {
+		// A row is part of header block if it has column category merges,
+		// or if it has multiple non-empty cells that don't look like document preamble titles
+		nonEmpty := countNonEmpty(rows[r])
+		if hasCategoryMerge || (nonEmpty >= 2 && !isPreambleRow(rows[r])) {
 			headerStartIdx = r
 		} else {
-			// Single non-empty cell without multi-column merges is likely document preamble/title
+			// Single non-empty cell or preamble title row terminates header scanning upward
 			break
 		}
 	}
 
 	// Build a coordinate lookup for merges: key "col:row" (1-based)
-	mergeMap := make(map[string]string, len(merges)*4)
+	// Intersect merge ranges with header bounds [headerStartIdx+1, leafHeaderIdx+1] and [1, numCols]
+	// to avoid materializing huge non-header ranges in memory.
+	mergeMap := make(map[string]string)
+	minHRow1 := headerStartIdx + 1
+	maxHRow1 := leafHeaderIdx + 1
 	for _, m := range merges {
 		if m.Value == "" {
 			continue
 		}
-		for r := m.StartRow; r <= m.EndRow; r++ {
-			for c := m.StartCol; c <= m.EndCol; c++ {
+		startR := m.StartRow
+		if startR < minHRow1 {
+			startR = minHRow1
+		}
+		endR := m.EndRow
+		if endR > maxHRow1 {
+			endR = maxHRow1
+		}
+		startC := m.StartCol
+		if startC < 1 {
+			startC = 1
+		}
+		endC := m.EndCol
+		if endC > numCols {
+			endC = numCols
+		}
+		if startR > endR || startC > endC {
+			continue
+		}
+
+		for r := startR; r <= endR; r++ {
+			for c := startC; c <= endC; c++ {
 				key := fmt.Sprintf("%d:%d", c, r)
 				mergeMap[key] = m.Value
 			}
@@ -148,7 +179,27 @@ func BuildHierarchicalHeaders(rows [][]string, leafHeaderIdx int, merges []Excel
 		}
 	}
 
+	// Disambiguate identical paths (e.g. repeated leaf names under identical parents)
+	seen := make(map[string]int, len(combined))
+	for i, name := range combined {
+		seen[name]++
+		if count := seen[name]; count > 1 {
+			combined[i] = fmt.Sprintf("%s (%d)", name, count)
+		}
+	}
+
 	return combined
+}
+
+func isPreambleRow(row []string) bool {
+	joined := strings.ToLower(strings.Join(row, " "))
+	preambleMarkers := []string{"отчёт", "отчет", "реестр", "ведомость", "выгрузка", "сформирован", "период:", "организация:", "структурное подразделение"}
+	for _, m := range preambleMarkers {
+		if strings.Contains(joined, m) && countNonEmpty(row) <= 3 {
+			return true
+		}
+	}
+	return false
 }
 
 // FindHeaderRow examines sampled leading rows from a spreadsheet or tabular dataset
@@ -211,7 +262,7 @@ func FindHeaderRow(rows [][]string) (int, []string) {
 			"фио", "сотрудник", "организация", "должность", "дата", "номер", "почта", "статус",
 			"курс", "клиент", "паспорт", "снилс", "инн", "телефон", "карта", "id", "name",
 			"код", "наименование", "сумма", "результат", "подразделение",
-			"участник", "кандидат", "респондент", "пользователь", "email", "mail", "время",
+			"участник", "кандидат", "респондент", "пользователь", "mail", "время",
 		}
 		for _, kw := range keywords {
 			if strings.Contains(joined, kw) {
