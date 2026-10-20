@@ -153,12 +153,16 @@ func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, o
 	}
 
 	merges := formats.ExtractMergeRanges(xl, sheetName)
-	headerIdx, _ := formats.FindHeaderRow(sample)
-	headers := formats.BuildHierarchicalHeaders(sample, headerIdx, merges)
+	bounds := formats.DetectHeaderBounds(sample, merges)
+	headers := formats.BuildHierarchicalHeaders(sample, bounds.LeafHeaderIdx, merges)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
-	colTypes := formats.ResolveColumnTypesWithSamples(headers, sample[headerIdx+1:], nil)
+	var sampleData [][]string
+	if bounds.DataStartIdx < len(sample) {
+		sampleData = sample[bounds.DataStartIdx:]
+	}
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sampleData, nil)
 
 	disabledMap := make(map[int]bool, len(disabledCols))
 	for _, col := range disabledCols {
@@ -174,7 +178,7 @@ func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, o
 	}
 	defer rowsIter.Close()
 
-	targetSkip := headerIdx + 1 + offset
+	targetSkip := bounds.DataStartIdx + offset
 	currentIdx := 0
 
 	var result []domain.PreviewRow
@@ -184,7 +188,7 @@ func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, o
 		}
 		currentIdx++
 		if currentIdx <= targetSkip {
-			if strategy == domain.StrategySemanticTokens && currentIdx > headerIdx+1 {
+			if strategy == domain.StrategySemanticTokens && currentIdx > bounds.DataStartIdx {
 				cols, err := rowsIter.Columns()
 				if err == nil {
 					for j := 0; j < len(headers) && j < len(cols); j++ {
@@ -269,12 +273,16 @@ func getCSVRows(ctx context.Context, path string, offset, limit int, salt string
 		return nil, nil
 	}
 
-	headerIdx, _ := formats.FindHeaderRow(sample)
-	headers := formats.BuildHierarchicalHeaders(sample, headerIdx, nil)
+	bounds := formats.DetectHeaderBounds(sample, nil)
+	headers := formats.BuildHierarchicalHeaders(sample, bounds.LeafHeaderIdx, nil)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
-	colTypes := formats.ResolveColumnTypesWithSamples(headers, sample[headerIdx+1:], nil)
+	var sampleData [][]string
+	if bounds.DataStartIdx < len(sample) {
+		sampleData = sample[bounds.DataStartIdx:]
+	}
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sampleData, nil)
 
 	disabledMap := make(map[int]bool, len(disabledCols))
 	for _, col := range disabledCols {
@@ -294,7 +302,7 @@ func getCSVRows(ctx context.Context, path string, offset, limit int, salt string
 		return nil, fmt.Errorf("failed to recreate csv reader: %w", err)
 	}
 
-	targetSkip := headerIdx + 1 + offset
+	targetSkip := bounds.DataStartIdx + offset
 	currentIdx := 0
 
 	var result []domain.PreviewRow
@@ -308,7 +316,7 @@ func getCSVRows(ctx context.Context, path string, offset, limit int, salt string
 		}
 		currentIdx++
 		if currentIdx <= targetSkip {
-			if strategy == domain.StrategySemanticTokens && currentIdx > headerIdx+1 {
+			if strategy == domain.StrategySemanticTokens && currentIdx > bounds.DataStartIdx {
 				for j := 0; j < len(headers) && j < len(rec); j++ {
 					col1Based := j + 1
 					if j < len(colTypes) && !disabledMap[col1Based] {
@@ -452,11 +460,16 @@ func paginateSampleRows(sampleRows [][]string, offset, limit int, salt string, d
 		return nil, nil
 	}
 
-	headerIdx, headers := formats.FindHeaderRow(sampleRows)
+	bounds := formats.DetectHeaderBounds(sampleRows, nil)
+	headers := formats.BuildHierarchicalHeaders(sampleRows, bounds.LeafHeaderIdx, nil)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
-	colTypes := formats.ResolveColumnTypesWithSamples(headers, sampleRows[headerIdx+1:], nil)
+	var sampleData [][]string
+	if bounds.DataStartIdx < len(sampleRows) {
+		sampleData = sampleRows[bounds.DataStartIdx:]
+	}
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sampleData, nil)
 
 	disabledMap := make(map[int]bool, len(disabledCols))
 	for _, col := range disabledCols {
@@ -465,10 +478,10 @@ func paginateSampleRows(sampleRows [][]string, offset, limit int, salt string, d
 
 	anon := anonymizer.New(salt)
 	ts := anonymizer.NewTokenSession(salt)
-	startRow := headerIdx + 1 + offset
+	startRow := bounds.DataStartIdx + offset
 
 	if strategy == domain.StrategySemanticTokens {
-		for r := headerIdx + 1; r < startRow && r < len(sampleRows); r++ {
+		for r := bounds.DataStartIdx; r < startRow && r < len(sampleRows); r++ {
 			cols := sampleRows[r]
 			for j := 0; j < len(headers) && j < len(cols); j++ {
 				col1Based := j + 1

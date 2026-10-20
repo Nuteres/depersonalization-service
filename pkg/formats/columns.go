@@ -246,18 +246,30 @@ func detectColumnTypeExact(header string) ColumnType {
 	}
 
 	// Role/Person nouns: check they are not job titles, statuses, departments, IDs, categories, or competency sentences
-	if strings.Contains(h, "клиент") || strings.Contains(h, "сотрудник") ||
-		strings.Contains(h, "пациент") || strings.Contains(h, "работник") ||
-		strings.Contains(h, "физлицо") || strings.Contains(h, "физ. лицо") ||
-		strings.Contains(h, "учащ") || strings.Contains(h, "пользовател") ||
-		strings.Contains(h, "автор") || strings.Contains(h, "создател") ||
-		strings.Contains(h, "куратор") || strings.Contains(h, "инициатор") ||
-		strings.Contains(h, "владелец") || strings.Contains(h, "участник") ||
-		strings.Contains(h, "участниц") || strings.Contains(h, "кандидат") ||
-		strings.Contains(h, "респондент") || strings.Contains(h, "тестируем") ||
-		strings.Contains(h, "обучающ") || strings.Contains(h, "слушател") ||
-		((hasWord(h, "персона") || hasWord(h, "персоны")) && !strings.Contains(h, "персонал") && !strings.Contains(h, "персональн")) {
-		if (!isNonPerson(h) || strings.Contains(h, "автор") || strings.Contains(h, "создател") || strings.Contains(h, "куратор") || strings.Contains(h, "инициатор") || strings.Contains(h, "владелец")) && !isCompetencySentence(h) {
+	leaf := h
+	if idx := strings.LastIndex(h, " / "); idx >= 0 {
+		leaf = strings.TrimSpace(h[idx+3:])
+	}
+
+	if strings.Contains(leaf, "клиент") || strings.Contains(leaf, "сотрудник") ||
+		strings.Contains(leaf, "пациент") || strings.Contains(leaf, "работник") ||
+		strings.Contains(leaf, "физлицо") || strings.Contains(leaf, "физ. лицо") ||
+		strings.Contains(leaf, "учащ") || strings.Contains(leaf, "пользовател") ||
+		strings.Contains(leaf, "автор") || strings.Contains(leaf, "создател") ||
+		strings.Contains(leaf, "куратор") || strings.Contains(leaf, "инициатор") ||
+		strings.Contains(leaf, "владелец") || strings.Contains(leaf, "участник") ||
+		strings.Contains(leaf, "участниц") || strings.Contains(leaf, "кандидат") ||
+		strings.Contains(leaf, "респондент") || strings.Contains(leaf, "тестируем") ||
+		strings.Contains(leaf, "обучающ") || strings.Contains(leaf, "слушател") ||
+		((hasWord(leaf, "персона") || hasWord(leaf, "персоны")) && !strings.Contains(leaf, "персонал") && !strings.Contains(leaf, "персональн")) {
+		if !isNonPerson(leaf) && !isCompetencySentence(leaf) {
+			return ColFIO
+		}
+		if (strings.Contains(leaf, "автор") || strings.Contains(leaf, "создател")) &&
+			!strings.Contains(leaf, "номер") && !strings.Contains(leaf, "статус") &&
+			!strings.Contains(leaf, "код") && !strings.Contains(leaf, "id") &&
+			!strings.Contains(leaf, "дата") && !strings.Contains(leaf, "тип") &&
+			!strings.Contains(leaf, "вид") && !isCompetencySentence(leaf) {
 			return ColFIO
 		}
 	}
@@ -301,6 +313,42 @@ func ParseColumnType(s string) ColumnType {
 	}
 }
 
+// String returns the string representation of a ColumnType.
+func (c ColumnType) String() string {
+	switch c {
+	case ColFIO:
+		return "FIO"
+	case ColLastName:
+		return "LAST_NAME"
+	case ColFirstName:
+		return "FIRST_NAME"
+	case ColPatronymic:
+		return "PATRONYMIC"
+	case ColSNILS:
+		return "SNILS"
+	case ColINN:
+		return "INN"
+	case ColPassport:
+		return "PASSPORT"
+	case ColPhone:
+		return "PHONE"
+	case ColCard:
+		return "BANK_CARD"
+	case ColDate:
+		return "DATE"
+	case ColEmail:
+		return "EMAIL"
+	case ColAddress:
+		return "ADDRESS"
+	case ColGrade:
+		return "GRADE"
+	case ColEmployeeID:
+		return "EMPLOYEE_ID"
+	default:
+		return "UNKNOWN"
+	}
+}
+
 func isSampleObviouslyNotPersonName(s string) bool {
 	trimmed := strings.TrimSpace(s)
 	if trimmed == "" {
@@ -333,6 +381,12 @@ func isSampleObviouslyNotPersonName(s string) bool {
 		"штатн", "должност", "руководитель", "специалист", "инженер", "менеджер", "директор",
 	}
 	for _, m := range orgMarkers {
+		if strings.Contains(lower, m) {
+			return true
+		}
+	}
+	statusMarkers := []string{"действует", "активен", "закрыт", "завершен", "согласован", "отклонен", "черновик", "архив", "аннулирован", "расторгнут"}
+	for _, m := range statusMarkers {
 		if strings.Contains(lower, m) {
 			return true
 		}

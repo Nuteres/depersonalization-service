@@ -2,6 +2,7 @@ package formats
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -15,6 +16,173 @@ type ExcelMergeRange struct {
 	EndCol   int
 	EndRow   int
 	Value    string
+}
+
+// HeaderBounds represents the vertical boundaries of a tabular dataset's header structure.
+type HeaderBounds struct {
+	HeaderStartIdx int // 0-based index of the top-most category or header row
+	LeafHeaderIdx  int // 0-based index of the bottom-most leaf header row
+	DataStartIdx   int // 0-based index of the first actual data row
+}
+
+// isColumnNumberingRow detects sequential integer column numbering (e.g. 1, 2, 3... 27)
+// commonly generated in Russian GOST 2.105, 1C:Enterprise, SAP Russian localization, and ERP exports.
+func isColumnNumberingRow(row []string) bool {
+	if len(row) < 3 {
+		return false
+	}
+	sequential := 0
+	nonEmpty := 0
+	for i, c := range row {
+		trimmed := strings.TrimSpace(c)
+		if trimmed == "" {
+			continue
+		}
+		nonEmpty++
+		if n, err := strconv.Atoi(trimmed); err == nil {
+			if n == i+1 || n == nonEmpty {
+				sequential++
+			}
+		}
+	}
+	return nonEmpty >= 3 && float64(sequential)/float64(nonEmpty) >= 0.8
+}
+
+// DetectHeaderBounds accurately locates the start, leaf header, and data start rows
+// across simple tables, multi-tier hierarchical headers with vertical/horizontal merges,
+// and tables containing sequential column numbering rows (GOST / 1C / SAP standard).
+func DetectHeaderBounds(rows [][]string, merges []ExcelMergeRange) HeaderBounds {
+	if len(rows) == 0 {
+		return HeaderBounds{HeaderStartIdx: 0, LeafHeaderIdx: 0, DataStartIdx: 0}
+	}
+	if len(rows) == 1 {
+		return HeaderBounds{HeaderStartIdx: 0, LeafHeaderIdx: 0, DataStartIdx: 1}
+	}
+
+	pivotIdx, _ := FindHeaderRow(rows)
+	if pivotIdx < 0 || pivotIdx >= len(rows) {
+		pivotIdx = 0
+	}
+
+	// Downward scan from pivotIdx: check if rows below pivotIdx are continuation of multi-tier header.
+	// In spreadsheet formats, a multi-tier header row is ALWAYS governed by merged cells:
+	// either vertical merges spanning across the row from above, or sub-headers directly beneath
+	// horizontal category merges from the row above.
+	leafIdx := pivotIdx
+	limit := len(rows)
+	if limit > pivotIdx+10 {
+		limit = pivotIdx + 10
+	}
+
+	for r := leafIdx + 1; r < limit; r++ {
+		// Stop immediately if row is an obvious column numbering row (1, 2, 3...)
+		if isColumnNumberingRow(rows[r]) {
+			break
+		}
+
+		r1Based := r + 1
+		hasVertMerge := false
+		for _, m := range merges {
+			if m.StartRow <= pivotIdx+1 && m.EndRow >= r1Based && m.EndRow > m.StartRow {
+				hasVertMerge = true
+				break
+			}
+		}
+
+		// Check if the row immediately above had horizontal category merges
+		hasHMergeAbove := false
+		prevR1Based := r // 1-based for r-1
+		for _, m := range merges {
+			if m.StartRow <= prevR1Based && prevR1Based <= m.EndRow && m.EndCol > m.StartCol {
+				hasHMergeAbove = true
+				break
+			}
+		}
+
+		// Downward expansion REQUIRES a merge relation (vertical merge or horizontal category above)
+		if !hasVertMerge && !hasHMergeAbove {
+			break
+		}
+
+		// Verify row r is NOT an obvious data row (e.g. contains mock names, emails, or pure data values)
+		isDataRow := false
+		nonEmpty := 0
+		hasText := false
+		for _, c := range rows[r] {
+			v := strings.TrimSpace(c)
+			if v == "" {
+				continue
+			}
+			nonEmpty++
+			if reFIOPattern.MatchString(v) || reMockFIOPattern.MatchString(v) || reEmailPattern.MatchString(v) {
+				isDataRow = true
+				break
+			}
+			if _, err := strconv.ParseFloat(strings.ReplaceAll(v, ",", "."), 64); err == nil {
+				// numeric cell
+			} else {
+				hasText = true
+			}
+		}
+
+		if isDataRow || nonEmpty == 0 || (!hasVertMerge && !hasText) {
+			break
+		}
+
+		leafIdx = r
+	}
+
+	// Upward scan from leafIdx to find headerStartIdx
+	numCols := len(rows[leafIdx])
+	for r := 0; r <= leafIdx; r++ {
+		if len(rows[r]) > numCols {
+			numCols = len(rows[r])
+		}
+	}
+	for _, m := range merges {
+		if m.EndCol > numCols && m.StartRow <= leafIdx+2 {
+			numCols = m.EndCol
+		}
+	}
+
+	headerStartIdx := leafIdx
+	for r := leafIdx - 1; r >= 0; r-- {
+		if countNonEmpty(rows[r]) == 0 {
+			break
+		}
+
+		hasCategoryMerge := false
+		r1Based := r + 1
+		for _, m := range merges {
+			if m.StartRow <= r1Based && r1Based <= m.EndRow && m.EndCol > m.StartCol && m.Value != "" {
+				span := m.EndCol - m.StartCol + 1
+				if numCols >= 4 && span >= int(float64(numCols)*0.8) {
+					continue
+				}
+				hasCategoryMerge = true
+				break
+			}
+		}
+
+		nonEmpty := countNonEmpty(rows[r])
+		if hasCategoryMerge || (nonEmpty >= 2 && !isPreambleRow(rows[r])) {
+			headerStartIdx = r
+		} else {
+			break
+		}
+	}
+
+	// Determine dataStartIdx: check if the row immediately following leafIdx is a column numbering row
+	dataStartIdx := leafIdx + 1
+	if dataStartIdx < len(rows) && isColumnNumberingRow(rows[dataStartIdx]) {
+		dataStartIdx++
+	}
+
+	return HeaderBounds{
+		HeaderStartIdx: headerStartIdx,
+		LeafHeaderIdx:  leafIdx,
+		DataStartIdx:   dataStartIdx,
+	}
 }
 
 // ExtractMergeRanges extracts merge cell coordinates and their top-left values from an Excel worksheet.
@@ -62,6 +230,17 @@ func BuildHierarchicalHeaders(rows [][]string, leafHeaderIdx int, merges []Excel
 		if len(rows[r]) > numCols {
 			numCols = len(rows[r])
 		}
+	}
+	for _, m := range merges {
+		if m.EndCol > numCols && m.StartRow <= leafHeaderIdx+2 {
+			numCols = m.EndCol
+		}
+	}
+	if leafHeaderIdx+1 < len(rows) && len(rows[leafHeaderIdx+1]) > numCols {
+		numCols = len(rows[leafHeaderIdx+1])
+	}
+	if leafHeaderIdx+2 < len(rows) && len(rows[leafHeaderIdx+2]) > numCols {
+		numCols = len(rows[leafHeaderIdx+2])
 	}
 	if numCols == 0 {
 		return nil

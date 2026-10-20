@@ -165,12 +165,12 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 		}
 		_ = sampleRows.Close()
 
-		headerRowIndex := -1
+		headerBounds := HeaderBounds{HeaderStartIdx: 0, LeafHeaderIdx: 0, DataStartIdx: 1}
 		var headers []string
 		if len(sample) > 0 {
 			merges := ExtractMergeRanges(xl, sheetName)
-			headerRowIndex, _ = FindHeaderRow(sample)
-			headers = BuildHierarchicalHeaders(sample, headerRowIndex, merges)
+			headerBounds = DetectHeaderBounds(sample, merges)
+			headers = BuildHierarchicalHeaders(sample, headerBounds.LeafHeaderIdx, merges)
 		}
 
 		rows, err := xl.Rows(sheetName)
@@ -203,7 +203,7 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 				return restoredCount, fmt.Errorf("failed to get cell coordinate for row %d: %w", rowNum, err)
 			}
 
-			if hasHeaderAwareness && len(sample) > 1 && headerRowIndex >= 0 && rowNum <= headerRowIndex+1 {
+			if hasHeaderAwareness && len(sample) > 1 && rowNum < headerBounds.DataStartIdx+1 {
 				headerCells := make([]interface{}, len(cols))
 				for i, v := range cols {
 					headerCells[i] = v

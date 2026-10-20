@@ -178,13 +178,17 @@ func inspectCSV(ctx context.Context, path string) (*domain.FileInfo, error) {
 		return nil, errors.New("csv file is empty")
 	}
 
-	headerIdx, _ := formats.FindHeaderRow(sample)
-	headers := formats.BuildHierarchicalHeaders(sample, headerIdx, nil)
+	bounds := formats.DetectHeaderBounds(sample, nil)
+	headers := formats.BuildHierarchicalHeaders(sample, bounds.LeafHeaderIdx, nil)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
 
-	colTypes := formats.ResolveColumnTypesWithSamples(headers, sample[headerIdx+1:], nil)
+	var sampleData [][]string
+	if bounds.DataStartIdx < len(sample) {
+		sampleData = sample[bounds.DataStartIdx:]
+	}
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sampleData, nil)
 	var entities []domain.EntityInfo
 	for i, ct := range colTypes {
 		if ct != formats.ColUnknown {
@@ -208,7 +212,7 @@ func inspectCSV(ctx context.Context, path string) (*domain.FileInfo, error) {
 	var previewRows []domain.PreviewRow
 	rowCount := 0
 
-	for i := headerIdx + 1; i < len(sample); i++ {
+	for i := bounds.DataStartIdx; i < len(sample); i++ {
 		if ctx != nil && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -321,13 +325,17 @@ func inspectSingleSheet(ctx context.Context, xl *excelize.File, sheetName string
 	}
 
 	merges := formats.ExtractMergeRanges(xl, sheetName)
-	headerIdx, _ := formats.FindHeaderRow(sample)
-	headers := formats.BuildHierarchicalHeaders(sample, headerIdx, merges)
+	bounds := formats.DetectHeaderBounds(sample, merges)
+	headers := formats.BuildHierarchicalHeaders(sample, bounds.LeafHeaderIdx, merges)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
 
-	colTypes := formats.ResolveColumnTypesWithSamples(headers, sample[headerIdx+1:], nil)
+	var sampleData [][]string
+	if bounds.DataStartIdx < len(sample) {
+		sampleData = sample[bounds.DataStartIdx:]
+	}
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sampleData, nil)
 	var entities []domain.EntityInfo
 	for i, ct := range colTypes {
 		if ct != formats.ColUnknown {
@@ -351,7 +359,7 @@ func inspectSingleSheet(ctx context.Context, xl *excelize.File, sheetName string
 	rowCount := 0
 
 	// Preview rows and row count from sample
-	for i := headerIdx + 1; i < len(sample); i++ {
+	for i := bounds.DataStartIdx; i < len(sample); i++ {
 		if ctx != nil && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -504,13 +512,17 @@ func buildSheetInfoFromRows(sheetName string, sheetIndex int, rowCount int, samp
 		}
 	}
 
-	headerIdx, _ := formats.FindHeaderRow(sampleRows)
-	headers := formats.BuildHierarchicalHeaders(sampleRows, headerIdx, nil)
+	bounds := formats.DetectHeaderBounds(sampleRows, nil)
+	headers := formats.BuildHierarchicalHeaders(sampleRows, bounds.LeafHeaderIdx, nil)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
 
-	colTypes := formats.ResolveColumnTypesWithSamples(headers, sampleRows[headerIdx+1:], nil)
+	var sampleData [][]string
+	if bounds.DataStartIdx < len(sampleRows) {
+		sampleData = sampleRows[bounds.DataStartIdx:]
+	}
+	colTypes := formats.ResolveColumnTypesWithSamples(headers, sampleData, nil)
 	var entities []domain.EntityInfo
 	for i, ct := range colTypes {
 		if ct != formats.ColUnknown {
@@ -533,7 +545,7 @@ func buildSheetInfoFromRows(sheetName string, sheetIndex int, rowCount int, samp
 	var previewRows []domain.PreviewRow
 	limit := 10
 	currRow := 0
-	for i := headerIdx + 1; i < len(sampleRows); i++ {
+	for i := bounds.DataStartIdx; i < len(sampleRows); i++ {
 		currRow++
 		if len(previewRows) < limit {
 			cols := sampleRows[i]

@@ -132,9 +132,13 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 
 		srcMerges, _ := srcFile.GetMergeCells(sheetName)
 		merges := ExtractMergeRanges(srcFile, sheetName)
-		headerRowIndex, _ := FindHeaderRow(sample)
-		headers := BuildHierarchicalHeaders(sample, headerRowIndex, merges)
-		colTypes := ResolveColumnTypesWithSamples(headers, sample[headerRowIndex+1:], options)
+		headerBounds := DetectHeaderBounds(sample, merges)
+		headers := BuildHierarchicalHeaders(sample, headerBounds.LeafHeaderIdx, merges)
+		var sampleData [][]string
+		if headerBounds.DataStartIdx < len(sample) {
+			sampleData = sample[headerBounds.DataStartIdx:]
+		}
+		colTypes := ResolveColumnTypesWithSamples(headers, sampleData, options)
 
 		// Build map of disabled columns (1-based index)
 		disabledMap := make(map[int]bool)
@@ -223,25 +227,15 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 				return fmt.Errorf("failed to get cell coordinate for row %d: %w", rowNum, err)
 			}
 
-			if rowNum < headerRowIndex+1 {
-				// Preamble row before table header: write unaltered
-				preambleCells := make([]interface{}, len(colValues))
-				for i, v := range colValues {
-					preambleCells[i] = v
-				}
-				if err := sw.SetRow(cellCoordinate, preambleCells); err != nil {
-					_ = rows.Close()
-					return fmt.Errorf("failed to write preamble row %d: %w", rowNum, err)
-				}
-			} else if rowNum == headerRowIndex+1 {
-				// Header row: write unaltered
+			if rowNum < headerBounds.DataStartIdx+1 {
+				// Preamble, top categories, leaf header, or column numbering row: write unaltered
 				headerCells := make([]interface{}, len(colValues))
 				for i, v := range colValues {
 					headerCells[i] = v
 				}
 				if err := sw.SetRow(cellCoordinate, headerCells); err != nil {
 					_ = rows.Close()
-					return fmt.Errorf("failed to write header row in sheet %s: %w", sheetName, err)
+					return fmt.Errorf("failed to write header/preamble row %d in sheet %s: %w", rowNum, sheetName, err)
 				}
 			} else {
 				// Data row: anonymize according to detected column types (skipping disabled columns)
@@ -304,7 +298,7 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 					return ctx.Err()
 				default:
 				}
-				targetRowNum := headerRowIndex + 2 + i
+				targetRowNum := headerBounds.DataStartIdx + 1 + i
 				cellCoordinate, err := excelize.CoordinatesToCellName(1, targetRowNum)
 				if err != nil {
 					return fmt.Errorf("failed to get cell coordinate for row %d: %w", targetRowNum, err)
@@ -333,7 +327,7 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 				}
 			}
 			if progressFn != nil {
-				progressFn(headerRowIndex + 1 + len(pendingDataRows))
+				progressFn(headerBounds.DataStartIdx + len(pendingDataRows))
 			}
 		}
 
