@@ -1207,24 +1207,25 @@ func TestInspect_RealUserXLSXFiles(t *testing.T) {
 		t.Fatalf("Inspect f2 failed: %v", err)
 	}
 
-	detectedTypes := make(map[string]int)
+	type colKey struct {
+		typ string
+		col int
+	}
+	expected := map[colKey]bool{
+		{typ: "FIO", col: 1}:   true,
+		{typ: "EMAIL", col: 2}: true,
+		{typ: "DATE", col: 3}:  true,
+	}
+
+	if len(info2.Entities) != len(expected) {
+		t.Fatalf("expected exactly %d entities in f2, got %d: %v", len(expected), len(info2.Entities), info2.Entities)
+	}
+
 	for _, e := range info2.Entities {
-		detectedTypes[e.Type]++
-		if e.Type == "INN" {
-			t.Errorf("unexpected INN false positive in f2: %v", e)
+		k := colKey{typ: e.Type, col: e.ColumnIndex}
+		if !expected[k] {
+			t.Errorf("unexpected entity in f2: (Type: %s, ColumnIndex: %d, Name: %s)", e.Type, e.ColumnIndex, e.ColumnName)
 		}
-		if strings.Contains(e.ColumnName, "учитывает сроки") {
-			t.Errorf("unexpected DATE false positive on competency Col in f2: %v", e)
-		}
-	}
-	if detectedTypes["FIO"] == 0 {
-		t.Errorf("expected FIO to be detected in f2, got %v", info2.Entities)
-	}
-	if detectedTypes["EMAIL"] == 0 {
-		t.Errorf("expected EMAIL to be detected in f2, got %v", info2.Entities)
-	}
-	if detectedTypes["DATE"] == 0 {
-		t.Errorf("expected DATE to be detected in f2, got %v", info2.Entities)
 	}
 }
 
