@@ -750,5 +750,69 @@ func TestRestoreExcel_ProgressTracking_StreamWriterDimensionA1(t *testing.T) {
 	}
 }
 
+func TestRestoreExcel_MultiTierHeaderAndMergesPreserved(t *testing.T) {
+	tmpDir := t.TempDir()
+	inPath := filepath.Join(tmpDir, "input_merges.xlsx")
+	outPath := filepath.Join(tmpDir, "output_merges.xlsx")
+
+	f := excelize.NewFile()
+	sheet := "DataSheet"
+	f.SetSheetName("Sheet1", sheet)
+
+	// Merged category header in row 1
+	_ = f.SetCellValue(sheet, "B1", "Категория 1")
+	_ = f.MergeCell(sheet, "B1", "C1")
+
+	// Leaf headers in row 2
+	_ = f.SetCellValue(sheet, "A2", "Участник")
+	_ = f.SetCellValue(sheet, "B2", "Балл 1")
+	_ = f.SetCellValue(sheet, "C2", "Балл 2")
+
+	// Data in row 3
+	_ = f.SetCellValue(sheet, "A3", "[ФИО_0001]")
+	_ = f.SetCellValue(sheet, "B3", "5")
+	_ = f.SetCellValue(sheet, "C3", "9")
+
+	if err := f.SaveAs(inPath); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	dm := depmap.New(inPath)
+	dm.Put("[ФИО_0001]", "Сидоров Сидор Сидорович")
+
+	restored, err := formats.RestoreExcel(context.Background(), inPath, outPath, dm, nil)
+	if err != nil {
+		t.Fatalf("RestoreExcel failed: %v", err)
+	}
+	if restored != 1 {
+		t.Errorf("expected 1 restored cell, got %d", restored)
+	}
+
+	resFile, err := excelize.OpenFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resFile.Close()
+
+	// Verify merged cells were preserved
+	merges, err := resFile.GetMergeCells(sheet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(merges) != 1 {
+		t.Fatalf("expected 1 merge range, got %d", len(merges))
+	}
+	if merges[0].GetStartAxis() != "B1" || merges[0].GetEndAxis() != "C1" {
+		t.Errorf("expected B1:C1 merge, got %s:%s", merges[0].GetStartAxis(), merges[0].GetEndAxis())
+	}
+
+	valA3, _ := resFile.GetCellValue(sheet, "A3")
+	if valA3 != "Сидоров Сидор Сидорович" {
+		t.Errorf("expected restored FIO, got %q", valA3)
+	}
+}
+
+
 
 

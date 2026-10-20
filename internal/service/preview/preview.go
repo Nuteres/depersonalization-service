@@ -152,7 +152,9 @@ func getXLSXRowsForSheet(ctx context.Context, path string, targetSheet string, o
 		return nil, nil
 	}
 
-	headerIdx, headers := formats.FindHeaderRow(sample)
+	merges := formats.ExtractMergeRanges(xl, sheetName)
+	headerIdx, _ := formats.FindHeaderRow(sample)
+	headers := formats.BuildHierarchicalHeaders(sample, headerIdx, merges)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
@@ -267,7 +269,8 @@ func getCSVRows(ctx context.Context, path string, offset, limit int, salt string
 		return nil, nil
 	}
 
-	headerIdx, headers := formats.FindHeaderRow(sample)
+	headerIdx, _ := formats.FindHeaderRow(sample)
+	headers := formats.BuildHierarchicalHeaders(sample, headerIdx, nil)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}

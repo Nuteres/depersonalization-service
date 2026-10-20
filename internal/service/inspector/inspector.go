@@ -178,7 +178,8 @@ func inspectCSV(ctx context.Context, path string) (*domain.FileInfo, error) {
 		return nil, errors.New("csv file is empty")
 	}
 
-	headerIdx, headers := formats.FindHeaderRow(sample)
+	headerIdx, _ := formats.FindHeaderRow(sample)
+	headers := formats.BuildHierarchicalHeaders(sample, headerIdx, nil)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
@@ -319,7 +320,9 @@ func inspectSingleSheet(ctx context.Context, xl *excelize.File, sheetName string
 		}, nil
 	}
 
-	headerIdx, headers := formats.FindHeaderRow(sample)
+	merges := formats.ExtractMergeRanges(xl, sheetName)
+	headerIdx, _ := formats.FindHeaderRow(sample)
+	headers := formats.BuildHierarchicalHeaders(sample, headerIdx, merges)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}
@@ -501,7 +504,8 @@ func buildSheetInfoFromRows(sheetName string, sheetIndex int, rowCount int, samp
 		}
 	}
 
-	headerIdx, headers := formats.FindHeaderRow(sampleRows)
+	headerIdx, _ := formats.FindHeaderRow(sampleRows)
+	headers := formats.BuildHierarchicalHeaders(sampleRows, headerIdx, nil)
 	if len(headers) > 0 {
 		headers[0] = strings.TrimPrefix(headers[0], "\ufeff")
 	}

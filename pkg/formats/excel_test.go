@@ -3,6 +3,7 @@ package formats_test
 import (
 	"bytes"
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -591,5 +592,144 @@ func TestExcelHandler_Process_StrategySemanticTokens(t *testing.T) {
 		t.Errorf("expected depmap mapping for [Паспорт_0001] to be 4508 123456, got %q (ok=%v)", orig, ok)
 	}
 }
+
+func TestExcelHandler_MultiTierHeaderAndMergesPreserved(t *testing.T) {
+	anon := anonymizer.New("test-salt-merges")
+	handler := formats.NewExcelHandler(anon)
+
+	f := excelize.NewFile()
+	defer f.Close()
+
+	sheet := "Оценки"
+	f.SetSheetName("Sheet1", sheet)
+
+	// Row 1: Group header with merges
+	_ = f.SetCellValue(sheet, "C1", "Блок компетенций")
+	_ = f.MergeCell(sheet, "C1", "E1")
+
+	// Row 2: Subgroup header
+	_ = f.SetCellValue(sheet, "C2", "Тест А")
+	_ = f.SetCellValue(sheet, "D2", "Тест Б")
+	_ = f.SetCellValue(sheet, "E2", "Тест В")
+
+	// Row 3: Column headers
+	_ = f.SetCellValue(sheet, "A3", "Участник")
+	_ = f.SetCellValue(sheet, "B3", "Email")
+	_ = f.SetCellValue(sheet, "C3", "Балл 1")
+	_ = f.SetCellValue(sheet, "D3", "Балл 2")
+	_ = f.SetCellValue(sheet, "E3", "Балл 3")
+
+	// Row 4: Data
+	_ = f.SetCellValue(sheet, "A4", "Иванов Иван Иванович")
+	_ = f.SetCellValue(sheet, "B4", "ivanov@corp.local")
+	_ = f.SetCellValue(sheet, "C4", "8")
+	_ = f.SetCellValue(sheet, "D4", "9")
+	_ = f.SetCellValue(sheet, "E4", "7")
+
+	var inBuf bytes.Buffer
+	if err := f.Write(&inBuf); err != nil {
+		t.Fatal(err)
+	}
+
+	dm := depmap.New("test-salt-merges")
+	var outBuf bytes.Buffer
+	err := handler.Process(context.Background(), &inBuf, &outBuf, map[string]interface{}{
+		"depmap": dm,
+	})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	resFile, err := excelize.OpenReader(&outBuf)
+	if err != nil {
+		t.Fatalf("OpenReader failed: %v", err)
+	}
+	defer resFile.Close()
+
+	// Verify merged cells were preserved
+	resMerges, err := resFile.GetMergeCells(sheet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resMerges) != 1 {
+		t.Fatalf("expected 1 merged cell range, got %d", len(resMerges))
+	}
+	if resMerges[0].GetStartAxis() != "C1" || resMerges[0].GetEndAxis() != "E1" {
+		t.Errorf("expected C1:E1 merge, got %s:%s", resMerges[0].GetStartAxis(), resMerges[0].GetEndAxis())
+	}
+
+	// Verify participant FIO was anonymized
+	cellA4, _ := resFile.GetCellValue(sheet, "A4")
+	if cellA4 == "Иванов Иван Иванович" || len(cellA4) == 0 {
+		t.Errorf("expected anonymized participant in A4, got %q", cellA4)
+	}
+
+	// Verify test scores were NOT modified (not treated as INN or other PII)
+	cellC4, _ := resFile.GetCellValue(sheet, "C4")
+	if cellC4 != "8" {
+		t.Errorf("expected test score '8' in C4 untouched, got %q", cellC4)
+	}
+	cellD4, _ := resFile.GetCellValue(sheet, "D4")
+	if cellD4 != "9" {
+		t.Errorf("expected test score '9' in D4 untouched, got %q", cellD4)
+	}
+}
+
+func TestExcelHandler_RealUserFiles(t *testing.T) {
+	anon := anonymizer.New("test-salt-real-files")
+	handler := formats.NewExcelHandler(anon)
+
+	f2Path := "../../пример выгрузки2.xlsx"
+	data, err := os.ReadFile(f2Path)
+	if err != nil {
+		t.Skip("user file 2 not found, skipping")
+	}
+
+	dm := depmap.New("test-salt-real-files")
+	var out bytes.Buffer
+	err = handler.Process(context.Background(), bytes.NewReader(data), &out, map[string]interface{}{
+		"depmap": dm,
+	})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	resFile, err := excelize.OpenReader(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resFile.Close()
+
+	sheet := "DATA_RT+WAVE"
+	merges, err := resFile.GetMergeCells(sheet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(merges) != 43 {
+		t.Errorf("expected all 43 merged cells to be preserved, got %d", len(merges))
+	}
+
+	// Verify row 4 test scores untouched
+	valBF4, _ := resFile.GetCellValue(sheet, "BF4")
+	if valBF4 != "8" {
+		t.Errorf("expected competency score '8' in BF4 untouched, got %q", valBF4)
+	}
+	valDE4, _ := resFile.GetCellValue(sheet, "DE4")
+	if valDE4 != "4" {
+		t.Errorf("expected competency score '4' in DE4 untouched, got %q", valDE4)
+	}
+	valDP4, _ := resFile.GetCellValue(sheet, "DP4")
+	if valDP4 != "9" {
+		t.Errorf("expected competency score '9' in DP4 untouched, got %q", valDP4)
+	}
+
+	// Verify FIO in A4 anonymized
+	valA4, _ := resFile.GetCellValue(sheet, "A4")
+	if valA4 == "ФИО1" || len(valA4) == 0 {
+		t.Errorf("expected anonymized FIO in A4, got %q", valA4)
+	}
+}
+
+
 
 

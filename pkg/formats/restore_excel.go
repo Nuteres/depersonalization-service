@@ -168,7 +168,9 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 		headerRowIndex := -1
 		var headers []string
 		if len(sample) > 0 {
-			headerRowIndex, headers = FindHeaderRow(sample)
+			merges := ExtractMergeRanges(xl, sheetName)
+			headerRowIndex, _ = FindHeaderRow(sample)
+			headers = BuildHierarchicalHeaders(sample, headerRowIndex, merges)
 		}
 
 		rows, err := xl.Rows(sheetName)
@@ -263,6 +265,13 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 
 		if err := rows.Close(); err != nil {
 			return restoredCount, fmt.Errorf("failed to close rows in sheet %s: %w", sheetName, err)
+		}
+
+		// Preserve merged cells from input file
+		if srcMerges, err := xl.GetMergeCells(sheetName); err == nil {
+			for _, m := range srcMerges {
+				_ = sw.MergeCell(m.GetStartAxis(), m.GetEndAxis())
+			}
 		}
 
 		if err := sw.Flush(); err != nil {

@@ -260,5 +260,61 @@ func TestProcessCell_StrategySemanticTokens(t *testing.T) {
 	}
 }
 
+func TestDetectColumnType_ParticipantAndCompetencies(t *testing.T) {
+	// 1. Participant header
+	if got := DetectColumnType("Участник"); got != ColFIO {
+		t.Errorf("expected ColFIO for 'Участник', got %v", got)
+	}
+	if got := DetectColumnType("Участник тестирования"); got != ColFIO {
+		t.Errorf("expected ColFIO for 'Участник тестирования', got %v", got)
+	}
+	if got := DetectColumnTypeWithSamples("Участник", []string{"ФИО1", "ФИО2", "ФИО3"}); got != ColFIO {
+		t.Errorf("expected ColFIO for 'Участник' with 'ФИО1' samples, got %v", got)
+	}
+
+	// 2. Innovation headers must NOT be classified as INN
+	if got := DetectColumnType("Создаёт инновационные решения"); got == ColINN {
+		t.Errorf("expected NOT ColINN for 'Создаёт инновационные решения', got %v", got)
+	}
+	if got := DetectColumnType("Инноватор"); got == ColINN {
+		t.Errorf("expected NOT ColINN for 'Инноватор', got %v", got)
+	}
+	if got := DetectColumnTypeWithSamples("Создаёт инновационные решения", []string{"8", "4", "3", "9"}); got != ColUnknown {
+		t.Errorf("expected ColUnknown for 'Создаёт инновационные решения' with score samples, got %v", got)
+	}
+
+	// 3. True INN headers
+	if got := DetectColumnType("ИНН"); got != ColINN {
+		t.Errorf("expected ColINN for 'ИНН', got %v", got)
+	}
+	if got := DetectColumnType("ИНН сотрудника"); got != ColINN {
+		t.Errorf("expected ColINN for 'ИНН сотрудника', got %v", got)
+	}
+	if got := DetectColumnType("Номер ИНН"); got != ColINN {
+		t.Errorf("expected ColINN for 'Номер ИНН', got %v", got)
+	}
+
+	// 4. Competency statements with 'сроки' must NOT be classified as Date when containing numeric ratings
+	compHeader := "Планирует действия, определяет приоритеты и учитывает сроки"
+	if got := DetectColumnType(compHeader); got == ColDate {
+		t.Errorf("expected NOT ColDate for competency header, got %v", got)
+	}
+	if got := DetectColumnTypeWithSamples(compHeader, []string{"2.5", "1", "3.5", "2"}); got != ColUnknown {
+		t.Errorf("expected ColUnknown for competency with ratings, got %v", got)
+	}
+
+	// 5. True Date and DateTime headers
+	if got := DetectColumnType("Срок действия карты"); got != ColDate {
+		t.Errorf("expected ColDate for 'Срок действия карты', got %v", got)
+	}
+	if got := DetectColumnType("Окончание заполнения"); got != ColDate {
+		t.Errorf("expected ColDate for 'Окончание заполнения', got %v", got)
+	}
+	if got := DetectColumnTypeWithSamples("Окончание заполнения", []string{"24.03.2026 05:31:55", "24.03.2026 06:43:23"}); got != ColDate {
+		t.Errorf("expected ColDate for 'Окончание заполнения' with timestamps, got %v", got)
+	}
+}
+
+
 
 

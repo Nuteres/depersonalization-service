@@ -130,7 +130,10 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 		}
 		_ = sampleIter.Close()
 
-		headerRowIndex, headers := FindHeaderRow(sample)
+		srcMerges, _ := srcFile.GetMergeCells(sheetName)
+		merges := ExtractMergeRanges(srcFile, sheetName)
+		headerRowIndex, _ := FindHeaderRow(sample)
+		headers := BuildHierarchicalHeaders(sample, headerRowIndex, merges)
 		colTypes := ResolveColumnTypesWithSamples(headers, sample[headerRowIndex+1:], options)
 
 		// Build map of disabled columns (1-based index)
@@ -332,6 +335,11 @@ func (h *ExcelHandler) Process(ctx context.Context, r io.Reader, w io.Writer, op
 			if progressFn != nil {
 				progressFn(headerRowIndex + 1 + len(pendingDataRows))
 			}
+		}
+
+		// Preserve merged cells from source sheet
+		for _, m := range srcMerges {
+			_ = sw.MergeCell(m.GetStartAxis(), m.GetEndAxis())
 		}
 
 		if err := sw.Flush(); err != nil {
