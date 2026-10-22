@@ -576,12 +576,6 @@ func DetectColumnTypeWithSamples(header string, samples []string) ColumnType {
 	return ct
 }
 
-// ResolveColumnTypes determines the ColumnType for each column header,
-// taking into account any manual overrides passed in options["columns"].
-func ResolveColumnTypes(headers []string, options map[string]interface{}) []ColumnType {
-	return ResolveColumnTypesWithSamples(headers, nil, options)
-}
-
 // ResolveColumnTypesWithSamples determines ColumnTypes considering headers, sample rows, and options overrides.
 func ResolveColumnTypesWithSamples(headers []string, sampleRows [][]string, options map[string]interface{}) []ColumnType {
 	colTypes := make([]ColumnType, len(headers))

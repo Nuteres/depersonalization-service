@@ -2,7 +2,7 @@ import type { FileInfo, KeyFileInfo } from '../types/domain';
 import { InspectFile, InspectKeyFile, SelectFile, SelectKeyFile } from '../api/wails';
 import { appState } from './appState.svelte';
 
-const SUPPORTED_EXTS = ['xlsx', 'csv', 'tsv', 'xlsm', 'xlsb', 'xls', 'ods', 'docx', 'odt'];
+const SUPPORTED_EXTS = ['xlsx', 'csv', 'tsv', 'xlsm', 'xlsb', 'xls', 'ods', 'docx', 'odt', 'txt'];
 
 class RestoreState {
   dataPath = $state<string>('');
@@ -65,7 +65,7 @@ class RestoreState {
     const ext = path.split('.').pop()?.toLowerCase() || '';
     if (!SUPPORTED_EXTS.includes(ext)) {
       appState.showToast(
-        'Пожалуйста, выберите поддерживаемый файл данных (.xlsx, .ods, .csv, .docx, .odt)',
+        'Пожалуйста, выберите поддерживаемый файл данных (.xlsx, .ods, .csv, .docx, .odt, .txt)',
         'warning'
       );
       return false;
