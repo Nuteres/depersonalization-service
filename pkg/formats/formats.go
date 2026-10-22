@@ -7,7 +7,7 @@ import (
 	"dep_service/pkg/depmap"
 )
 
-var reBracketedTokenInText = regexp.MustCompile(`\[[А-Яа-яA-Za-z0-9_]+\]`)
+var reBracketedTokenInText = regexp.MustCompile(`\[[\p{L}\p{N}_]+\]`)
 
 // RestoreCellString checks if val can be restored via dm.
 // 1. Exact match: dm.Get(val) or dm.Get(trimmed)

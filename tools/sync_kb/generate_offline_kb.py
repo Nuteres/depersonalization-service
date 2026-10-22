@@ -17,7 +17,7 @@ import sync_to_notion as s
 
 HUB_ID = "4012e6735a41815fb1cbd4f95937849b"
 DB_ID = "4012e6735a41819f989bf707734342e9"
-VERSION = "v1.14.2"
+VERSION = "v1.15.0"
 
 kb_path = os.path.join(script_dir, "..", "..", "docs", "KNOWLEDGE_BASE.md")
 
