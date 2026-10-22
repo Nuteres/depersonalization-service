@@ -58,6 +58,7 @@ func RestoreODS(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 
 	var replacements []textReplacement
 	restoredCount := 0
+	hasCellMappings := len(dm.CellMappings) > 0
 
 	for _, sheet := range doc.sheets {
 		select {
@@ -66,7 +67,23 @@ func RestoreODS(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 		default:
 		}
 
-		for _, row := range sheet.rows {
+		var headers []string
+		if hasCellMappings {
+			sampleLimit := len(sheet.rows)
+			if sampleLimit > 40 {
+				sampleLimit = 40
+			}
+			sampleRows := make([][]string, sampleLimit)
+			for rIdx := 0; rIdx < sampleLimit; rIdx++ {
+				sampleRows[rIdx] = rowToStrings(sheet.rows[rIdx])
+			}
+			if len(sampleRows) > 0 {
+				_, headers = FindHeaderRow(sampleRows)
+			}
+		}
+
+		for rIdx, row := range sheet.rows {
+			physicalRow := rIdx + 1
 			for _, cell := range row.cells {
 				val := cell.fullText
 				if len(val) == 0 {
@@ -74,6 +91,19 @@ func RestoreODS(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 				}
 
 				orig, ok := RestoreCellString(val, dm)
+				if !ok && hasCellMappings {
+					trimmed := strings.TrimSpace(strings.TrimPrefix(val, "\ufeff"))
+					if trimmed == DeletionMarker {
+						var headerName string
+						if cell.colIdx < len(headers) {
+							headerName = strings.TrimSpace(headers[cell.colIdx])
+						}
+						if o, found := dm.GetCell(sheet.name, headerName, physicalRow); found {
+							orig = o
+							ok = true
+						}
+					}
+				}
 
 				dateRestored := false
 				var origDateAttr string

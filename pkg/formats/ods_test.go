@@ -642,5 +642,51 @@ func TestODSHandler_ModeDelete_DateValueStripped(t *testing.T) {
 	}
 }
 
+func TestRestoreODS_DeleteStrategy_CellMappings(t *testing.T) {
+	rawODS := createTestODS(t)
+	anon := anonymizer.New("test-salt-ods")
+	handler := &ODSHandler{Anon: anon}
+
+	anonBuf := new(bytes.Buffer)
+	opts := map[string]interface{}{
+		"strategy": domain.StrategyDelete,
+	}
+
+	dm, err := handler.Process(context.Background(), bytes.NewReader(rawODS), int64(len(rawODS)), anonBuf, opts)
+	if err != nil {
+		t.Fatalf("Process with StrategyDelete failed: %v", err)
+	}
+	if len(dm.CellMappings) == 0 {
+		t.Fatalf("expected CellMappings to be populated in Delete mode, got 0")
+	}
+
+	restoredBuf := new(bytes.Buffer)
+	restoredCount, err := RestoreODS(context.Background(), bytes.NewReader(anonBuf.Bytes()), int64(anonBuf.Len()), restoredBuf, dm)
+	if err != nil {
+		t.Fatalf("RestoreODS failed: %v", err)
+	}
+	if restoredCount == 0 {
+		t.Errorf("expected at least 1 restored cell, got 0")
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(restoredBuf.Bytes()), int64(restoredBuf.Len()))
+	if err != nil {
+		t.Fatalf("failed to open restored zip: %v", err)
+	}
+	contentOut, err := readZipEntry(zr, "content.xml")
+	if err != nil {
+		t.Fatalf("failed to read content.xml: %v", err)
+	}
+
+	contentStr := string(contentOut)
+	if strings.Contains(contentStr, "[УДАЛЕНО]") {
+		t.Errorf("expected [УДАЛЕНО] to be restored, but found it in content: %s", contentStr)
+	}
+	if !strings.Contains(contentStr, "Иванов Иван Иванович") {
+		t.Errorf("expected 'Иванов Иван Иванович' to be restored in content, got: %s", contentStr)
+	}
+}
+
+
 
 
