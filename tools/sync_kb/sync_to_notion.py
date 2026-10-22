@@ -17,7 +17,7 @@ import urllib.request
 import urllib.error
 
 SHRON_PAGE_ID = "1eb2e673-5a41-8009-91c4-c879ff6fa01b"
-NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
+NOTION_TOKEN = os.environ["NOTION_TOKEN"]
 VERSION = "v1.14.2"
 
 def slugify(text: str) -> str:

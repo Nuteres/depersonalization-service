@@ -10,6 +10,9 @@ import sys
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
 
+# Обеспечиваем фиктивный токен для оффлайн-импорта модулей FAQ
+os.environ.setdefault("NOTION_TOKEN", "offline_dummy_token")
+
 import sync_to_notion as s
 
 HUB_ID = "4012e6735a41815fb1cbd4f95937849b"
