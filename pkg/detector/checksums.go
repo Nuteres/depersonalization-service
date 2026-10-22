@@ -6,7 +6,8 @@ import (
 	"unicode"
 )
 
-func cleanDigits(s string) string {
+// CleanDigits extracts only decimal digit characters from s.
+func CleanDigits(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		if unicode.IsDigit(r) {
@@ -14,6 +15,10 @@ func cleanDigits(s string) string {
 		}
 	}
 	return b.String()
+}
+
+func cleanDigits(s string) string {
+	return CleanDigits(s)
 }
 
 func ValidateSNILS(snils string) bool {

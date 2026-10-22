@@ -1,6 +1,6 @@
 # Деперсонализация ПД (152-ФЗ РФ)
 
-[![Версия](https://img.shields.io/badge/Версия-v1.14.1-065F46?style=flat-square)](CHANGELOG.md)
+[![Версия](https://img.shields.io/badge/Версия-v1.14.2-065F46?style=flat-square)](CHANGELOG.md)
 [![152-ФЗ / Приказ РКН № 140](https://img.shields.io/badge/152--ФЗ%20|%20Приказ%20РКН%20№%20140-Соответствие-065F46?style=flat-square)](#)
 [![Форматы](https://img.shields.io/badge/Форматы-XLSX%20|%20XLSB%20|%20ODS%20|%20XODS%20|%20XLS%20|%20CSV%20|%20DOCX%20|%20ODT%20|%20TXT%20|%20PDF-065F46?style=flat-square)](#)
 [![Air-Gapped](https://img.shields.io/badge/Security-100%25%20Air--Gapped-1C1917?style=flat-square)](#)

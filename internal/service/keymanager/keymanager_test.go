@@ -6,11 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/xuri/excelize/v2"
-
 	"dep_service/internal/domain"
 	"dep_service/internal/service/keymanager"
-	"dep_service/pkg/depmap"
 )
 
 func TestKeyManager_InspectKey_NonexistentFile(t *testing.T) {
@@ -99,88 +96,6 @@ func TestKeyManager_InspectKey_CorruptedFile(t *testing.T) {
 		t.Errorf("expected non-empty Error in KeyFileInfo for corrupted file")
 	}
 	_ = err
-}
-
-func TestKeyManager_ExtractMappings_CSV(t *testing.T) {
-	km := keymanager.New()
-	tmpDir := t.TempDir()
-
-	inCSV := filepath.Join(tmpDir, "input.csv")
-	outCSV := filepath.Join(tmpDir, "output.csv")
-
-	inContent := "Name;Email;Phone\nИванов;ivanov@example.com;+79991112233\nПетров;petrov@example.com;+79994445566\n"
-	outContent := "Name;Email;Phone\n[FIO_1];[EMAIL_1];[PHONE_1]\n[FIO_2];[EMAIL_2];[PHONE_2]\n"
-
-	if err := os.WriteFile(inCSV, []byte(inContent), 0644); err != nil {
-		t.Fatalf("failed to write input CSV: %v", err)
-	}
-	if err := os.WriteFile(outCSV, []byte(outContent), 0644); err != nil {
-		t.Fatalf("failed to write output CSV: %v", err)
-	}
-
-	dm := depmap.New("input.csv")
-	if err := km.ExtractMappings(inCSV, outCSV, ".csv", dm); err != nil {
-		t.Fatalf("ExtractMappings failed: %v", err)
-	}
-
-	if dm.RecordsCount != 6 {
-		t.Fatalf("expected 6 mappings, got %d", dm.RecordsCount)
-	}
-
-	expected := map[string]string{
-		"[FIO_1]":   "Иванов",
-		"[EMAIL_1]": "ivanov@example.com",
-		"[PHONE_1]": "+79991112233",
-		"[FIO_2]":   "Петров",
-		"[EMAIL_2]": "petrov@example.com",
-		"[PHONE_2]": "+79994445566",
-	}
-
-	for anon, orig := range expected {
-		val, ok := dm.Get(anon)
-		if !ok || val != orig {
-			t.Errorf("mapping mismatch for %s: expected %s, got %s (ok=%v)", anon, orig, val, ok)
-		}
-	}
-}
-
-func TestKeyManager_ExtractMappings_Excel(t *testing.T) {
-	km := keymanager.New()
-	tmpDir := t.TempDir()
-
-	inXLSX := filepath.Join(tmpDir, "input.xlsx")
-	outXLSX := filepath.Join(tmpDir, "output.xlsx")
-
-	fIn := excelize.NewFile()
-	_ = fIn.SetCellValue("Sheet1", "A1", "Иванов Иван")
-	_ = fIn.SetCellValue("Sheet1", "B1", "ivan@test.com")
-	if err := fIn.SaveAs(inXLSX); err != nil {
-		t.Fatalf("failed to save input xlsx: %v", err)
-	}
-	_ = fIn.Close()
-
-	fOut := excelize.NewFile()
-	_ = fOut.SetCellValue("Sheet1", "A1", "[NAME_1]")
-	_ = fOut.SetCellValue("Sheet1", "B1", "[EMAIL_1]")
-	if err := fOut.SaveAs(outXLSX); err != nil {
-		t.Fatalf("failed to save output xlsx: %v", err)
-	}
-	_ = fOut.Close()
-
-	dm := depmap.New("input.xlsx")
-	if err := km.ExtractMappings(inXLSX, outXLSX, ".xlsx", dm); err != nil {
-		t.Fatalf("ExtractMappings failed: %v", err)
-	}
-
-	if dm.RecordsCount != 2 {
-		t.Fatalf("expected 2 mappings, got %d", dm.RecordsCount)
-	}
-	if val, ok := dm.Get("[NAME_1]"); !ok || val != "Иванов Иван" {
-		t.Errorf("expected Иванов Иван, got %s (ok=%v)", val, ok)
-	}
-	if val, ok := dm.Get("[EMAIL_1]"); !ok || val != "ivan@test.com" {
-		t.Errorf("expected ivan@test.com, got %s (ok=%v)", val, ok)
-	}
 }
 
 func TestKeyManager_CreateContainer_Validation(t *testing.T) {

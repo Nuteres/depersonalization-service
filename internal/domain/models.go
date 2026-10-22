@@ -58,9 +58,6 @@ const (
 	// Streaming formats (CSV, TSV, XLSX, XLSB, ODS, XLS, DOCX, ODT, TXT) are not subject to this restriction.
 	MaxPDFInteractiveFileSize = 100 * 1024 * 1024 // 100 MB
 
-	// MaxInteractiveFileSize is maintained for backward compatibility and applies to PDF documents.
-	MaxInteractiveFileSize = MaxPDFInteractiveFileSize
-
 	// MaxBase64PreviewFileSize is the maximum file size (100 MB) permitted for base64 encoding over IPC.
 	MaxBase64PreviewFileSize = MaxPDFInteractiveFileSize
 )

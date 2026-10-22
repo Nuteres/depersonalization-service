@@ -540,7 +540,7 @@ func DetectColumnTypeWithSamples(header string, samples []string) ColumnType {
 				continue
 			}
 			nonEmpty++
-			digits := cleanDigits(v)
+			digits := detector.CleanDigits(v)
 			if (len(digits) == 10 || len(digits) == 12) && (detector.ValidateINN12(v) || len(digits) == 10) {
 				validINNCount++
 			}
@@ -574,12 +574,6 @@ func DetectColumnTypeWithSamples(header string, samples []string) ColumnType {
 	}
 
 	return ct
-}
-
-// ResolveColumnTypes determines the ColumnType for each column header,
-// taking into account any manual overrides passed in options["columns"].
-func ResolveColumnTypes(headers []string, options map[string]interface{}) []ColumnType {
-	return ResolveColumnTypesWithSamples(headers, nil, options)
 }
 
 // ResolveColumnTypesWithSamples determines ColumnTypes considering headers, sample rows, and options overrides.

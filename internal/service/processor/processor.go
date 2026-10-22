@@ -470,17 +470,6 @@ func (p *Processor) Process(ctx context.Context, opts domain.ProcessOptions, rep
 				cleanup()
 				return nil, fmt.Errorf("failed to save key file: %w", err)
 			}
-		} else {
-			dm := depmap.New(filepath.Base(opts.InputPath))
-			if err := p.km.ExtractMappings(opts.InputPath, outPath, ext, dm); err != nil {
-				cleanup()
-				return nil, fmt.Errorf("failed to extract key mappings: %w", err)
-			}
-			savedPwd, err = dm.SaveFileWithAutoPassword(keyPath, opts.KeyPassword)
-			if err != nil {
-				cleanup()
-				return nil, fmt.Errorf("failed to save key file: %w", err)
-			}
 		}
 		effectivePassword = savedPwd
 		keyPasswordGenerated = isAuto

@@ -4,17 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
-
-	"github.com/xuri/excelize/v2"
 
 	"dep_service/internal/domain"
 	"dep_service/pkg/depmap"
-	"dep_service/pkg/formats"
 )
 
-// KeyManager handles .depmap key container operations: inspection, creation, and mapping extraction.
+// KeyManager handles .depmap key container operations: inspection and container creation.
 type KeyManager struct{}
 
 // New creates a new KeyManager instance.
@@ -68,28 +64,6 @@ func (km *KeyManager) InspectKey(keyPath, password string) (*domain.KeyFileInfo,
 	}, nil
 }
 
-// ExtractMappings extracts bidirectional mappings between original input file and anonymized output file.
-// It supports CSV, TSV, and Excel spreadsheet formats.
-func (km *KeyManager) ExtractMappings(inputPath, outputPath, ext string, dm *depmap.DepMap) error {
-	if dm == nil {
-		return errors.New("depmap cannot be nil")
-	}
-
-	if ext == "" {
-		ext = filepath.Ext(inputPath)
-	}
-	ext = strings.ToLower(ext)
-
-	switch ext {
-	case ".csv", ".tsv":
-		return extractCSVMappings(inputPath, outputPath, dm)
-	case ".xlsx", ".xlsm", ".xltx", ".xltm":
-		return extractExcelMappings(inputPath, outputPath, dm)
-	default:
-		return nil
-	}
-}
-
 // CreateContainer creates and writes an encrypted .depmap key container file.
 func (km *KeyManager) CreateContainer(keyPath, password, origFileName string, mappings map[string]string) error {
 	if strings.TrimSpace(keyPath) == "" {
@@ -104,110 +78,3 @@ func (km *KeyManager) CreateContainer(keyPath, password, origFileName string, ma
 	return dm.SaveFile(keyPath, password)
 }
 
-
-func extractCSVMappings(inputPath, outputPath string, dm *depmap.DepMap) error {
-	inFile, err := os.Open(inputPath)
-	if err != nil {
-		return fmt.Errorf("failed to open input csv for mapping: %w", err)
-	}
-	defer inFile.Close()
-
-	outFile, err := os.Open(outputPath)
-	if err != nil {
-		return fmt.Errorf("failed to open output csv for mapping: %w", err)
-	}
-	defer outFile.Close()
-
-	inReader, _, err := formats.NewEncodingAwareCSVReader(inFile, 0)
-	if err != nil {
-		return fmt.Errorf("failed to open input csv reader: %w", err)
-	}
-
-	outReader, _, err := formats.NewEncodingAwareCSVReader(outFile, 0)
-	if err != nil {
-		return fmt.Errorf("failed to open output csv reader: %w", err)
-	}
-
-	for {
-		inRec, inErr := inReader.Read()
-		outRec, outErr := outReader.Read()
-
-		if inErr != nil || outErr != nil {
-			break
-		}
-
-		limit := len(inRec)
-		if len(outRec) < limit {
-			limit = len(outRec)
-		}
-
-		for i := 0; i < limit; i++ {
-			origVal := strings.TrimPrefix(inRec[i], "\ufeff")
-			anonVal := strings.TrimPrefix(outRec[i], "\ufeff")
-			if anonVal != origVal && strings.TrimSpace(origVal) != "" {
-				dm.Put(anonVal, origVal)
-				if strings.TrimSpace(anonVal) != anonVal {
-					dm.Put(strings.TrimSpace(anonVal), origVal)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func extractExcelMappings(inputPath, outputPath string, dm *depmap.DepMap) error {
-	inXl, err := excelize.OpenFile(inputPath)
-	if err != nil {
-		return fmt.Errorf("failed to open input excel for mapping: %w", err)
-	}
-	defer inXl.Close()
-
-	outXl, err := excelize.OpenFile(outputPath)
-	if err != nil {
-		return fmt.Errorf("failed to open output excel for mapping: %w", err)
-	}
-	defer outXl.Close()
-
-	for _, sheet := range inXl.GetSheetList() {
-		inRows, err := inXl.Rows(sheet)
-		if err != nil {
-			continue
-		}
-
-		outRows, err := outXl.Rows(sheet)
-		if err != nil {
-			_ = inRows.Close()
-			continue
-		}
-
-		for inRows.Next() && outRows.Next() {
-			inCols, errIn := inRows.Columns()
-			outCols, errOut := outRows.Columns()
-			if errIn != nil || errOut != nil {
-				break
-			}
-
-			limit := len(inCols)
-			if len(outCols) < limit {
-				limit = len(outCols)
-			}
-
-			for i := 0; i < limit; i++ {
-				origVal := inCols[i]
-				anonVal := outCols[i]
-				if anonVal != origVal && strings.TrimSpace(origVal) != "" {
-					dm.Put(anonVal, origVal)
-					if strings.TrimSpace(anonVal) != anonVal {
-						dm.Put(strings.TrimSpace(anonVal), origVal)
-					}
-				}
-			}
-		}
-
-		_ = inRows.Close()
-		_ = outRows.Close()
-	}
-
-	return nil
-}

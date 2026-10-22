@@ -1,19 +1,11 @@
 package formats
 
 import (
-	"context"
-	"io"
 	"regexp"
 	"strings"
 
 	"dep_service/pkg/depmap"
 )
-
-// FormatHandler - единый интерфейс для обработки различных форматов файлов
-type FormatHandler interface {
-	SupportedExtensions() []string
-	Process(ctx context.Context, r io.Reader, w io.Writer, options map[string]interface{}) error
-}
 
 var reBracketedTokenInText = regexp.MustCompile(`\[[А-Яа-яA-Za-z0-9_]+\]`)
 

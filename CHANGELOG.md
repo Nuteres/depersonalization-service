@@ -5,6 +5,39 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
 и проект придерживается [Семантического версионирования (SemVer)](https://semver.org/lang/ru/).
 
+## [Unreleased]
+
+## [1.14.2] - 2026-10-22
+
+### Добавлено
+- **База знаний и FAQ для AI-саппорт триажа в Linear и Notion (`tools/sync_kb/`, `docs/KNOWLEDGE_BASE.md`)**:
+  - Создана структурированная база данных в Notion (раздел «Схрон») с 25 исчерпывающими статьями и вопросами-ответами, охватывающими безопасность (152-ФЗ, Приказ РКН № 140, Air-Gapped), 10 поддерживаемых форматов файлов, стратегии обезличивания, работу с ключом `.depmap`, физическое вымарывание PDF и решение типовых проблем.
+  - Реализована оффлайн-реплика базы знаний `docs/KNOWLEDGE_BASE.md` для гарантированной доступности в изолированном контуре.
+  - Разработана консольная утилита `tools/sync_kb/` (`go run ./tools/sync_kb -notion`) для автоматической актуализации базы знаний Notion при выкатке новых фичей и изменений.
+  - В регламент разработки `AGENTS.md` внедрен обязательный шаг синхронизации базы знаний перед релизом.
+
+### Исправлено
+- **Поддержка текстовых файлов (`.txt`) в веб-интерфейсе восстановления (`frontend/src/lib/stores/restoreState.svelte.ts`)**:
+  - В массив `SUPPORTED_EXTS` и в уведомление добавлено расширение `.txt`, устраняющее ложную блокировку восстановления текстовых документов.
+
+### Изменено
+- **Централизация регулярных выражений и распознавания ПДн в неструктурированном тексте (`pkg/detector/text.go`)**:
+  - В пакете `pkg/detector` реализован единый модуль `FindTextMatches` / `FindTextMatchesWithOptions` и структуры `TextMatch`.
+  - Устранено дублирование 14+ регулярных выражений и списков стоп-слов между `inspector.go`, `pdf_handler.go`, `docx_handler.go`, `odt_handler.go` и `txt_handler.go`.
+  - Поведение и эвристики детекции ПДн синхронизированы по всем текстовым форматам и формату PDF.
+- **Дедупликация логики запуска операций в `DesktopApp` и `SaveDialogModal` (`internal/desktop/app.go`, `SaveDialogModal.svelte`)**:
+  - Метод `ProcessFileWithSheets` преобразован в лаконичный адаптер к `ProcessFileWithOptions`, устранив 55 строк дублирующейся логики синхронизации горутин и контекстной отмены.
+  - В `SaveDialogModal.svelte` унифицирован вызов единого метода `ProcessFileWithOptions` для всех форматов файлов.
+
+### Удалено
+- **Очистка мертвого кода и неиспользуемых артефактов**:
+  - Удален неиспользуемый компонент `KeyInfoCard.svelte` (99 строк).
+  - Удалена устаревшая константа `domain.MaxInteractiveFileSize`.
+  - Удалена неиспользуемая функция `formats.ResolveColumnTypes` без сэмплов строк.
+  - Удален устаревший интерфейс-пустышка `formats.FormatHandler`.
+  - Удалены устаревшие методы постобработки и diff-сравнения файлов `ExtractMappings`, `extractCSVMappings` и `extractExcelMappings` из `internal/service/keymanager/keymanager.go` (более 140 строк) и недостижимый fallback в `internal/service/processor/processor.go`.
+  - Устранен устаревший fallback версии в `build/tools/bundle_macos.swift`.
+
 ## [1.14.1] - 2026-10-20
 
 ### Исправлено
