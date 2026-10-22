@@ -10,14 +10,21 @@
 
 import os
 import sys
+import re
 import json
 import time
 import urllib.request
 import urllib.error
 
 SHRON_PAGE_ID = "1eb2e673-5a41-8009-91c4-c879ff6fa01b"
-NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "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")
-VERSION = "v1.14.1"
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
+VERSION = "v1.14.2"
+
+def slugify(text: str) -> str:
+    s = text.lower()
+    s = re.sub(r'[^\w\s\-]', '', s)
+    s = re.sub(r'\s+', '-', s.strip())
+    return s
 
 HEADERS = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
@@ -422,6 +429,11 @@ FAQ_ITEMS = [
 ]
 
 def main():
+    if not NOTION_TOKEN:
+        print("Ошибка: переменная окружения NOTION_TOKEN не задана.", file=sys.stderr)
+        print("Установите токен: export NOTION_TOKEN=secret_...", file=sys.stderr)
+        sys.exit(1)
+
     print(f"--- Синхронизация базы знаний Notion (Версия {VERSION}) ---")
 
     # 1. Проверяем или создаем хаб-страницу внутри «Схрон»
@@ -516,10 +528,24 @@ def main():
     ]
 
     try:
+        # Удаляем старые вводные блоки (не затрагивая дочернюю базу данных или страницы),
+        # чтобы избежать бесконечного дублирования при каждом запуске.
+        try:
+            existing_blocks = api_request(f"blocks/{hub_page_id}/children", method="GET")
+            for b in existing_blocks.get("results", []):
+                if b.get("type") not in ("child_database", "child_page"):
+                    try:
+                        api_request(f"blocks/{b['id']}", method="DELETE")
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"-> Предупреждение при очистке старых блоков: {e}")
+
         api_request(f"blocks/{hub_page_id}/children", data={"children": hub_intro_blocks}, method="PATCH")
         print("-> Вводный блок обновлен.")
     except Exception as e:
-        print(f"-> Предупреждение при обновлении блоков хаба: {e}")
+        print(f"-> Ошибка при обновлении блоков хаба: {e}", file=sys.stderr)
+        raise
 
     # 3. Проверяем или создаем базу данных FAQ
     print("3. Поиск базы данных FAQ внутри хаб-страницы...")
@@ -598,11 +624,27 @@ def main():
         database_id = db_res["id"]
         print(f"-> Создана база данных: ID {database_id}")
 
-    # 4. Наполнение базы данных статьями
-    print(f"4. Наполнение базы данных {len(FAQ_ITEMS)} статьями...")
+    # 4. Наполнение/обновление базы данных статьями (Upsert)
+    print("4. Синхронизация базы данных со статьями FAQ (upsert)...")
+    existing_pages = {}
+    has_more = True
+    start_cursor = None
+    while has_more:
+        query_payload = {"page_size": 100}
+        if start_cursor:
+            query_payload["start_cursor"] = start_cursor
+        db_query = api_request(f"databases/{database_id}/query", data=query_payload, method="POST")
+        for p in db_query.get("results", []):
+            title_objs = p.get("properties", {}).get("Вопрос / Статья", {}).get("title", [])
+            q_text = "".join(t.get("plain_text", "") for t in title_objs).strip()
+            if q_text:
+                existing_pages[q_text] = p["id"]
+        has_more = db_query.get("has_more", False)
+        start_cursor = db_query.get("next_cursor")
+    print(f"-> Найдено {len(existing_pages)} существующих страниц в базе данных.")
+
     for idx, item in enumerate(FAQ_ITEMS, 1):
-        print(f"[{idx}/{len(FAQ_ITEMS)}] Добавление: '{item['question']}'...")
-        
+        q = item["question"]
         paragraphs = [p.strip() for p in item["body"].split("\n\n") if p.strip()]
         children_blocks = []
         for p in paragraphs:
@@ -636,37 +678,57 @@ def main():
                     "paragraph": {"rich_text": [{"type": "text", "text": {"content": p}}]}
                 })
 
-        page_data = {
-            "parent": {"database_id": database_id},
-            "icon": {"type": "emoji", "emoji": "📄"},
-            "properties": {
-                "Вопрос / Статья": {
-                    "title": [{"type": "text", "text": {"content": item["question"]}}]
-                },
-                "Категория": {
-                    "select": {"name": item["category"]}
-                },
-                "Теги / Ключи": {
-                    "multi_select": [{"name": t} for t in item["tags"]]
-                },
-                "Аудитория": {
-                    "select": {"name": item["audience"]}
-                },
-                "Версия фичи": {
-                    "rich_text": [{"type": "text", "text": {"content": VERSION}}]
-                },
-                "Статус": {
-                    "select": {"name": "Актуально"}
-                }
+        properties = {
+            "Вопрос / Статья": {
+                "title": [{"type": "text", "text": {"content": item["question"]}}]
             },
-            "children": children_blocks[:50]
+            "Категория": {
+                "select": {"name": item["category"]}
+            },
+            "Теги / Ключи": {
+                "multi_select": [{"name": t} for t in item["tags"]]
+            },
+            "Аудитория": {
+                "select": {"name": item["audience"]}
+            },
+            "Версия фичи": {
+                "rich_text": [{"type": "text", "text": {"content": VERSION}}]
+            },
+            "Статус": {
+                "select": {"name": "Актуально"}
+            }
         }
 
         try:
-            api_request("pages", data=page_data, method="POST")
-            time.sleep(0.4)
+            if q in existing_pages:
+                page_id = existing_pages[q]
+                print(f"[{idx}/{len(FAQ_ITEMS)}] Обновление: '{q}'...")
+                api_request(f"pages/{page_id}", data={"properties": properties}, method="PATCH")
+                # Заменяем дочерние блоки страницы на актуальные
+                try:
+                    cb_res = api_request(f"blocks/{page_id}/children", method="GET")
+                    for cb in cb_res.get("results", []):
+                        try:
+                            api_request(f"blocks/{cb['id']}", method="DELETE")
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                if children_blocks:
+                    api_request(f"blocks/{page_id}/children", data={"children": children_blocks[:50]}, method="PATCH")
+            else:
+                print(f"[{idx}/{len(FAQ_ITEMS)}] Создание: '{q}'...")
+                page_data = {
+                    "parent": {"database_id": database_id},
+                    "icon": {"type": "emoji", "emoji": "📄"},
+                    "properties": properties,
+                    "children": children_blocks[:50]
+                }
+                api_request("pages", data=page_data, method="POST")
+            time.sleep(0.3)
         except Exception as e:
-            print(f"Ошибка при создании статьи '{item['question']}': {e}", file=sys.stderr)
+            print(f"Ошибка при обработке статьи '{q}': {e}", file=sys.stderr)
+            raise
 
     # 5. Генерация локальной копии docs/KNOWLEDGE_BASE.md для Air-Gapped использования
     print("5. Генерация локального файла docs/KNOWLEDGE_BASE.md...")
@@ -679,7 +741,9 @@ def main():
         f.write(f"---\n\n")
         f.write(f"## Оглавление базы знаний\n\n")
         for idx, item in enumerate(FAQ_ITEMS, 1):
-            f.write(f"{idx}. [{item['question']}](#{item['question'].lower().replace(' ', '-').replace('?', '').replace(',', '').replace('.', '')})\n")
+            heading_title = f"{idx}. {item['question']}"
+            anchor = slugify(heading_title)
+            f.write(f"{idx}. [{item['question']}](#{anchor})\n")
         f.write(f"\n---\n\n")
         for idx, item in enumerate(FAQ_ITEMS, 1):
             f.write(f"### {idx}. {item['question']}\n\n")

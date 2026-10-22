@@ -32,7 +32,14 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		fmt.Println("Режим проверки: для отправки в Notion передайте флаг -notion")
+		offlineScript := filepath.Join("tools", "sync_kb", "generate_offline_kb.py")
+		if _, err := os.Stat(offlineScript); err == nil {
+			cmd := exec.Command("python3", offlineScript)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			_ = cmd.Run()
+		}
+		fmt.Println("Режим локального обновления (без обращения к Notion API). Для отправки в Notion передайте флаг -notion")
 		fmt.Printf("Локальная реплика базы знаний: docs/KNOWLEDGE_BASE.md (версия v%s)\n", version.Version)
 	}
 }

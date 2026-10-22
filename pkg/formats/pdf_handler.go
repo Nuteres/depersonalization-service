@@ -1175,6 +1175,9 @@ func findSensitiveMatches(text string, customTerms []string, disabledEntities ma
 	var matches []textMatch
 
 	if !isInteractive {
+		if disabledEntities != nil && disabledEntities["CARD"] {
+			disabledEntities[string(detector.EntityCard)] = true
+		}
 		tms := detector.FindTextMatchesWithOptions(text, disabledEntities)
 		for _, tm := range tms {
 			matches = append(matches, textMatch{start: tm.Start, end: tm.End, value: tm.Value})

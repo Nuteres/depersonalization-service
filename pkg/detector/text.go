@@ -276,8 +276,13 @@ func FindTextMatchesWithOptions(text string, disabled map[string]bool) []TextMat
 	var matches []TextMatch
 
 	addRegexMatches := func(re *regexp.Regexp, submatchIdx int, entityType EntityType, validateFunc func(string) bool) {
-		if disabled != nil && disabled[string(entityType)] {
-			return
+		if disabled != nil {
+			if disabled[string(entityType)] {
+				return
+			}
+			if entityType == EntityCard && disabled["CARD"] {
+				return
+			}
 		}
 		indexes := re.FindAllStringSubmatchIndex(text, -1)
 		for _, loc := range indexes {
@@ -404,12 +409,15 @@ func FindTextMatchesWithOptions(text string, disabled map[string]bool) []TextMat
 		return matches
 	}
 
-	// Filter overlapping matches: prefer earlier start, then longer match
-	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].Start == matches[j].Start {
+	// Filter overlapping matches: prefer earlier start, then longer match, then explicit entity priority
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].Start != matches[j].Start {
+			return matches[i].Start < matches[j].Start
+		}
+		if matches[i].End != matches[j].End {
 			return matches[i].End > matches[j].End
 		}
-		return matches[i].Start < matches[j].Start
+		return entityPriority(matches[i].EntityType) < entityPriority(matches[j].EntityType)
 	})
 
 	var deduped []TextMatch
@@ -422,4 +430,29 @@ func FindTextMatchesWithOptions(text string, disabled map[string]bool) []TextMat
 	}
 
 	return deduped
+}
+
+func entityPriority(t EntityType) int {
+	switch t {
+	case EntityCard:
+		return 1
+	case EntityPassport:
+		return 2
+	case EntitySNILS:
+		return 3
+	case EntityINN:
+		return 4
+	case EntityEmail:
+		return 5
+	case EntityPhone:
+		return 6
+	case EntityFIO:
+		return 7
+	case EntityAddress:
+		return 8
+	case EntityDate:
+		return 9
+	default:
+		return 10
+	}
 }

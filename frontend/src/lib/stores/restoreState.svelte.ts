@@ -65,7 +65,7 @@ class RestoreState {
     const ext = path.split('.').pop()?.toLowerCase() || '';
     if (!SUPPORTED_EXTS.includes(ext)) {
       appState.showToast(
-        'Пожалуйста, выберите поддерживаемый файл данных (.xlsx, .ods, .csv, .docx, .odt, .txt)',
+        'Пожалуйста, выберите поддерживаемый файл данных (.xlsx, .csv, .tsv, .xlsm, .xlsb, .xls, .ods, .docx, .odt, .txt)',
         'warning'
       );
       return false;
