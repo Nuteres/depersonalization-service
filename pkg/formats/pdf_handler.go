@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -70,23 +69,9 @@ type pdfObject struct {
 	Compressed bool // Uses FlateDecode
 }
 
-// Regular expressions for detecting sensitive Russian personal data.
+// Regular expressions for PDF structure.
 var (
-	reSNILSFormatted   = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{3}[-\s]\d{3}[-\s]\d{3}[-\s]\d{2})`)
-	reSNILS11Digits    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{11})`)
-	rePassport4_6      = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{4}\s+\d{6})`)
-	rePassport2_2_6    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{2}\s+\d{2}\s+\d{6})`)
-	rePassportPrefixed = regexp.MustCompile(`(?i)(?:паспорт(?:а| гражданина рф)?|серия|номер|№)[:\s]*([0-9\s]{10,13})`)
-	reINN12            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])(\d{12})`)
-	reINNPrefixed      = regexp.MustCompile(`(?i)(?:ИНН|INN)[:\s]*\b(\d{10,12})\b`)
-	rePhone            = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\+7|8)[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2})`)
-	rePhonePrefixed    = regexp.MustCompile(`(?i)(?:тел(?:ефон)?|моб\.?|сот\.?)[:\s]*((?:\+7|8)?[0-9\s\-\(\)]{10,18})`)
-	reCard16           = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:\d{4}[\s\-]?){4})`)
-	reFIOPatronymic    = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:овича|евича|ича|овны|евны|ичны|овичу|евичу|ичу|овне|евне|ичне|овичем|евичем|ичем|овной|евной|ичной|овиче|евиче|иче|ович|евич|ич|овна|евна|ична|оглы|кызы|уулу|инична))`)
-	reFIOPrefixed      = regexp.MustCompile(`(?i:(?:сотрудник|клиент|пациент|фио|работник|физлицо|подписал|сдал|принял|директор|гендиректор|руководитель|представитель)[:\s]+)([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})`)
-	reFIOInitials1     = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ]\.\s*[А-ЯЁ]\.|\s+[А-ЯЁ]\.))`)
-	reFIOInitials2     = regexp.MustCompile(`(?:^|[^\p{L}\p{N}_])((?:[А-ЯЁ]\.\s*[А-ЯЁ]\.|\s*[А-ЯЁ]\.)\s+[А-ЯЁ][а-яё]+)`)
-	reSubtypeForm      = regexp.MustCompile(`/Subtype\s*/Form\b`)
+	reSubtypeForm = regexp.MustCompile(`/Subtype\s*/Form\b`)
 )
 
 // Process reads a PDF from r, scrubs sensitive text entities, draws solid black
@@ -1185,84 +1170,18 @@ func processTJArrayWithCMap(rawArr []byte, fontSize, curX, curY float64, customT
 	return buf.Bytes(), boxes, arrX, true
 }
 
-func isBoundaryAfter(text string, end int) bool {
-	if end >= len(text) {
-		return true
-	}
-	rNext, _ := utf8.DecodeRuneInString(text[end:])
-	return !unicode.IsLetter(rNext) && !unicode.IsDigit(rNext) && rNext != '_'
-}
-
 // findSensitiveMatches locates all PII entities and custom terms in text.
 func findSensitiveMatches(text string, customTerms []string, disabledEntities map[string]bool, isInteractive bool) []textMatch {
 	var matches []textMatch
 
 	if !isInteractive {
-		addRegexMatches := func(re *regexp.Regexp, submatchIdx int, validateFunc func(string) bool) {
-			indexes := re.FindAllStringSubmatchIndex(text, -1)
-			for _, loc := range indexes {
-				var start, end int
-				if submatchIdx*2+1 < len(loc) && loc[submatchIdx*2] >= 0 {
-					start = loc[submatchIdx*2]
-					end = loc[submatchIdx*2+1]
-				} else {
-					start = loc[0]
-					end = loc[1]
-				}
-				if !isBoundaryAfter(text, end) {
-					continue
-				}
-				val := text[start:end]
-				if validateFunc == nil || validateFunc(val) {
-					matches = append(matches, textMatch{start: start, end: end, value: val})
-				}
-			}
-		}
-
-		// 1. SNILS
-		if !disabledEntities["SNILS"] {
-			addRegexMatches(reSNILSFormatted, 1, nil)
-			addRegexMatches(reSNILS11Digits, 1, func(s string) bool {
-				return detector.ValidateSNILS(s)
-			})
-		}
-
-		// 2. Passport RF
-		if !disabledEntities["PASSPORT"] {
-			addRegexMatches(rePassport4_6, 1, nil)
-			addRegexMatches(rePassport2_2_6, 1, nil)
-			addRegexMatches(rePassportPrefixed, 1, nil)
-		}
-
-		// 3. INN
-		if !disabledEntities["INN"] {
-			addRegexMatches(reINN12, 1, func(s string) bool {
-				return detector.ValidateINN12(s)
-			})
-			addRegexMatches(reINNPrefixed, 1, nil)
-		}
-
-		// 4. Phone
-		if !disabledEntities["PHONE"] {
-			addRegexMatches(rePhone, 1, nil)
-			addRegexMatches(rePhonePrefixed, 1, nil)
-		}
-
-		// 5. Card MIR / Luhn
-		if !disabledEntities["BANK_CARD"] && !disabledEntities["CARD"] {
-			addRegexMatches(reCard16, 1, detector.ValidateCardNumber)
-		}
-
-		// 6. FIO
-		if !disabledEntities["FIO"] {
-			addRegexMatches(reFIOPatronymic, 1, isFIOValid)
-			addRegexMatches(reFIOPrefixed, 1, isFIOValid)
-			addRegexMatches(reFIOInitials1, 1, nil)
-			addRegexMatches(reFIOInitials2, 1, nil)
+		tms := detector.FindTextMatchesWithOptions(text, disabledEntities)
+		for _, tm := range tms {
+			matches = append(matches, textMatch{start: tm.Start, end: tm.End, value: tm.Value})
 		}
 	}
 
-	// 7. Custom terms
+	// Custom terms
 	for _, term := range customTerms {
 		if term == "" {
 			continue
@@ -1302,50 +1221,6 @@ func findSensitiveMatches(text string, customTerms []string, disabledEntities ma
 	}
 
 	return deduped
-}
-
-func isFIOValid(s string) bool {
-	parts := strings.Fields(s)
-	if len(parts) < 2 || len(parts) > 3 {
-		return false
-	}
-	stopWords := map[string]bool{
-		"дает": true, "обязуется": true, "обязан": true, "вправе": true, "имеет": true,
-		"согласен": true, "поручает": true, "принимает": true, "согласие": true,
-		"обработку": true, "компании": true, "договора": true, "настоящий": true,
-		"трудовой": true, "договор": true, "общество": true, "ответственностью": true,
-		"стороны": true, "сторона": true, "работодатель": true, "работник": true,
-		"предмет": true, "оплата": true, "режим": true, "срок": true, "действие": true,
-		"защита": true, "персональных": true, "данных": true, "конфиденциальность": true,
-		"адреса": true, "реквизиты": true, "подписи": true, "отметка": true, "получении": true,
-		"экземпляра": true, "генеральный": true, "директор": true, "руководитель": true,
-		"ведущего": true, "разработчика": true, "программного": true, "обеспечения": true,
-		"условия": true, "рабочего": true, "времени": true, "отдыха": true, "гарантии": true,
-	}
-	for _, p := range parts {
-		if stopWords[strings.ToLower(p)] {
-			return false
-		}
-		subparts := strings.Split(p, "-")
-		for _, sp := range subparts {
-			runes := []rune(sp)
-			if len(runes) < 2 {
-				return false
-			}
-			if !unicode.IsUpper(runes[0]) {
-				return false
-			}
-			for _, r := range runes[1:] {
-				if !unicode.IsLower(r) {
-					return false
-				}
-			}
-			if stopWords[strings.ToLower(sp)] {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 // scrubRemainingSensitiveText performs defense-in-depth replacement of any

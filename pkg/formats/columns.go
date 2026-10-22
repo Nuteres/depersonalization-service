@@ -540,7 +540,7 @@ func DetectColumnTypeWithSamples(header string, samples []string) ColumnType {
 				continue
 			}
 			nonEmpty++
-			digits := cleanDigits(v)
+			digits := detector.CleanDigits(v)
 			if (len(digits) == 10 || len(digits) == 12) && (detector.ValidateINN12(v) || len(digits) == 10) {
 				validINNCount++
 			}
