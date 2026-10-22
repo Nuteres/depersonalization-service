@@ -199,30 +199,6 @@ func (a *DesktopApp) ProcessFileWithSheets(
 	shuffleRows bool,
 	mode string,
 ) (*domain.ProcessResult, error) {
-	ctx := a.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	a.cancelMu.Lock()
-	if a.isRunning {
-		a.cancelMu.Unlock()
-		return nil, fmt.Errorf("операция уже выполняется, дождитесь завершения или отмените её")
-	}
-	a.isRunning = true
-	a.isCanceling = false
-	opCtx, cancel := context.WithCancel(ctx)
-	a.cancel = cancel
-	a.cancelMu.Unlock()
-	defer func() {
-		a.cancelMu.Lock()
-		a.isRunning = false
-		a.isCanceling = false
-		a.cancel = nil
-		a.cancelMu.Unlock()
-		cancel()
-	}()
-
 	processingMode := domain.ModeReplace
 	strategy := domain.StrategySemanticTokens
 
@@ -244,7 +220,6 @@ func (a *DesktopApp) ProcessFileWithSheets(
 		}
 	}
 
-	reporter := newProcessProgressReporter(a.ctx)
 	opts := domain.ProcessOptions{
 		InputPath:       path,
 		OutputPath:      outPath,
@@ -259,7 +234,7 @@ func (a *DesktopApp) ProcessFileWithSheets(
 		ShuffleRows:     shuffleRows,
 	}
 
-	return a.proc.Process(opCtx, opts, reporter)
+	return a.ProcessFileWithOptions(opts)
 }
 
 // ProcessFileWithOptions processes the input file with full domain.ProcessOptions.

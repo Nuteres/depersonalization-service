@@ -8,7 +8,6 @@
     SaveArchiveFileDialog,
     GenerateArchivePassword,
     ValidateArchivePassword,
-    ProcessFileWithSheets,
     ProcessFileWithOptions,
     ValidateKeyPassword
   } from '../../api/wails';
@@ -285,51 +284,24 @@
         ? (archivePath.trim() || getDefaultOutputPath(destPath, 'zip'))
         : '';
 
-      let result;
-      if (createArchive) {
-        result = await ProcessFileWithOptions({
-          inputPath: appState.currentFilePath,
-          outputPath: destPath,
-          mode: appState.processingMode,
-          strategy: effectiveMode,
-          salt,
-          disabledCols: globalDisabled,
-          disabledBySheet,
-          createKey: effectiveCreateKey,
-          keyPassword: effectiveKeyPassword,
-          keyPath: effectiveKeyPath,
-          shuffleRows: effectiveShuffle,
-          createArchive: true,
-          archivePassword: archivePassword.trim(),
-          archivePath: effectiveArchivePath,
-          pdfRedactionBoxes: isPdf ? (appState.pdfRedactionBoxes || []) : undefined,
-          pdfRedactTerms: isPdf ? (appState.pdfRedactTerms || []) : undefined,
-        });
-      } else if (isPdf && appState.pdfRedactionBoxes && appState.pdfRedactionBoxes.length > 0) {
-        result = await ProcessFileWithOptions({
-          inputPath: appState.currentFilePath,
-          outputPath: destPath,
-          mode: appState.processingMode,
-          strategy: effectiveMode,
-          salt,
-          createKey: false,
-          pdfRedactionBoxes: appState.pdfRedactionBoxes,
-          pdfRedactTerms: appState.pdfRedactTerms || []
-        });
-      } else {
-        result = await ProcessFileWithSheets(
-          appState.currentFilePath,
-          destPath,
-          salt,
-          globalDisabled,
-          disabledBySheet,
-          effectiveCreateKey,
-          effectiveKeyPassword,
-          effectiveKeyPath,
-          effectiveShuffle,
-          effectiveMode
-        );
-      }
+      const result = await ProcessFileWithOptions({
+        inputPath: appState.currentFilePath,
+        outputPath: destPath,
+        mode: appState.processingMode,
+        strategy: effectiveMode,
+        salt,
+        disabledCols: globalDisabled,
+        disabledBySheet,
+        createKey: effectiveCreateKey,
+        keyPassword: effectiveKeyPassword,
+        keyPath: effectiveKeyPath,
+        shuffleRows: effectiveShuffle,
+        createArchive,
+        archivePassword: createArchive ? archivePassword.trim() : undefined,
+        archivePath: effectiveArchivePath,
+        pdfRedactionBoxes: isPdf ? (appState.pdfRedactionBoxes || []) : undefined,
+        pdfRedactTerms: isPdf ? (appState.pdfRedactTerms || []) : undefined,
+      });
 
       if (result && result.success) {
         appState.showSuccess(result);
