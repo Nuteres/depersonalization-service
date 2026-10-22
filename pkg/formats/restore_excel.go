@@ -125,15 +125,6 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 	// Initial progress report (0%)
 	reportProgress(true)
 
-	isDeleteMode := dm.Mode == "delete" || len(dm.CellMappings) > 0
-	targetHeadersMap := make(map[string]bool)
-	if len(dm.TargetHeaders) > 0 {
-		for _, h := range dm.TargetHeaders {
-			targetHeadersMap[strings.TrimSpace(h)] = true
-		}
-	}
-	hasHeaderAwareness := isDeleteMode || len(dm.TargetHeaders) > 0
-
 	outFile := excelize.NewFile()
 	defer outFile.Close()
 
@@ -166,43 +157,12 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 			return restoredCount, fmt.Errorf("failed to create stream writer for sheet %s: %w", sheetName, err)
 		}
 
-		// Sample initial rows to detect headers
-		sampleRows, err := xl.Rows(sheetName)
-		if err != nil {
-			return restoredCount, fmt.Errorf("failed to read rows from sheet %s: %w", sheetName, err)
-		}
-		var sample [][]string
-		sampleLimit := 40
-		for sampleRows.Next() && len(sample) < sampleLimit {
-			select {
-			case <-ctx.Done():
-				_ = sampleRows.Close()
-				return restoredCount, ctx.Err()
-			default:
-			}
-			cols, err := sampleRows.Columns()
-			if err != nil {
-				break
-			}
-			sample = append(sample, cols)
-		}
-		_ = sampleRows.Close()
-
-		headerBounds := HeaderBounds{HeaderStartIdx: 0, LeafHeaderIdx: 0, DataStartIdx: 1}
-		var headers []string
-		if len(sample) > 0 {
-			merges := ExtractMergeRanges(xl, sheetName)
-			headerBounds = DetectHeaderBounds(sample, merges)
-			headers = BuildHierarchicalHeaders(sample, headerBounds.LeafHeaderIdx, merges)
-		}
-
 		rows, err := xl.Rows(sheetName)
 		if err != nil {
 			return restoredCount, fmt.Errorf("failed to read rows from sheet %s: %w", sheetName, err)
 		}
 
 		rowNum := 0
-
 		for rows.Next() {
 			select {
 			case <-ctx.Done():
@@ -226,19 +186,6 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 				return restoredCount, fmt.Errorf("failed to get cell coordinate for row %d: %w", rowNum, err)
 			}
 
-			if hasHeaderAwareness && len(sample) > 1 && rowNum < headerBounds.DataStartIdx+1 {
-				headerCells := make([]interface{}, len(cols))
-				for i, v := range cols {
-					headerCells[i] = v
-				}
-				if err := sw.SetRow(cellCoordinate, headerCells); err != nil {
-					_ = rows.Close()
-					return restoredCount, fmt.Errorf("failed to write header row %d: %w", rowNum, err)
-				}
-				reportProgress(false)
-				continue
-			}
-
 			rowCells := make([]interface{}, len(cols))
 			for colIdx, val := range cols {
 				if len(val) == 0 {
@@ -246,49 +193,12 @@ func RestoreExcel(ctx context.Context, inputPath, outputPath string, dm *depmap.
 					continue
 				}
 
-				var headerName string
-				if colIdx < len(headers) {
-					headerName = strings.TrimSpace(headers[colIdx])
-				}
-
 				if restoredVal, ok := RestoreCellString(val, dm); ok {
-					isTarget := len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName] || strings.Contains(val, "[")
-					if !isTarget && strings.Contains(headerName, " / ") {
-						parts := strings.Split(headerName, " / ")
-						leaf := strings.TrimSpace(parts[len(parts)-1])
-						if idx := strings.LastIndex(leaf, " ("); idx != -1 && strings.HasSuffix(leaf, ")") {
-							leaf = strings.TrimSpace(leaf[:idx])
-						}
-						isTarget = targetHeadersMap[leaf]
-					}
-					if isTarget {
-						rowCells[colIdx] = restoredVal
-						restoredCount++
-						continue
-					}
+					rowCells[colIdx] = restoredVal
+					restoredCount++
+				} else {
+					rowCells[colIdx] = val
 				}
-
-				if isDeleteMode {
-					orig, ok := dm.GetCell(sheetName, headerName, rowNum)
-					if !ok && strings.Contains(headerName, " / ") {
-						parts := strings.Split(headerName, " / ")
-						leaf := strings.TrimSpace(parts[len(parts)-1])
-						if idx := strings.LastIndex(leaf, " ("); idx != -1 && strings.HasSuffix(leaf, ")") {
-							leaf = strings.TrimSpace(leaf[:idx])
-						}
-						orig, ok = dm.GetCell(sheetName, leaf, rowNum)
-					}
-					if ok {
-						trimmed := strings.TrimSpace(strings.TrimPrefix(val, "\ufeff"))
-						if trimmed == DeletionMarker {
-							rowCells[colIdx] = orig
-							restoredCount++
-							continue
-						}
-					}
-				}
-
-				rowCells[colIdx] = val
 			}
 
 			if err := sw.SetRow(cellCoordinate, rowCells); err != nil {

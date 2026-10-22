@@ -375,7 +375,7 @@ func TestRestoreExcel_HeaderAwareColumnShift(t *testing.T) {
 	}
 	f.Close()
 
-	// 2. Anonymize with ModeDelete and CreateKey=true -> yields anonymized.xlsx and key.depmap
+	// 2. Anonymize with default tokens and CreateKey=true -> yields anonymized.xlsx and key.depmap
 	anon := anonymizer.New("salt-test")
 	handler := formats.NewExcelHandler(anon)
 	dm := depmap.New("original.xlsx")
@@ -386,8 +386,8 @@ func TestRestoreExcel_HeaderAwareColumnShift(t *testing.T) {
 		t.Fatalf("failed to read original xlsx: %v", err)
 	}
 	err = handler.Process(context.Background(), bytes.NewReader(origBytes), &anonBuf, map[string]interface{}{
-		"mode":   domain.ModeDelete,
-		"depmap": dm,
+		"strategy": domain.StrategySemanticTokens,
+		"depmap":   dm,
 	})
 	if err != nil {
 		t.Fatalf("handler.Process failed: %v", err)
@@ -397,20 +397,28 @@ func TestRestoreExcel_HeaderAwareColumnShift(t *testing.T) {
 		t.Fatalf("failed to write anonymized xlsx: %v", err)
 	}
 
-	// 3. Simulate AI model: Insert 2 new columns between ID and FIO (e.g. AI_Score, AI_Category)
+	anonXl, err := excelize.OpenFile(anonPath)
+	if err != nil {
+		t.Fatalf("failed to open anonymized xlsx: %v", err)
+	}
+	fioToken, _ := anonXl.GetCellValue(sheet, "B2")
+	phoneToken, _ := anonXl.GetCellValue(sheet, "C2")
+	anonXl.Close()
+
+	// 3. Simulate AI model: Insert 2 new columns between ID and FIO, and rename columns
 	aiFile := excelize.NewFile()
 	aiFile.SetSheetName("Sheet1", sheet)
 	_ = aiFile.SetCellValue(sheet, "A1", "ID")
 	_ = aiFile.SetCellValue(sheet, "B1", "AI_Score")
 	_ = aiFile.SetCellValue(sheet, "C1", "AI_Category")
-	_ = aiFile.SetCellValue(sheet, "D1", "ФИО")
-	_ = aiFile.SetCellValue(sheet, "E1", "Телефон")
+	_ = aiFile.SetCellValue(sheet, "D1", "Client_FullName_Renamed")
+	_ = aiFile.SetCellValue(sheet, "E1", "Mobile_Phone_Renamed")
 
 	_ = aiFile.SetCellValue(sheet, "A2", "1")
 	_ = aiFile.SetCellValue(sheet, "B2", "0.95")
 	_ = aiFile.SetCellValue(sheet, "C2", "VIP")
-	_ = aiFile.SetCellValue(sheet, "D2", formats.DeletionMarker)
-	_ = aiFile.SetCellValue(sheet, "E2", formats.DeletionMarker)
+	_ = aiFile.SetCellValue(sheet, "D2", fioToken)
+	_ = aiFile.SetCellValue(sheet, "E2", phoneToken)
 
 	if err := aiFile.SaveAs(aiModifiedPath); err != nil {
 		t.Fatalf("failed to save ai modified xlsx: %v", err)
@@ -426,7 +434,7 @@ func TestRestoreExcel_HeaderAwareColumnShift(t *testing.T) {
 
 	// 5. Verify:
 	//    - Restore count matches expected (2)
-	//    - FIO and Phone are restored to original values
+	//    - FIO and Phone are restored to original values despite column shift and renaming
 	//    - AI_Score and AI_Category remain intact with AI values
 	if restoredCount != 2 {
 		t.Errorf("expected 2 restored cells, got %d", restoredCount)
@@ -473,16 +481,23 @@ func TestRestoreCSV_HeaderAwareColumnShift(t *testing.T) {
 
 	var anonBuf bytes.Buffer
 	err := handler.Process(context.Background(), strings.NewReader(origCSV), &anonBuf, map[string]interface{}{
-		"mode":   domain.ModeDelete,
 		"depmap": dm,
 	})
 	if err != nil {
 		t.Fatalf("handler.Process failed: %v", err)
 	}
 
-	// Simulate AI model inserting columns between ID and ФИО
-	aiCSV := "ID,AI_Score,AI_Category,ФИО,Телефон\n" +
-		"1,0.95,VIP," + formats.DeletionMarker + "," + formats.DeletionMarker + "\n"
+	anonReader := csv.NewReader(&anonBuf)
+	anonRecords, err := anonReader.ReadAll()
+	if err != nil {
+		t.Fatalf("failed to parse anon csv: %v", err)
+	}
+	fioToken := anonRecords[1][1]
+	phoneToken := anonRecords[1][2]
+
+	// Simulate AI model inserting columns between ID and renamed ФИО
+	aiCSV := "ID,AI_Score,AI_Category,Client_Renamed,Contact\n" +
+		"1,0.95,VIP," + fioToken + "," + phoneToken + "\n"
 
 	var restoredBuf bytes.Buffer
 	ctx := context.Background()
@@ -522,11 +537,11 @@ func TestRestoreCSV_HeaderAwareColumnShift(t *testing.T) {
 	}
 }
 
-func TestRestoreExcel_ModeReplace_HeaderAwareAIColumnProtected(t *testing.T) {
+func TestRestoreExcel_TokensInFreeTextAndAIColumns(t *testing.T) {
 	tmpDir := t.TempDir()
-	origPath := filepath.Join(tmpDir, "orig_replace.xlsx")
-	aiModifiedPath := filepath.Join(tmpDir, "ai_replace.xlsx")
-	restoredPath := filepath.Join(tmpDir, "restored_replace.xlsx")
+	origPath := filepath.Join(tmpDir, "orig_tokens.xlsx")
+	aiModifiedPath := filepath.Join(tmpDir, "ai_tokens.xlsx")
+	restoredPath := filepath.Join(tmpDir, "restored_tokens.xlsx")
 
 	f := excelize.NewFile()
 	sheet := "Sheet1"
@@ -539,9 +554,9 @@ func TestRestoreExcel_ModeReplace_HeaderAwareAIColumnProtected(t *testing.T) {
 	}
 	f.Close()
 
-	anon := anonymizer.New("salt-replace")
+	anon := anonymizer.New("salt-tokens")
 	handler := formats.NewExcelHandler(anon)
-	dm := depmap.New("orig_replace.xlsx")
+	dm := depmap.New("orig_tokens.xlsx")
 
 	var anonBuf bytes.Buffer
 	origBytes, err := os.ReadFile(origPath)
@@ -549,8 +564,8 @@ func TestRestoreExcel_ModeReplace_HeaderAwareAIColumnProtected(t *testing.T) {
 		t.Fatalf("failed to read original xlsx: %v", err)
 	}
 	err = handler.Process(context.Background(), bytes.NewReader(origBytes), &anonBuf, map[string]interface{}{
-		"mode":   domain.ModeReplace,
-		"depmap": dm,
+		"strategy": domain.StrategySemanticTokens,
+		"depmap":   dm,
 	})
 	if err != nil {
 		t.Fatalf("handler.Process failed: %v", err)
@@ -560,19 +575,19 @@ func TestRestoreExcel_ModeReplace_HeaderAwareAIColumnProtected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open anon excel: %v", err)
 	}
-	synthFIO, _ := anonExcel.GetCellValue(sheet, "B2")
+	tokenFIO, _ := anonExcel.GetCellValue(sheet, "B2")
 	anonExcel.Close()
 
-	// Simulate AI adding column "AI_Comment" that happens to contain the exact synthetic FIO string!
+	// Simulate AI adding column "AI_Comment" with text embedding the token
 	aiFile := excelize.NewFile()
 	aiFile.SetSheetName("Sheet1", sheet)
 	_ = aiFile.SetCellValue(sheet, "A1", "ID")
 	_ = aiFile.SetCellValue(sheet, "B1", "AI_Comment")
-	_ = aiFile.SetCellValue(sheet, "C1", "ФИО")
+	_ = aiFile.SetCellValue(sheet, "C1", "Client_Token")
 
 	_ = aiFile.SetCellValue(sheet, "A2", "1")
-	_ = aiFile.SetCellValue(sheet, "B2", synthFIO) // Should NOT be replaced!
-	_ = aiFile.SetCellValue(sheet, "C2", synthFIO) // Should be replaced!
+	_ = aiFile.SetCellValue(sheet, "B2", "Сотрудник "+tokenFIO+" успешно прошел скоринг")
+	_ = aiFile.SetCellValue(sheet, "C2", tokenFIO)
 
 	if err := aiFile.SaveAs(aiModifiedPath); err != nil {
 		t.Fatalf("failed to save ai modified xlsx: %v", err)
@@ -585,8 +600,8 @@ func TestRestoreExcel_ModeReplace_HeaderAwareAIColumnProtected(t *testing.T) {
 		t.Fatalf("RestoreExcel failed: %v", err)
 	}
 
-	if restoredCount != 1 {
-		t.Errorf("expected exactly 1 restored cell, got %d", restoredCount)
+	if restoredCount != 2 {
+		t.Errorf("expected exactly 2 restored cells, got %d", restoredCount)
 	}
 
 	rf, err := excelize.OpenFile(restoredPath)
@@ -596,8 +611,9 @@ func TestRestoreExcel_ModeReplace_HeaderAwareAIColumnProtected(t *testing.T) {
 	defer rf.Close()
 
 	aiCommentVal, _ := rf.GetCellValue(sheet, "B2")
-	if aiCommentVal != synthFIO {
-		t.Errorf("expected AI_Comment untouched %q, got %q", synthFIO, aiCommentVal)
+	expectedComment := "Сотрудник Иванов Иван Иванович успешно прошел скоринг"
+	if aiCommentVal != expectedComment {
+		t.Errorf("expected AI_Comment restored %q, got %q", expectedComment, aiCommentVal)
 	}
 
 	fioVal, _ := rf.GetCellValue(sheet, "C2")
@@ -813,10 +829,10 @@ func TestRestoreExcel_MultiTierHeaderAndMergesPreserved(t *testing.T) {
 	}
 }
 
-func TestRestoreExcel_DeleteMode_LegacyLeafHeaderFallback(t *testing.T) {
+func TestRestoreExcel_MultiTierHeader_TokenRestoration(t *testing.T) {
 	tmpDir := t.TempDir()
-	inPath := filepath.Join(tmpDir, "input_del.xlsx")
-	outPath := filepath.Join(tmpDir, "output_del.xlsx")
+	inPath := filepath.Join(tmpDir, "input_multitier.xlsx")
+	outPath := filepath.Join(tmpDir, "output_multitier.xlsx")
 
 	f := excelize.NewFile()
 	sheet := "Sheet1"
@@ -831,7 +847,7 @@ func TestRestoreExcel_DeleteMode_LegacyLeafHeaderFallback(t *testing.T) {
 	_ = f.SetCellValue(sheet, "B2", "Город")
 
 	// Data in row 3
-	_ = f.SetCellValue(sheet, "A3", formats.DeletionMarker)
+	_ = f.SetCellValue(sheet, "A3", "[ФИО_0001]")
 	_ = f.SetCellValue(sheet, "B3", "Москва")
 
 	if err := f.SaveAs(inPath); err != nil {
@@ -839,10 +855,8 @@ func TestRestoreExcel_DeleteMode_LegacyLeafHeaderFallback(t *testing.T) {
 	}
 	f.Close()
 
-	// Depmap with legacy leaf header "Участник" instead of "Личные данные / Участник"
 	dm := depmap.New(inPath)
-	dm.Mode = "delete"
-	dm.PutCell(sheet, "Участник", 3, "Иванов Иван Иванович")
+	dm.Put("[ФИО_0001]", "Иванов Иван Иванович")
 
 	restored, err := formats.RestoreExcel(context.Background(), inPath, outPath, dm, nil)
 	if err != nil {
@@ -860,7 +874,18 @@ func TestRestoreExcel_DeleteMode_LegacyLeafHeaderFallback(t *testing.T) {
 
 	valA3, _ := resFile.GetCellValue(sheet, "A3")
 	if valA3 != "Иванов Иван Иванович" {
-		t.Errorf("expected restored FIO from legacy leaf header, got %q", valA3)
+		t.Errorf("expected restored FIO from token, got %q", valA3)
+	}
+
+	valB3, _ := resFile.GetCellValue(sheet, "B3")
+	if valB3 != "Москва" {
+		t.Errorf("expected untouched city 'Москва', got %q", valB3)
+	}
+
+	// Verify merged cells preserved
+	merges, err := resFile.GetMergeCells(sheet)
+	if err != nil || len(merges) == 0 {
+		t.Errorf("expected merged cells to be preserved, got %v", merges)
 	}
 }
 

@@ -59,16 +59,6 @@ func RestoreODS(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 	var replacements []textReplacement
 	restoredCount := 0
 
-	isDeleteMode := dm.Mode == "delete" || len(dm.CellMappings) > 0
-	targetHeadersMap := make(map[string]bool)
-	if len(dm.TargetHeaders) > 0 {
-		for _, h := range dm.TargetHeaders {
-			targetHeadersMap[strings.TrimSpace(h)] = true
-		}
-	}
-
-	hasHeaderAwareness := isDeleteMode || len(dm.TargetHeaders) > 0
-
 	for _, sheet := range doc.sheets {
 		select {
 		case <-ctx.Done():
@@ -76,55 +66,14 @@ func RestoreODS(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, dm 
 		default:
 		}
 
-		sampleLimit := len(sheet.rows)
-		if sampleLimit > 40 {
-			sampleLimit = 40
-		}
-		sampleRows := make([][]string, sampleLimit)
-		for rIdx := 0; rIdx < sampleLimit; rIdx++ {
-			sampleRows[rIdx] = rowToStrings(sheet.rows[rIdx])
-		}
-
-		headerRowIndex := -1
-		var headers []string
-		if len(sampleRows) > 0 {
-			headerRowIndex, headers = FindHeaderRow(sampleRows)
-		}
-
-		for rIdx, row := range sheet.rows {
-			physicalRow := rIdx + 1
-			if hasHeaderAwareness && len(sheet.rows) > 1 && headerRowIndex >= 0 && physicalRow <= headerRowIndex+1 {
-				continue
-			}
-
+		for _, row := range sheet.rows {
 			for _, cell := range row.cells {
 				val := cell.fullText
 				if len(val) == 0 {
 					continue
 				}
 
-				var headerName string
-				if cell.colIdx < len(headers) {
-					headerName = strings.TrimSpace(headers[cell.colIdx])
-				}
-
-				var orig string
-				ok := false
-
-				if restoredVal, found := RestoreCellString(val, dm); found {
-					if len(dm.TargetHeaders) == 0 || targetHeadersMap[headerName] || strings.Contains(val, "[") {
-						orig = restoredVal
-						ok = true
-					}
-				} else if isDeleteMode {
-					if o, found := dm.GetCell(sheet.name, headerName, physicalRow); found {
-						trimmed := strings.TrimSpace(strings.TrimPrefix(val, "\ufeff"))
-						if trimmed == DeletionMarker {
-							orig = o
-							ok = true
-						}
-					}
-				}
+				orig, ok := RestoreCellString(val, dm)
 
 				dateRestored := false
 				var origDateAttr string
