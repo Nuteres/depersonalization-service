@@ -22,7 +22,7 @@ VERSION = "v1.15.0"
 kb_path = os.path.join(script_dir, "..", "..", "docs", "KNOWLEDGE_BASE.md")
 
 with open(kb_path, "w", encoding="utf-8") as f:
-    f.write("# База знаний и FAQ: Деперсонализация ПД (152-ФЗ)\n\n")
+    f.write("# База знаний и FAQ: Деперсонализация ПД\n\n")
     f.write(f"**Версия продукта:** `{VERSION}`  \n")
     f.write(f"**Notion Hub:** `https://app.notion.com/{HUB_ID}`  \n")
     f.write(f"**Notion FAQ Database:** `https://app.notion.com/{DB_ID}`  \n\n")
